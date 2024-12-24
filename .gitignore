@@ -1,0 +1,56 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
+
+# Logs
+logs
+*.log
+logs/**/*.log
+/debug.log
+stacktrace.log
+*.out
+*.err
+
+# Build files
+dist/
+build/
+
+# TypeScript files
+*.tsbuildinfo
+*.d.ts.map
+*.d.ts
+
+# Test coverage reports
+coverage/
+.nyc_output/
+.vscode-test/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.swp
+*.sw~
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# macOS specific
+*.DS_Store
+
+# Generated documentation
+docs/

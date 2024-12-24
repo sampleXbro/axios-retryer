@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "lib": [
+      "ES5",
+      "DOM",
+      "es2015.promise",
+      "es2015.collection"
+    ],
+    "module": "ESNext",
+    "strict": true,
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "types": ["jest"],
+    "declaration": true,
+    "outDir": "dist",
+    "declarationDir": "dist/types",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+}
