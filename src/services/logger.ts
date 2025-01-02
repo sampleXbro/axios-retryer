@@ -3,7 +3,7 @@ export class RetryLogger {
 
     log(message: string, data?: any) {
         if (this.enabled) {
-            console.log(`%c[axios-retryer] %c${message}`, data ? JSON.stringify(data) : '');
+            console.log(`[axios-retryer] ${message}`, data ? JSON.stringify(data) : '');
         }
     }
 
