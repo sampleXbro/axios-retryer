@@ -3,11 +3,11 @@
 import type { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 
+import { RetryLogger } from './services/logger';
 import type { RequestStore } from './RequestStore';
 import { InMemoryRequestStore } from './RequestStore';
 import { DefaultRetryStrategy } from './RetryStrategy';
 import type { AxiosRetryerRequestConfig, RetryHooks, RetryManagerOptions, RetryMode, RetryStrategy } from './types';
-import {RetryLogger} from "./services/logger";
 
 /**
  * Manages retries for Axios requests, including manual and automatic modes.
@@ -78,16 +78,16 @@ export class RetryManager {
     }
 
     if (!!config.__retryAttempt && this.hooks?.afterRetry) {
-      this.logger.log(`[axios-retryer] On after retry hook called: RequestID: ${requestId}`);
+      this.logger.log(`On after retry hook called: RequestID: ${requestId}`);
       this.hooks.afterRetry(config, true);
     }
 
     return response;
   };
 
-  private handleNoRetriesAction = (config: AxiosRetryerRequestConfig) => {
+  private handleNoRetriesAction = (config: AxiosRetryerRequestConfig): void => {
     if (this.hooks?.onFailure) {
-      this.logger.log(`[axios-retryer] On retry failure hook called: RequestId: ${config.__requestId}`);
+      this.logger.log(`On retry failure hook called: RequestId: ${config.__requestId}`);
       this.hooks.onFailure(config);
     }
     this.requestStore.add(config);
@@ -95,18 +95,23 @@ export class RetryManager {
     if (config.__requestId) {
       this.activeRequests.delete(config.__requestId);
     }
-    if (this.activeRequests.size === 0 && this.hooks?.onAllRetriesCompleted) {
+    if (this.activeRequests.size === 0) {
       const failedRequests = this.requestStore.getAll()?.length ?? 0;
-      this.logger.log(`[axios-retryer] On all retries completed hook called: RequestID: ${config.__requestId}; Failed requests: ${failedRequests}`);
 
-      this.hooks.onAllRetriesCompleted(failedRequests);
+      if (this.hooks?.onAllRetriesCompleted) {
+        this.logger.log(
+          `On all retries completed hook called: RequestID: ${config.__requestId}; Failed requests: ${failedRequests}`,
+        );
+
+        this.hooks.onAllRetriesCompleted(failedRequests);
+      }
     }
   };
 
   private scheduleRetry = <T>(config: AxiosRetryerRequestConfig, maxRetries: number): Promise<AxiosResponse<T>> => {
     const delay = this.retryStrategy.getDelay(Number(config.__retryAttempt), maxRetries);
     if (this.hooks?.beforeRetry) {
-      this.logger.log(`[axios-retryer] Before retry hook called: RequestID: ${config.__requestId}`);
+      this.logger.log(`Before retry hook called: RequestID: ${config.__requestId}`);
 
       this.hooks.beforeRetry(config);
     }
@@ -138,7 +143,10 @@ export class RetryManager {
           return resolve(res as never);
         } catch (err) {
           clearTimeout(delayTimeout);
-          return this.throwErrorOnFailedRetries ? reject(err) : Promise.resolve(err);
+          if (this.throwErrorOnFailedRetries && this.activeRequests.size === 0) {
+            reject(err);
+          }
+          return Promise.resolve(err);
         }
       }, delay);
     });
@@ -151,7 +159,7 @@ export class RetryManager {
     }
 
     if (config.__isRetrying && this.hooks?.afterRetry) {
-      this.logger.log(`[axios-retryer] After retry hook called: RequestID: ${config.__requestId}`);
+      this.logger.log(`After retry hook called: RequestID: ${config.__requestId}`);
 
       this.hooks.afterRetry(config, false);
     }
@@ -166,7 +174,9 @@ export class RetryManager {
 
     if (canRetry) {
       config.__retryAttempt = attempt;
-      this.logger.log(`[axios-retryer] Retry is scheduled: Attempting to retry: ${attempt}; Max retries: ${maxRetries}; RequestID: ${config.__requestId}`);
+      this.logger.log(
+        `Retry is scheduled: Attempting to retry: ${attempt}; Max retries: ${maxRetries}; RequestID: ${config.__requestId}`,
+      );
 
       return this.scheduleRetry(config, maxRetries);
     }
@@ -174,7 +184,9 @@ export class RetryManager {
     /**
      * If we reached here, no more automatic retries.
      * */
-    this.logger.log(`[axios-retryer] No more automatic retries left: Last attempt: ${attempt}; Max retries: ${maxRetries}; RequestID: ${config.__requestId}`);
+    this.logger.log(
+      `No more automatic retries left: Last attempt: ${attempt}; Max retries: ${maxRetries}; RequestID: ${config.__requestId}`,
+    );
 
     this.handleNoRetriesAction(config);
 
@@ -211,8 +223,7 @@ export class RetryManager {
     if (controller) {
       controller.abort();
       this.activeRequests.delete(requestId);
-      this.logger.log(`[axios-retryer] Request ${requestId} cancelled.`);
-
+      this.logger.log(`Request ${requestId} cancelled.`);
     }
   };
 
@@ -222,8 +233,7 @@ export class RetryManager {
   public cancelAllRequests = (): void => {
     this.activeRequests.forEach((controller, requestId) => {
       controller.abort();
-      this.logger.log(`[axios-retryer] Request ${requestId} cancelled.`);
-
+      this.logger.log(`Request ${requestId} cancelled.`);
     });
     this.activeRequests.clear();
   };

@@ -7,7 +7,7 @@ import type { RetryStrategy } from './types';
 export class DefaultRetryStrategy implements RetryStrategy {
   shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
     const isNetworkError = !error.response;
-    const isServerError = error.response && error.response.status >= 400 && error.response.status < 600;
+    const isServerError = error.response && error.response.status >= 500 && error.response.status < 600;
     return ((isNetworkError || isServerError) && attempt <= maxRetries) || false;
   }
 
