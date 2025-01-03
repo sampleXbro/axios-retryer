@@ -48,6 +48,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.secrets
 
 # macOS specific
 *.DS_Store
