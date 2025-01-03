@@ -7,7 +7,13 @@ import { RetryLogger } from './services/logger';
 import type { RequestStore } from './RequestStore';
 import { InMemoryRequestStore } from './RequestStore';
 import { DefaultRetryStrategy } from './RetryStrategy';
-import type { AxiosRetryerRequestConfig, RetryHooks, RetryManagerOptions, RetryMode, RetryStrategy } from './types';
+import type {
+  AxiosRetryerRequestConfig,
+  RetryHooks,
+  RetryManagerOptions,
+  RetryMode,
+  RetryStrategy
+} from './types';
 
 /**
  * Manages retries for Axios requests, including manual and automatic modes.
@@ -125,7 +131,7 @@ export class RetryManager {
           clearTimeout(delayTimeout);
           this.handleNoRetriesAction(config);
           /**
-           * If throwErrorOnCancelRequest is false, we return a resolved Promise;
+           * If throwErrorOnCancelRequest is true, we call reject with Axios Cancel();
            * if false, we resolve silently
            * */
           return this.throwErrorOnCancelRequest

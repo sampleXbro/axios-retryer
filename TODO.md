@@ -1,2 +1,6 @@
-- Implement request queue and request concurrency control logic
-- Implement per-request timeout logic
+- Allow users to configure linear, exponential, or custom retry delays through strategy options
+- Add a feature to batch and execute requests concurrently with shared retry policies
+- Add per-request and global timeouts to avoid indefinitely hanging requests
+- Add priorities for queued requests, allowing higher-priority requests to skip ahead
+- Track metrics like success rates, retries, and response times, and expose them through APIs
+- Add log levels (e.g., debug, info, warn, error) for better control over output verbosity
