@@ -55,3 +55,6 @@ Thumbs.db
 
 # Generated documentation
 docs/
+
+# TGZ files
+*.tgz
