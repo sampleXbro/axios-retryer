@@ -54,6 +54,3 @@ Thumbs.db
 
 # Generated documentation
 docs/
-
-# NPM packaging
-.npmrc

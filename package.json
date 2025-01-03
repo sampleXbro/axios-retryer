@@ -5,6 +5,10 @@
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
   "types": "dist/types/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sampleXbro/axios-retryer.git"
+  },
   "scripts": {
     "build": "jest && rollup -c --bundleConfigAsCjs",
     "prepare": "npm run build",
