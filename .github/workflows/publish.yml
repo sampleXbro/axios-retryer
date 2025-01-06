@@ -9,6 +9,9 @@ on:
     branches:
       - main
       - develop
+  release:
+    types:
+      - published # Trigger only when a release is published
 
 jobs:
   ci:
@@ -39,7 +42,7 @@ jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
-    if: github.ref_name == 'main' # Only run on the main branch
+    if: github.ref_name == 'main' && github.event_name == 'release' && github.event.action == 'published' # Only run on the main branch and after release is published
 
     steps:
       # 1. Checkout the code

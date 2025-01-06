@@ -19,15 +19,15 @@ export interface RetryHooks {
   /**
    * Called before every request retry
    * */
-  beforeRetry?: (config: AxiosRequestConfig) => void;
+  beforeRetry?: (config: AxiosRetryerRequestConfig) => void;
   /**
    * Called after every request retry
    * */
-  afterRetry?: (config: AxiosRequestConfig, success: boolean) => void;
+  afterRetry?: (config: AxiosRetryerRequestConfig, success: boolean) => void;
   /**
    * Called on every failed retry
    * */
-  onFailure?: (config: AxiosRequestConfig) => void;
+  onFailure?: (config: AxiosRetryerRequestConfig) => void;
   /**
    * Called on all retries of all requests are completed
    * @arg failedRequests number of failed requests
