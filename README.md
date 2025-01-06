@@ -44,6 +44,90 @@ yarn add axios-retryer
 - **Cancellation**: Cancel individual requests or all ongoing requests at once.
 - **TypeScript Support**: All types are included out of the box.
 
+### Why Choose `axios-retryer`?
+
+When compared to alternatives, `axios-retryer` stands out with its advanced features and flexibility:
+
+| Feature                        | `axios-retryer`                                          | `axios-retry`            |
+|--------------------------------|----------------------------------------------------------|--------------------------|
+| **Manual Retry Support**       | ✅ Allows manual retries                                  | ❌ No manual retrying    |
+| **Request Cancellation**       | ✅ Full support for aborting ongoing requests and retries | ❌ Limited cancellation options |
+| **Custom Plugins**             | ✅ Extend with plugins                                    | ❌ Not supported         |
+| **Request Store Options**      | ✅ In-memory or custom stores                             | ❌ Limited flexibility   |
+| **Hook-Based Control**         | ✅ Full lifecycle hooks                                   | ❌ Basic hooks only      |
+| **TypeScript Support**         | ✅ Fully typed                                            | ✅ Partially typed       |
+
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant RetryManager
+    participant Axios
+    participant RetryStrategy
+    participant RequestStore
+
+    User->>RetryManager: Initiates request
+    RetryManager->>RetryManager: Generate Request ID & Setup AbortController
+    RetryManager->>Axios: Send request
+    Axios-->>RetryManager: Response (Success/Failure)
+    alt Request Fails
+        RetryManager->>RetryStrategy: ShouldRetry? (Error, Attempt, MaxRetries)
+        RetryStrategy-->>RetryManager: Yes/No
+        alt Retry Allowed (Automatic Mode)
+            RetryManager->>RetryManager: Schedule Retry
+            RetryManager->>Axios: Retry request
+        else Max Retries Reached
+            RetryManager->>RequestStore: Store Failed Request
+            RetryManager->>User: Notify Failure
+        end
+    else Request Succeeds
+        RetryManager->>RequestStore: Clear Request (if previously stored)
+        RetryManager->>User: Notify Success
+    end
+    RetryManager->>Hooks: Trigger Lifecycle Hooks (e.g., BeforeRetry, AfterRetry)
+
+    %% Manual Retry Logic
+    User->>RetryManager: Trigger Manual Retry
+    RetryManager->>RequestStore: Fetch Stored Failed Requests
+    loop For each failed request
+        RetryManager->>Axios: Retry request
+        Axios-->>RetryManager: Response (Success/Failure)
+        alt Request Succeeds
+            RetryManager->>RequestStore: Remove from Failed Requests
+            RetryManager->>User: Notify Success
+        else Request Fails Again
+            RetryManager->>RetryStrategy: ShouldRetry?
+            RetryStrategy-->>RetryManager: Yes/No
+            alt Retry Allowed
+                RetryManager->>RetryManager: Schedule Retry
+            else Retry Aborted
+                RetryManager->>User: Notify Failure
+            end
+        end
+    end
+
+    %% Cancellation Logic
+    User->>RetryManager: Cancel Request by ID
+    RetryManager->>RetryManager: Find AbortController for Request ID
+    alt Controller Found
+        RetryManager->>RetryManager: Abort Request
+        RetryManager->>RequestStore: Remove Request (if stored)
+        RetryManager->>User: Notify Cancellation Success
+    else Controller Not Found
+        RetryManager->>User: Notify Failure (Request Already Completed or Not Found)
+    end
+
+    %% Cancel All Requests
+    User->>RetryManager: Cancel All Requests
+    loop For each Active Request
+        RetryManager->>RetryManager: Abort Request
+        RetryManager->>RequestStore: Remove Requests (if stored)
+    end
+    RetryManager->>User: Notify All Requests Cancelled
+```
+
 ## Quick Example
 
 Here is a short snippet showing how to instantiate the `RetryManager` for automatic retries:

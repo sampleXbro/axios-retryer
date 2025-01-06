@@ -1,6 +1,6 @@
 'use strict';
 
-import type { AxiosRetryerRequestConfig } from './types';
+import type { AxiosRetryerRequestConfig } from '../types';
 
 export interface RequestStore {
   /**

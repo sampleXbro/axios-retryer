@@ -2,7 +2,7 @@
 
 import type { AxiosError } from 'axios';
 
-import type { RetryStrategy } from './types';
+import type { RetryStrategy } from '../types';
 
 export class DefaultRetryStrategy implements RetryStrategy {
   shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {

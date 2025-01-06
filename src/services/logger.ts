@@ -7,9 +7,15 @@ export class RetryLogger {
         }
     }
 
-    error(message: string, error: Error) {
+    error(message: string, error: unknown) {
         if (this.enabled) {
             console.error(`[axios-retryer] ${message}`, error);
+        }
+    }
+
+    warn(message: string, data?: unknown) {
+        if (this.enabled) {
+            console.warn(`[axios-retryer] ${message}`, data ? JSON.stringify(data) : '');
         }
     }
 }

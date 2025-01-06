@@ -3,17 +3,17 @@
 import type { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 
-import { RetryLogger } from './services/logger';
-import type { RequestStore } from './RequestStore';
-import { InMemoryRequestStore } from './RequestStore';
+import { RetryLogger } from '../services/logger';
+import type { RequestStore } from '../store/RequestStore';
+import { InMemoryRequestStore } from '../store/RequestStore';
 import { DefaultRetryStrategy } from './RetryStrategy';
 import type {
   AxiosRetryerRequestConfig,
   RetryHooks,
   RetryManagerOptions,
-  RetryMode,
+  RetryMode, RetryPlugin,
   RetryStrategy
-} from './types';
+} from '../types';
 
 /**
  * Manages retries for Axios requests, including manual and automatic modes.
@@ -30,10 +30,12 @@ export class RetryManager {
   private readonly throwErrorOnCancelRequest: boolean;
   private readonly debug: boolean;
   private readonly logger: RetryLogger;
+  private readonly hooks?: RetryHooks;
   private retryStrategy: RetryStrategy;
   private requestStore: RequestStore;
-  private hooks?: RetryHooks;
   private activeRequests: Map<string, AbortController>;
+  private requestIndex: number;
+  private plugins: Map<string, RetryPlugin>;
 
   constructor(options: RetryManagerOptions) {
     this.mode = options.mode;
@@ -42,17 +44,19 @@ export class RetryManager {
     this.retryStrategy = options.retryStrategy ?? new DefaultRetryStrategy();
     this.requestStore = options.requestStore ?? new InMemoryRequestStore();
     this.hooks = options.hooks;
+    this.plugins = new Map();
     this.activeRequests = new Map();
     this.throwErrorOnCancelRequest = options.throwErrorOnCancelRequest ?? true;
     this.debug = options.debug ?? false;
     this.logger = new RetryLogger(this.debug);
+    this.requestIndex = 0;
 
     this.axiosInstance = options.axiosInstance || axios.create();
     this.setupInterceptors();
   }
 
   private generateRequestId(url?: string): string {
-    return `${url ?? 'unknown-url'}-${Date.now()}`;
+    return `${url ?? 'unknown-url'}-${++this.requestIndex}`;
   }
 
   private setupInterceptors(): void {
@@ -83,19 +87,17 @@ export class RetryManager {
       this.activeRequests.delete(requestId);
     }
 
-    if (!!config.__retryAttempt && this.hooks?.afterRetry) {
-      this.logger.log(`On after retry hook called: RequestID: ${requestId}`);
-      this.hooks.afterRetry(config, true);
+    if (!!config.__retryAttempt) {
+      this.triggerHook('afterRetry', config, true);
+
     }
 
     return response;
   };
 
   private handleNoRetriesAction = (config: AxiosRetryerRequestConfig): void => {
-    if (this.hooks?.onFailure) {
-      this.logger.log(`On retry failure hook called: RequestId: ${config.__requestId}`);
-      this.hooks.onFailure(config);
-    }
+    this.triggerHook('onFailure', config);
+
     this.requestStore.add(config);
 
     if (config.__requestId) {
@@ -104,23 +106,14 @@ export class RetryManager {
     if (this.activeRequests.size === 0) {
       const failedRequests = this.requestStore.getAll()?.length ?? 0;
 
-      if (this.hooks?.onAllRetriesCompleted) {
-        this.logger.log(
-          `On all retries completed hook called: RequestID: ${config.__requestId}; Failed requests: ${failedRequests}`,
-        );
-
-        this.hooks.onAllRetriesCompleted(failedRequests);
-      }
+      this.triggerHook('onAllRetriesCompleted', failedRequests);
     }
   };
 
   private scheduleRetry = <T>(config: AxiosRetryerRequestConfig, maxRetries: number): Promise<AxiosResponse<T>> => {
     const delay = this.retryStrategy.getDelay(Number(config.__retryAttempt), maxRetries);
-    if (this.hooks?.beforeRetry) {
-      this.logger.log(`Before retry hook called: RequestID: ${config.__requestId}`);
 
-      this.hooks.beforeRetry(config);
-    }
+    this.triggerHook('beforeRetry', config);
 
     return new Promise((resolve, reject) => {
       const delayTimeout = setTimeout(async () => {
@@ -164,10 +157,10 @@ export class RetryManager {
       return Promise.reject(error);
     }
 
-    if (config.__isRetrying && this.hooks?.afterRetry) {
+    if (config.__isRetrying) {
       this.logger.log(`After retry hook called: RequestID: ${config.__requestId}`);
 
-      this.hooks.afterRetry(config, false);
+      this.triggerHook('afterRetry', config, false);
     }
     config.__isRetrying = true;
 
@@ -191,13 +184,67 @@ export class RetryManager {
      * If we reached here, no more automatic retries.
      * */
     this.logger.log(
-      `No more automatic retries left: Last attempt: ${attempt}; Max retries: ${maxRetries}; RequestID: ${config.__requestId}`,
+      `No more automatic retries left: Max retries: ${maxRetries}; RequestID: ${config.__requestId}`,
     );
 
     this.handleNoRetriesAction(config);
 
     return Promise.reject(error);
   };
+
+  /**
+   * Trigger a specific plugin hook.
+   */
+  private triggerHook<K extends keyof RetryHooks>(
+      hookName: K,
+      ...args: Parameters<NonNullable<RetryHooks[K]>>
+  ): void {
+    // Trigger the hook if it's defined
+    const hook = this.hooks?.[hookName];
+    if (hook) {
+      (hook as (...args: Parameters<NonNullable<RetryHooks[K]>>) => void)(...args);
+
+      this.logger.log(`Call ${hookName} hook`)
+    }
+
+    // Iterate through plugins and trigger their hooks
+    this.plugins.forEach((plugin) => {
+      const pluginHook = plugin.hooks?.[hookName];
+      if (pluginHook) {
+        try {
+          (pluginHook as (...args: Parameters<NonNullable<RetryHooks[K]>>) => void)(...args);
+        } catch (error) {
+          this.logger.error(`Error in plugin "${plugin.name}" during "${hookName}" hook: ${error}`, error);
+        }
+      }
+    });
+  }
+
+  /**
+   * Register a plugin.
+   */
+  public use(plugin: RetryPlugin): void {
+    this.triggerHook('beforeRetry', {})
+    if (this.plugins.has(plugin.name)) {
+      throw new Error(`Plugin "${plugin.name}" is already registered.`);
+    }
+
+    this.plugins.set(plugin.name, plugin);
+    plugin.initialize(this);
+
+    this.logger.log(`Plugin registered: ${plugin.name}@${plugin.version}`);
+  }
+
+  /**
+   * List all registered plugin names.
+   */
+  public listPlugins(): string[] {
+    const pluginNames: string[] = [];
+
+    this.plugins.forEach(plugin => pluginNames.push(plugin.name));
+
+    return pluginNames;
+  }
 
   /**
    * Manually retry all failed requests currently stored.
