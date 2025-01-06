@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Option to provide a custom `axiosInstance` to integrate with existing Axios configurations.
 - TypeScript definitions and interfaces for easy integration in TypeScript projects.
 - Basic **unit tests** covering success, failure, cancellation, and manual retry scenarios.
+- Added basic plugins support and covered with tests
 
 ### Notes
 - This is the first beta release. Future changes, additions, and bug fixes will appear in subsequent versions.

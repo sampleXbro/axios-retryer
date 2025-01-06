@@ -1,5 +1,5 @@
 import { AxiosError } from 'axios';
-import {DefaultRetryStrategy} from "../src/core/RetryStrategy";
+import { DefaultRetryStrategy } from "../src/core/DefaultRetryStrategy";
 
 describe('DefaultRetryStrategy', () => {
     let strategy: DefaultRetryStrategy;

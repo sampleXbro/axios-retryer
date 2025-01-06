@@ -1,6 +1,5 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 
-import type { RequestStore } from '../store/RequestStore';
 import {RetryManager} from "../core/RetryManager";
 
 /**
@@ -97,6 +96,28 @@ export interface RetryStrategy {
    * @returns number
    * */
   getDelay(attempt: number, maxRetries: number): number;
+}
+
+/**
+ * By implementing this interface, we can write our own custom request store
+ * */
+export interface RequestStore {
+  /**
+   * Add a request config to the store
+   * */
+  add(request: AxiosRetryerRequestConfig): void;
+  /**
+   * Remove a request config to the store
+   * */
+  remove(request: AxiosRetryerRequestConfig): void;
+  /**
+   * Get all request configs from the store
+   * */
+  getAll(): AxiosRetryerRequestConfig[];
+  /**
+   * Clear request store
+   * */
+  clear(): void;
 }
 
 /**

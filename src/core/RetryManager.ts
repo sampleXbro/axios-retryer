@@ -4,11 +4,10 @@ import type { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConf
 import axios from 'axios';
 
 import { RetryLogger } from '../services/logger';
-import type { RequestStore } from '../store/RequestStore';
-import { InMemoryRequestStore } from '../store/RequestStore';
-import { DefaultRetryStrategy } from './RetryStrategy';
+import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
+import { DefaultRetryStrategy } from './DefaultRetryStrategy';
 import type {
-  AxiosRetryerRequestConfig,
+  AxiosRetryerRequestConfig, RequestStore,
   RetryHooks,
   RetryManagerOptions,
   RetryMode, RetryPlugin,
