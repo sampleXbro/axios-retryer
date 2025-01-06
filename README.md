@@ -409,6 +409,136 @@ const manager = new RetryManager({
   debug: true,
 });
 ```
+The `RetryManager` library supports plugins to extend its functionality dynamically. Plugins can hook into the retry lifecycle and perform custom logic such as logging, metrics tracking, request tagging, and more.
+
+---
+
+## Plugin Examples
+
+### **1. Logging Plugin**
+
+Logs retry events for debugging purposes.
+
+```typescript
+const LoggingPlugin = {
+  name: 'LoggingPlugin',
+  version: '1.0.0',
+  initialize(manager) {
+    console.log('LoggingPlugin initialized');
+  },
+  hooks: {
+    beforeRetry: (config) => {
+      console.log(`Retrying request to: ${config.url}`);
+    },
+    afterRetry: (config, success) => {
+      console.log(`Retry ${success ? 'succeeded' : 'failed'} for request: ${config.url}`);
+    },
+    onFailure: (config) => {
+      console.log(`Request permanently failed: ${config.url}`);
+    },
+  },
+};
+
+retryManager.use(LoggingPlugin);
+```
+
+---
+
+### **2. Metrics Plugin**
+
+Tracks the total number of retries and logs the count after retries are exhausted.
+
+```typescript
+const MetricsPlugin = {
+  name: 'MetricsPlugin',
+  version: '1.0.0',
+  initialize(manager) {
+    let retryCount = 0; // Use closure for state management
+
+    this.hooks = {
+      beforeRetry: () => {
+        retryCount++;
+      },
+      onFailure: () => {
+        console.log(`Total retries attempted: ${retryCount}`);
+      },
+    };
+  },
+};
+
+retryManager.use(MetricsPlugin);
+```
+
+### **3. Request Tagging Plugin**
+
+Adds a custom tag to the request headers for tracking retries.
+
+```typescript
+const RequestTaggingPlugin = {
+  name: 'RequestTaggingPlugin',
+  version: '1.0.0',
+  initialize(manager) {
+    this.hooks = {
+      beforeRetry: (config) => {
+        config.headers = config.headers || {};
+        config.headers['X-Retry-Tag'] = `Retry-Attempt-${config.__retryAttempt}`;
+        console.log(`Added retry tag: ${config.headers['X-Retry-Tag']}`);
+      },
+    };
+  },
+};
+
+retryManager.use(RequestTaggingPlugin);
+```
+
+---
+
+### **4. Analytics Plugin**
+
+Logs retry metrics to an external analytics service.
+
+```typescript
+const AnalyticsPlugin = {
+  name: 'AnalyticsPlugin',
+  version: '1.0.0',
+  initialize(manager) {
+    const analyticsService = {
+      logEvent: (event, data) => {
+        console.log(`Analytics event: ${event}`, data);
+      },
+    };
+
+    this.hooks = {
+      beforeRetry: (config) => {
+        analyticsService.logEvent('RetryScheduled', {
+          url: config.url,
+          attempt: config.__retryAttempt,
+        });
+      },
+      afterRetry: (config, success) => {
+        analyticsService.logEvent('RetryResult', {
+          url: config.url,
+          success,
+        });
+      },
+    };
+  },
+};
+
+retryManager.use(AnalyticsPlugin);
+```
+## Adding Plugins to Your `RetryManager`
+
+To use any of these plugins, register them with the `RetryManager`:
+
+```typescript
+const retryManager = new RetryManager({ mode: 'automatic', retries: 3 });
+
+// Register plugins
+retryManager.use(LoggingPlugin);
+retryManager.use(MetricsPlugin);
+retryManager.use(RequestTaggingPlugin);
+```
 
 ## Contributing
 
