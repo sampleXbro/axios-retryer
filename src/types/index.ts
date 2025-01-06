@@ -1,6 +1,7 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 
-import type { RequestStore } from './RequestStore';
+import type { RequestStore } from '../store/RequestStore';
+import {RetryManager} from "../core/RetryManager";
 
 /**
  *  manual - After each request failure, Axios throws the rejected promise
@@ -11,6 +12,9 @@ import type { RequestStore } from './RequestStore';
  * */
 export type RetryMode = 'manual' | 'automatic';
 
+/**
+ * RetryManager lifecycle hooks
+ * */
 export interface RetryHooks {
   /**
    * Called before every request retry
@@ -93,4 +97,27 @@ export interface RetryStrategy {
    * @returns number
    * */
   getDelay(attempt: number, maxRetries: number): number;
+}
+
+/**
+ * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use}
+ * */
+export interface RetryPlugin {
+  /**
+   * Plugin name. Should be unique
+   * */
+  name: string;
+  /**
+   * Plugin version (e.g. 1.0.0)
+   * */
+  version: string;
+  /**
+   * Called when the plugin is attached and initialized
+   * @param manager RetryManager instance
+   * */
+  initialize: (manager: RetryManager) => void;
+  /**
+   * RetryManager lifecycle hooks {@link RetryHooks}
+   * */
+  hooks?: RetryHooks;
 }

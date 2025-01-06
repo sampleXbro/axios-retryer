@@ -1,5 +1,5 @@
-export { RetryManager } from './RetryManager';
-export { InMemoryRequestStore, type RequestStore } from './RequestStore';
+export { RetryManager } from './core/RetryManager';
+export { InMemoryRequestStore, type RequestStore } from './store/RequestStore';
 export {
   type RetryMode,
   type RetryHooks,

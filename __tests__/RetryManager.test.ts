@@ -315,4 +315,108 @@ describe('RetryManager', () => {
         expect(stored).toHaveLength(1);
     });
 
+    test('should register a new plugin', () => {
+        const manager = new RetryManager({ mode: 'automatic' });
+        const plugin = { name: 'TestPlugin', version: '1.0.0', initialize: jest.fn() };
+
+        manager.use(plugin);
+
+        expect(manager.listPlugins()).toContain('TestPlugin');
+        expect(plugin.initialize).toHaveBeenCalledWith(manager);
+    });
+
+    test('should throw an error when registering a duplicate plugin', () => {
+        const manager = new RetryManager({ mode: 'automatic' });
+        const plugin = { name: 'DuplicatePlugin', version: '1.0.0', initialize: jest.fn() };
+
+        manager.use(plugin);
+        expect(() => manager.use(plugin)).toThrowError('Plugin "DuplicatePlugin" is already registered.');
+    });
+
+    test('should list all registered plugins', () => {
+        const manager = new RetryManager({ mode: 'automatic' });
+        const plugin1 = { name: 'PluginOne', version: '1.0.0', initialize: jest.fn() };
+        const plugin2 = { name: 'PluginTwo', version: '1.0.0', initialize: jest.fn() };
+
+        manager.use(plugin1);
+        manager.use(plugin2);
+
+        const plugins = manager.listPlugins();
+        expect(plugins).toEqual(['PluginOne', 'PluginTwo']);
+    });
+
+    test('should trigger hooks for all registered plugins', () => {
+        const manager = new RetryManager({ mode: 'automatic' });
+        const plugin1 = {
+            name: 'PluginOne',
+            version: '1.0.0',
+            initialize: jest.fn(),
+            hooks: {
+                beforeRetry: jest.fn(),
+            },
+        };
+        const plugin2 = {
+            name: 'PluginTwo',
+            version: '1.0.0',
+            initialize: jest.fn(),
+            hooks: {
+                beforeRetry: jest.fn(),
+            },
+        };
+
+        manager.use(plugin1);
+        manager.use(plugin2);
+
+        const config = { url: 'http://example.com' } as AxiosRetryerRequestConfig;
+        manager['triggerHook']('beforeRetry', config);
+
+        expect(plugin1.hooks?.beforeRetry).toHaveBeenCalledWith(config);
+        expect(plugin2.hooks?.beforeRetry).toHaveBeenCalledWith(config);
+    });
+
+    test('should handle errors in plugin hooks gracefully', () => {
+        const manager = new RetryManager({ mode: 'automatic' });
+        const faultyPlugin = {
+            name: 'FaultyPlugin',
+            version: '1.0.0',
+            initialize: jest.fn(),
+            hooks: {
+                beforeRetry: jest.fn(() => {
+                    throw new Error('Test error');
+                }),
+            },
+        };
+
+        manager.use(faultyPlugin);
+
+        const config = { url: 'http://example.com' } as AxiosRetryerRequestConfig;
+        expect(() => manager['triggerHook']('beforeRetry', config)).not.toThrow();
+    });
+
+    test('should cancel a specific request by ID', () => {
+        const manager = new RetryManager({ mode: 'automatic' });
+        const controller = new AbortController();
+        const requestId = 'test-request-1';
+
+        manager['activeRequests'].set(requestId, controller);
+        manager.cancelRequest(requestId);
+
+        expect(manager['activeRequests'].has(requestId)).toBe(false);
+        expect(controller.signal.aborted).toBe(true);
+    });
+
+    test('should cancel all active requests', () => {
+        const manager = new RetryManager({ mode: 'automatic' });
+        const controller1 = new AbortController();
+        const controller2 = new AbortController();
+
+        manager['activeRequests'].set('request-1', controller1);
+        manager['activeRequests'].set('request-2', controller2);
+
+        manager.cancelAllRequests();
+
+        expect(manager['activeRequests'].size).toBe(0);
+        expect(controller1.signal.aborted).toBe(true);
+        expect(controller2.signal.aborted).toBe(true);
+    });
 });
