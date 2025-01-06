@@ -224,7 +224,6 @@ export class RetryManager {
    * Register a plugin.
    */
   public use(plugin: RetryPlugin): void {
-    this.triggerHook('beforeRetry', {})
     if (this.plugins.has(plugin.name)) {
       throw new Error(`Plugin "${plugin.name}" is already registered.`);
     }
