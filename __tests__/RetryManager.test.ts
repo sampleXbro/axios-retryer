@@ -135,6 +135,37 @@ describe('RetryManager', () => {
         expect(storedRequestsAfter).toHaveLength(0);
     });
 
+    test('should throw an error after manual retry if requests are still failed', async () => {
+        // Initialize RetryManager in manual mode with 1 retry
+        const options = {
+            mode: 'manual' as const,
+            retries: 1,
+        };
+        const retryManager = new RetryManager(options);
+        const mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+
+        // First request fails
+        mock.onGet('/manual-retry').reply(500, 'Error');
+        await expect(retryManager.getAxiosInstance().get('/manual-retry')).rejects.toThrow();
+
+        // Verify that the failed request is stored
+        const requestStore = (retryManager as any).requestStore;
+        const storedRequestsBefore = requestStore.getAll();
+        expect(storedRequestsBefore).toHaveLength(1);
+
+        // Mock another failure for retry
+        mock.onGet('/manual-retry').reply(500, 'Error again');
+
+        // Attempt manual retry and expect it to throw
+        await expect(retryManager.retryFailedRequests()).rejects.toThrow(
+            /Request failed with status code 500/
+        );
+
+        // Verify that the failed request remains in the store
+        const storedRequestsAfter = requestStore.getAll();
+        expect(storedRequestsAfter).toHaveLength(1);
+    });
+
     test('should throw error on cancel if throwErrorOnCancelRequest is true', async () => {
         const options = {
             mode: 'automatic' as const,
