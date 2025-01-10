@@ -1,7 +1,6 @@
 //@ts-nocheck
 import axios from 'axios';
 import { RetryManager } from '../src/core/RetryManager';
-import { RETRY_MODES, RetryManagerOptions } from '../src/types';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 jest.mock('axios');

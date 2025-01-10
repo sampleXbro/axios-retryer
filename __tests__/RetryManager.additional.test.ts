@@ -123,7 +123,7 @@ describe('RetryManager Additional Tests', () => {
     test('should allow per-request mode override', async () => {
       mock.onGet('/override-mode').reply(500);
 
-      const response = await retryManager
+      await retryManager
         .getAxiosInstance()
         .get('/override-mode', {
           __requestMode: 'manual',

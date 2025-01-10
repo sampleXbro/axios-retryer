@@ -1,6 +1,6 @@
 // @ts-nocheck
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { InMemoryRequestStore, RetryManager, RetryManagerOptions } from '../src';
+import { InMemoryRequestStore, RetryManager } from '../src';
 import axios from 'axios';
 
 describe('RetryManager Edge Scenarios', function () {
