@@ -39,7 +39,7 @@ yarn add axios-retryer
 
 - **Automatic or Manual Retry Modes**: Choose 'automatic' to retry network/server errors automatically or 'manual' to queue failed requests for later retry.
 - **Configurable Retry Logic**: Provide your own RetryStrategy or use the built-in one.
-- **Request Store**: Failed requests can be stored (by default, in memory). Implement a custom store to persist requests elsewhere (e.g., local storage, database, queue).
+- **Request Store**: Failed requests are stored by default in an `InMemoryRequestStore`, which keeps requests in memory for quick access. Custom stores can be implemented for persisting requests in local storage, databases, or other mediums, depending on use cases.
 - **Hooks**: Tie into each stage (before retry, after retry, failure, all retries completed).
 - **Cancellation**: Cancel individual requests or all ongoing requests at once.
 - **TypeScript Support**: All types are included out of the box.
@@ -169,7 +169,7 @@ const retryManager = new RetryManager({
 
 Available options (`RetryManagerOptions`):
 
-- `mode` (`'automatic' | 'manual'`): Determines how retries occur.
+- `mode` (`'automatic' | 'manual'`): Determines how retries occur. Use `RETRY_MODES.AUTOMATIC` for automatic retries or `RETRY_MODES.MANUAL` for manual handling.
 - `retries?` (`number`, default: `3`): Max number of retry attempts for automatic mode.
 - `retryStrategy?` (`RetryStrategy`): Custom logic for deciding if and when to retry.
 - `requestStore?` (`RequestStore`): Where failed requests are stored; defaults to an in-memory store.
@@ -199,14 +199,42 @@ By default, `axios-retryer` uses a `DefaultRetryStrategy`:
 
 ```typescript
 export class DefaultRetryStrategy implements RetryStrategy {
+  getIsRetryable(error: AxiosError): boolean {
+    // Network errors
+    if (!error.response) {
+      return true;
+    }
+
+    // Specific HTTP status codes
+    const retryableStatuses = [408, 429, 500, 502, 503, 504];
+
+    // Method-based decisions
+    const retryableMethods = ['get', 'head', 'options', 'put'];
+    const method = error.config?.method?.toLowerCase();
+
+    if (
+            method &&
+            retryableMethods.indexOf(method) !== -1 &&
+            error.response.status &&
+            retryableStatuses.indexOf(error.response.status) !== -1
+    ) {
+      return true;
+    }
+
+    // Special case for POST - check idempotency header
+    if (method === 'post' && error.config?.headers?.['Idempotency-Key']) {
+      return true;
+    }
+
+    return false;
+  }
+
   shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
-    const isNetworkError = !error.response;
-    const isServerError = error.response && error.response.status >= 500 && error.response.status < 600;
-    return ((isNetworkError || isServerError) && attempt <= maxRetries) || false;
+    return this.getIsRetryable(error) && attempt <= maxRetries;
   }
 
   getDelay(attempt: number) {
-    return 1000 * 2 ** (attempt - 1); // Exponential backoff: 1s, 2s, 4s, ...
+    return 1000 * 2 ** (attempt - 1); // Exponential backoff logic: 1s, 2s, 4s, etc.
   }
 }
 ```
@@ -217,15 +245,19 @@ If you want custom logic, just implement the `RetryStrategy` interface:
 import { RetryStrategy } from 'axios-retryer';
 import type { AxiosError } from 'axios';
 
-class CustomRetryStrategy implements RetryStrategy {
-  shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
+export class CustomRetryStrategy implements RetryStrategy {
+  getIsRetryable(error: AxiosError): boolean {
     const isNetworkError = !error.response;
     const isServerError = error.response && error.response.status >= 500 && error.response.status < 600;
-    return (isNetworkError || isServerError) && attempt <= maxRetries;
+    return (isNetworkError || isServerError) || false;
+  }
+
+  shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
+    return (this.getIsRetryable(error) && attempt <= maxRetries);
   }
 
   getDelay(attempt: number) {
-    return 1000; //Linear backoff: 1s
+    return 1000; // Linear backoff: 1s
   }
 }
 
@@ -253,7 +285,10 @@ const retryManager = new RetryManager({
     onFailure: (config) => {
       console.log(`Request has finally failed: ${config.url}`);
     },
-    onAllRetriesCompleted: (failedRequests) => {
+    onRetryProcessStarted: () => {
+      console.log(`Retry process started`);
+    },
+    onRetryProcessFinished: (failedRequests) => {
       console.log(`All retries completed. ${failedRequests} request(s) failed in total.`);
     },
   },
@@ -299,9 +334,11 @@ const manager = new RetryManager({
 
 - `constructor(options: RetryManagerOptions)`
 - `.getAxiosInstance()`: Returns the underlying Axios instance.
-- `.retryFailedRequests<T>()`: Manually retry all stored (failed) requests.
+- `.retryFailedRequests()`: Manually retry all stored (failed) requests.
 - `.cancelRequest(requestId: string)`: Cancel a specific in-progress request.
 - `.cancelAllRequests()`: Cancel all in-progress requests.
+- `.use()`: Add a new plugin
+- `.listPlugins()`: List all attached plugin names
 
 ### RequestStore
 
@@ -312,6 +349,7 @@ const manager = new RetryManager({
 
 ### RetryStrategy
 
+- `.getIsRetryable(error: AxiosError): boolean`
 - `.shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean`
 - `.getDelay(attempt: number, maxRetries: number): number`
 
@@ -382,31 +420,6 @@ class LocalStorageRequestStore implements RequestStore {
 const manager = new RetryManager({
   mode: 'manual',
   requestStore: new LocalStorageRequestStore(),
-});
-```
-
-### 4. Custom Backoff Strategy
-
-```typescript
-import { RetryManager, RetryStrategy } from 'axios-retryer';
-import type { AxiosError } from 'axios';
-
-class CustomRetryStrategy implements RetryStrategy {
-  shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
-    const isNetworkError = !error.response;
-    const isServerError = error.response && error.response.status >= 500;
-    return (isNetworkError || isServerError) && attempt <= maxRetries;
-  }
-  getDelay(attempt: number): number {
-    return 1000; // Linear backoff: 1s
-  }
-}
-
-const manager = new RetryManager({
-  mode: 'automatic',
-  retries: 4,
-  retryStrategy: new CustomRetryStrategy(),
-  debug: true,
 });
 ```
 The `RetryManager` library supports plugins to extend its functionality dynamically. Plugins can hook into the retry lifecycle and perform custom logic such as logging, metrics tracking, request tagging, and more.

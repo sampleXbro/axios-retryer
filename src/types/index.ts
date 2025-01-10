@@ -1,6 +1,6 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 
-import {RetryManager} from "../core/RetryManager";
+import type { RetryManager } from '../core/RetryManager';
 
 /**
  *  manual - After each request failure, Axios throws the rejected promise
@@ -9,12 +9,32 @@ import {RetryManager} from "../core/RetryManager";
  *  automatic - Automatic retry according to retry strategy and number of retries.
  *  After retires are completed we can retry the failed requests manually using {@link RetryManager.retryFailedRequests}
  * */
-export type RetryMode = 'manual' | 'automatic';
+
+export const RETRY_MODES = {
+  AUTOMATIC: 'automatic',
+  MANUAL: 'manual',
+} as const;
+
+export type RetryMode = (typeof RETRY_MODES)[keyof typeof RETRY_MODES];
+
+export const AXIOS_RETRYER_REQUEST_PRIORITIES = {
+  CRITICAL: 3,
+  HIGH: 2,
+  MEDIUM: 1,
+  LOW: 0,
+} as const;
+
+export type AxiosRetryerRequestPriority =
+  (typeof AXIOS_RETRYER_REQUEST_PRIORITIES)[keyof typeof AXIOS_RETRYER_REQUEST_PRIORITIES];
 
 /**
  * RetryManager lifecycle hooks
  * */
 export interface RetryHooks {
+  /**
+   * Called on every retry process start
+   * */
+  onRetryProcessStarted?: () => void;
   /**
    * Called before every request retry
    * */
@@ -31,7 +51,7 @@ export interface RetryHooks {
    * Called on all retries of all requests are completed
    * @arg failedRequests number of failed requests
    * */
-  onAllRetriesCompleted?: (failedRequests: number) => void;
+  onRetryProcessFinished?: (metrics: AxiosRetryerMetrics) => void;
 }
 
 export interface RetryManagerOptions {
@@ -68,6 +88,8 @@ export interface RetryManagerOptions {
    * Enable/disable debug mode
    * */
   debug?: boolean;
+
+  maxConcurrentRequests?: number;
 }
 
 /**
@@ -80,12 +102,30 @@ export interface AxiosRetryerRequestConfig extends AxiosRequestConfig {
   __requestId?: string;
   __abortController?: AbortController;
   __isRetrying?: boolean;
+  __priority?: AxiosRetryerRequestPriority;
+  __timestamp?: number;
+}
+
+/**
+ * AxiosRetryer metrics
+ * */
+export interface AxiosRetryerMetrics {
+  totalRequests: number;
+  successfulRetries: number;
+  failedRetries: number;
+  completelyFailedRequests: number;
+  canceledRequests: number;
 }
 
 /**
  * By implementing this interface, we can write our own custom retry logic
  * */
 export interface RetryStrategy {
+  /**
+   * Add any logic here to determine that the error is retryable
+   * @returns boolean
+   * */
+  getIsRetryable(error: AxiosError): boolean;
   /**
    * Add any logic here to determine that the request should be retried.
    * @returns boolean

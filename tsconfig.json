@@ -2,10 +2,8 @@
   "compilerOptions": {
     "target": "ES5",
     "lib": [
-      "ES5",
+      "ESNext",
       "DOM",
-      "es2015.promise",
-      "es2015.collection"
     ],
     "module": "ESNext",
     "strict": true,

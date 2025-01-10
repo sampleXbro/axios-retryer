@@ -1,23 +1,29 @@
 'use strict';
 
-import type {AxiosRetryerRequestConfig, RequestStore} from '../types';
+import type { AxiosRetryerRequestConfig, RequestStore } from '../types';
 
 export class InMemoryRequestStore implements RequestStore {
-  private requests: AxiosRetryerRequestConfig[] = [];
+  private requests = new Set<AxiosRetryerRequestConfig>();
 
   add(request: AxiosRetryerRequestConfig): void {
-    this.requests.push(request);
+    this.requests.add(request);
   }
 
   remove(request: AxiosRetryerRequestConfig): void {
-    this.requests = this.requests.filter((r) => r !== request);
+    this.requests.delete(request);
   }
 
   getAll(): AxiosRetryerRequestConfig[] {
-    return this.requests;
+    const requests: AxiosRetryerRequestConfig[] = [];
+
+    this.requests.forEach((req) => {
+      requests.push(req);
+    });
+
+    return requests;
   }
 
   clear(): void {
-    this.requests = [];
+    this.requests.clear();
   }
 }
