@@ -27,6 +27,14 @@ export const AXIOS_RETRYER_REQUEST_PRIORITIES = {
 export type AxiosRetryerRequestPriority =
   (typeof AXIOS_RETRYER_REQUEST_PRIORITIES)[keyof typeof AXIOS_RETRYER_REQUEST_PRIORITIES];
 
+export const AXIOS_RETRYER_BACKOFF_TYPES = {
+  STATIC: 0,
+  LINEAR: 1,
+  EXPONENTIAL: 2,
+} as const;
+
+export type AxiosRetryerBackoffType = (typeof AXIOS_RETRYER_BACKOFF_TYPES)[keyof typeof AXIOS_RETRYER_BACKOFF_TYPES];
+
 /**
  * RetryManager lifecycle hooks
  * */
@@ -88,8 +96,37 @@ export interface RetryManagerOptions {
    * Enable/disable debug mode
    * */
   debug?: boolean;
+  /**
+   * Optional array defining HTTP status codes or ranges that should be considered retryable.
+   * Each element can be either:
+   * - A single numeric status code (e.g., `429`), or
+   * - A tuple representing an inclusive range ([start, end], e.g., `[500, 504]`).
+   *
+   * @example
+   * // This means status codes 400–428, 429, and 500–504 are retryable:
+   * retryableStatuses: [[400, 428], 429, [500, 504]]
+   */
+  retryableStatuses?: (number | [number, number])[];
 
-  maxConcurrentRequests?: number;
+  /**
+   * Optional array specifying HTTP methods that are eligible for retry.
+   * If omitted, a default set will be used.
+   *
+   * @example
+   * retryableMethods: ['GET', 'POST']
+   */
+  retryableMethods?: string[];
+
+  /**
+   * Defines how backoff delays are computed between retries. Possible values:
+   * - `'static'` (constant delay),
+   * - `'linear'` (delay grows linearly with each attempt),
+   * - `'exponential'` (delay doubles each time).
+   *
+   * @example
+   * backoffType: 'exponential' // 1s, 2s, 4s, 8s, ...
+   */
+  backoffType?: AxiosRetryerBackoffType;
 }
 
 /**

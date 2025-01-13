@@ -66,7 +66,9 @@ export class RetryManager {
     this.retries = options.retries ?? DEFAULT_CONFIG.RETRIES;
     this.throwErrorOnFailedRetries = options.throwErrorOnFailedRetries ?? DEFAULT_CONFIG.THROW_ON_FAILED_RETRIES;
     this.throwErrorOnCancelRequest = options.throwErrorOnCancelRequest ?? DEFAULT_CONFIG.THROW_ON_CANCEL;
-    this.retryStrategy = options.retryStrategy ?? new DefaultRetryStrategy();
+    this.retryStrategy =
+      options.retryStrategy ??
+      new DefaultRetryStrategy(options.retryableStatuses, options.retryableMethods, options.backoffType);
     this.requestStore = options.requestStore ?? new InMemoryRequestStore();
     this.hooks = options.hooks;
     this.activeRequests = new Map();

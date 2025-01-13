@@ -2,27 +2,30 @@
 
 import type { AxiosError } from 'axios';
 
-import type { RetryStrategy } from '../types';
+import { AXIOS_RETRYER_BACKOFF_TYPES, AxiosRetryerBackoffType, RetryStrategy } from '../types';
+import { getBackoffDelay, isInRangeOrExact } from '../utils';
 
 export class DefaultRetryStrategy implements RetryStrategy {
-  getIsRetryable(error: AxiosError): boolean {
+  constructor(
+    private readonly retryableStatuses: (number | [number, number])[] = [408, 429, 500, 502, 503, 504],
+    private readonly retryableMethods: string[] = ['get', 'head', 'options', 'put'],
+    private readonly backoffType: AxiosRetryerBackoffType = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
+  ) {}
+
+  public getIsRetryable(error: AxiosError): boolean {
     // Network errors
     if (!error.response) {
       return true;
     }
 
-    // Specific HTTP status codes
-    const retryableStatuses = [408, 429, 500, 502, 503, 504];
-
-    // Method-based decisions
-    const retryableMethods = ['get', 'head', 'options', 'put'];
     const method = error.config?.method?.toLowerCase();
+    const status = error.response.status;
 
     if (
       method &&
-      retryableMethods.indexOf(method) !== -1 &&
-      error.response.status &&
-      retryableStatuses.indexOf(error.response.status) !== -1
+      this.retryableMethods.indexOf(method) !== -1 &&
+      status &&
+      isInRangeOrExact(status, this.retryableStatuses)
     ) {
       return true;
     }
@@ -35,11 +38,11 @@ export class DefaultRetryStrategy implements RetryStrategy {
     return false;
   }
 
-  shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
+  public shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
     return this.getIsRetryable(error) && attempt <= maxRetries;
   }
 
-  getDelay(attempt: number) {
-    return 1000 * 2 ** (attempt - 1); // Exponential backoff: 1s, 2s, 4s, ...
+  public getDelay(attempt: number) {
+    return getBackoffDelay(attempt, this.backoffType);
   }
 }
