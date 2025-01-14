@@ -28,9 +28,9 @@ export type AxiosRetryerRequestPriority =
   (typeof AXIOS_RETRYER_REQUEST_PRIORITIES)[keyof typeof AXIOS_RETRYER_REQUEST_PRIORITIES];
 
 export const AXIOS_RETRYER_BACKOFF_TYPES = {
-  STATIC: 0,
-  LINEAR: 1,
-  EXPONENTIAL: 2,
+  STATIC: 'static',
+  LINEAR: 'linear',
+  EXPONENTIAL: 'exponential',
 } as const;
 
 export type AxiosRetryerBackoffType = (typeof AXIOS_RETRYER_BACKOFF_TYPES)[keyof typeof AXIOS_RETRYER_BACKOFF_TYPES];
