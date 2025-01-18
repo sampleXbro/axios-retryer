@@ -1,0 +1,3 @@
+- Add per-request and global timeouts to avoid indefinitely hanging requests
+- Add priorities for queued requests, allowing higher-priority requests to skip ahead
+- Add log levels (e.g., debug, info, warn, error) for better control over output verbosity

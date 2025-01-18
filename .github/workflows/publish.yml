@@ -1,0 +1,73 @@
+name: CI/CD Workflow
+
+on:
+  push:
+    branches:
+      - main # Trigger workflow on pushes to the main branch
+      - develop # Trigger workflow on pushes to the develop branch
+  pull_request:
+    branches:
+      - main
+      - develop
+  release:
+    types:
+      - published # Trigger only when a release is published
+
+jobs:
+  ci:
+    name: CI (Tests & Linting)
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'develop' # Only run on the develop branch
+
+    steps:
+      # 1. Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # 4. Run tests
+      - name: Run tests
+        run: npm test
+
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'main' && github.event_name == 'release' && github.event.action == 'published' # Only run on the main branch and after release is published
+
+    steps:
+      # 1. Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # 4. Run tests
+      - name: Run tests
+        run: npm test
+
+      # 5. Bump version and publish to npm
+      # temporarily removed - npm version patch -m "Bump version to %s [ci skip]"
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish
