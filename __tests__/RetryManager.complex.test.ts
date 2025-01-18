@@ -1,6 +1,6 @@
 //@ts-nocheck
 import axios from 'axios';
-import { RetryManager } from '../src/core/RetryManager';
+import { RetryManager } from '../src';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 jest.mock('axios');
@@ -21,7 +21,7 @@ describe('RetryManager - Complex retry scenarios', () => {
       mode: 'automatic',
       retries: 5,
     });
-    mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
   });
 
   afterEach(() => {
@@ -53,9 +53,9 @@ describe('RetryManager - Complex retry scenarios', () => {
 
       // Send 3 requests
       const requests = [
-        retryManager.getAxiosInstance().request({ url: '/fast1' }),
-        retryManager.getAxiosInstance().request({ url: '/slow' }),
-        retryManager.getAxiosInstance().request({ url: '/fast2' }),
+        retryManager.axiosInstance.request({ url: '/fast1' }),
+        retryManager.axiosInstance.request({ url: '/slow' }),
+        retryManager.axiosInstance.request({ url: '/fast2' }),
       ];
 
       // Fast forward time to trigger retries
@@ -88,9 +88,9 @@ describe('RetryManager - Complex retry scenarios', () => {
       });
 
       const requests = [
-        retryManager.getAxiosInstance().request({ url: '/fast1' }),
-        retryManager.getAxiosInstance().request({ url: '/slow' }),
-        retryManager.getAxiosInstance().request({ url: '/fast2' }),
+        retryManager.axiosInstance.request({ url: '/fast1' }),
+        retryManager.axiosInstance.request({ url: '/slow' }),
+        retryManager.axiosInstance.request({ url: '/fast2' }),
       ];
 
       for (let i = 0; i < 3; i++) {
@@ -121,9 +121,9 @@ describe('RetryManager - Complex retry scenarios', () => {
       });
 
       const requests = [
-        retryManager.getAxiosInstance().request({ url: '/fast1' }),
-        retryManager.getAxiosInstance().request({ url: '/slow' }),
-        retryManager.getAxiosInstance().request({ url: '/fast2' }),
+        retryManager.axiosInstance.request({ url: '/fast1' }),
+        retryManager.axiosInstance.request({ url: '/slow' }),
+        retryManager.axiosInstance.request({ url: '/fast2' }),
       ];
 
       // Advance time for all retries
@@ -155,9 +155,9 @@ describe('RetryManager - Complex retry scenarios', () => {
       });
 
       const requests = [
-        retryManager.getAxiosInstance().request({ url: '/fast1' }),
-        retryManager.getAxiosInstance().request({ url: '/slow' }),
-        retryManager.getAxiosInstance().request({ url: '/fast2' }),
+        retryManager.axiosInstance.request({ url: '/fast1' }),
+        retryManager.axiosInstance.request({ url: '/slow' }),
+        retryManager.axiosInstance.request({ url: '/fast2' }),
       ];
 
       // Advance time for all retries

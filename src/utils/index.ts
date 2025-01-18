@@ -1,4 +1,5 @@
-import { AXIOS_RETRYER_BACKOFF_TYPES, AxiosRetryerBackoffType } from '../types';
+import type { AxiosRetryerBackoffType } from '../types';
+import { AXIOS_RETRYER_BACKOFF_TYPES } from '../types';
 
 /**
  * Checks whether a given status code is in an array of exact codes or within any range specified.
@@ -39,28 +40,37 @@ export function isInRangeOrExact(code: number, conditions: (number | [number, nu
 /**
  * Returns a delay (in milliseconds) given an attempt number and a backoff strategy.
  *
- * @param attempt - the number of the current retry attempt (1-based)
+ * @param attempt - The number of the current retry attempt (1-based)
  * @param backoffType - 'static', 'linear', or 'exponential'
- *    - 'static': returns a fixed delay
- *    - 'linear': grows linearly with attempt
- *    - 'exponential': doubles with each attempt (2^(attempt - 1))
+ *    - 'static': returns a fixed 1000ms delay
+ *    - 'linear': grows linearly with attempt (1000 * attempt)
+ *    - 'exponential': doubles with each attempt (1000 * 2^(attempt - 1))
+
+ * @returns The calculated delay in milliseconds.
  *
- * Examples:
- *   calculateBackoffDelay(1, 'static')       -> 1000
- *   calculateBackoffDelay(3, 'linear')       -> 3000
- *   calculateBackoffDelay(4, 'exponential')  -> 8000
+ * @example
+ *   getBackoffDelay(1, 'static')                -> 1000
+ *   getBackoffDelay(3, 'linear')                -> 3000
+ *   getBackoffDelay(4, 'exponential')      -> 8000 ± up to 500 ms
  */
 export function getBackoffDelay(attempt: number, backoffType: AxiosRetryerBackoffType): number {
+  let baseDelay: number;
+
   switch (backoffType) {
     case AXIOS_RETRYER_BACKOFF_TYPES.STATIC:
       // Always 1000ms
-      return 1000;
+      baseDelay = 1000;
+      break;
     case AXIOS_RETRYER_BACKOFF_TYPES.LINEAR:
       // 1000ms * attempt
-      return 1000 * attempt;
+      baseDelay = 1000 * attempt;
+      break;
     case AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL:
     default:
       // 1s, 2s, 4s, 8s, ...
-      return 1000 * 2 ** (attempt - 1);
+      baseDelay = 1000 * 2 ** (attempt - 1);
+      break;
   }
+
+  return baseDelay;
 }

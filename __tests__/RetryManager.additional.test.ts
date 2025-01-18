@@ -15,7 +15,7 @@ describe('RetryManager Additional Tests', () => {
       throwErrorOnFailedRetries: true,
     };
     retryManager = new RetryManager(options);
-    mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
   });
 
   afterEach(() => {
@@ -31,7 +31,7 @@ describe('RetryManager Additional Tests', () => {
         retries: 0, // No retries
         axiosInstance: axios.create({ baseURL: 'http://localhost' }),
       });
-      mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+      mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
       // Mock the responses to always fail
       mock.onGet('/fail1').reply(500, 'Error 1');
@@ -41,15 +41,15 @@ describe('RetryManager Additional Tests', () => {
       // Make concurrent requests
       await Promise.all([
         retryManager
-          .getAxiosInstance()
+          .axiosInstance
           .get('/fail1')
           .catch(() => {}),
         retryManager
-          .getAxiosInstance()
+          .axiosInstance
           .get('/fail2')
           .catch(() => {}),
         retryManager
-          .getAxiosInstance()
+          .axiosInstance
           .get('/fail3')
           .catch(() => {}),
       ]);
@@ -86,13 +86,13 @@ describe('RetryManager Additional Tests', () => {
         axiosInstance: axios.create({ baseURL: 'http://localhost' }),
         retryStrategy: customStrategy,
       });
-      mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+      mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
       const startTime = Date.now();
       mock.onGet('/custom-delay').reply(500, 'Error 1');
 
       await retryManager
-        .getAxiosInstance()
+        .axiosInstance
         .get('/custom-delay')
         .catch(() => {});
       const elapsedTime = Date.now() - startTime;
@@ -111,7 +111,7 @@ describe('RetryManager Additional Tests', () => {
       });
 
       await retryManager
-        .getAxiosInstance()
+        .axiosInstance
         .get('/override-config', {
           __requestRetries: 1, // Override default of 2 retries
         })
@@ -124,7 +124,7 @@ describe('RetryManager Additional Tests', () => {
       mock.onGet('/override-mode').reply(500);
 
       await retryManager
-        .getAxiosInstance()
+        .axiosInstance
         .get('/override-mode', {
           __requestMode: 'manual',
         })
@@ -140,7 +140,7 @@ describe('RetryManager Additional Tests', () => {
       mock.onGet('/network-error').networkError();
 
       await retryManager
-        .getAxiosInstance()
+        .axiosInstance
         .get('/network-error')
         .catch((error) => {
           expect(error.message).toContain('Network Error');
@@ -155,7 +155,7 @@ describe('RetryManager Additional Tests', () => {
       mock.onGet('/timeout').timeout();
 
       await retryManager
-        .getAxiosInstance()
+        .axiosInstance
         .get('/timeout', timeoutConfig)
         .catch((error) => {
           expect(error.code).toBe('ECONNABORTED');
@@ -168,7 +168,7 @@ describe('RetryManager Additional Tests', () => {
       test.each(retryableStatuses)('should retry on %i status code', async (status) => {
         mock.onGet('/status').reply(status);
 
-        await expect(retryManager.getAxiosInstance().get('/status')).rejects.toThrow();
+        await expect(retryManager.axiosInstance.get('/status')).rejects.toThrow();
 
         expect(mock.history.get.length).toBe(3);
       });
@@ -176,7 +176,7 @@ describe('RetryManager Additional Tests', () => {
       test('should not retry on 400 Bad Request', async () => {
         mock.onGet('/bad-request').reply(400);
 
-        await expect(retryManager.getAxiosInstance().get('/bad-request')).rejects.toThrow();
+        await expect(retryManager.axiosInstance.get('/bad-request')).rejects.toThrow();
 
         expect(mock.history.get.length).toBe(1); // No retries
       });
@@ -186,7 +186,7 @@ describe('RetryManager Additional Tests', () => {
       test.each(['get', 'head', 'options', 'put'])('should retry failed %s requests', async (method) => {
         mock.onAny('/method').reply(500);
 
-        await expect(retryManager.getAxiosInstance()[method]('/method')).rejects.toThrow();
+        await expect(retryManager.axiosInstance[method]('/method')).rejects.toThrow();
 
         expect(mock.history[method].length).toBe(3);
       });
@@ -195,14 +195,14 @@ describe('RetryManager Additional Tests', () => {
         mock.onPost('/idempotent').reply(500);
 
         // Without Idempotency-Key
-        await expect(retryManager.getAxiosInstance().post('/idempotent')).rejects.toThrow();
+        await expect(retryManager.axiosInstance.post('/idempotent')).rejects.toThrow();
         expect(mock.history.post.length).toBe(1); // No retry
 
         mock.resetHistory();
 
         // With Idempotency-Key
         await expect(
-          retryManager.getAxiosInstance().post('/idempotent', null, {
+          retryManager.axiosInstance.post('/idempotent', null, {
             headers: { 'Idempotency-Key': 'abc123' },
           }),
         ).rejects.toThrow();
@@ -212,7 +212,7 @@ describe('RetryManager Additional Tests', () => {
       test('should not retry PATCH requests', async () => {
         mock.onPatch('/no-retry').reply(500);
 
-        await expect(retryManager.getAxiosInstance().patch('/no-retry')).rejects.toThrow();
+        await expect(retryManager.axiosInstance.patch('/no-retry')).rejects.toThrow();
 
         expect(mock.history.patch.length).toBe(1); // No retries
       });
@@ -238,7 +238,7 @@ describe('RetryManager Additional Tests', () => {
         retries: 1, // No retries
         axiosInstance: axios.create({ baseURL: 'http://localhost' }),
       });
-      mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+      mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
       let retryHeader = null;
 
@@ -260,7 +260,7 @@ describe('RetryManager Additional Tests', () => {
       retryManager.use(headerPlugin);
       mock.onGet('/plugin-headers').reply(500, 'Error');
 
-      await expect(retryManager.getAxiosInstance().get('/plugin-headers')).rejects.toThrow();
+      await expect(retryManager.axiosInstance.get('/plugin-headers')).rejects.toThrow();
 
       expect(retryHeader).toEqual('1');
     });
@@ -270,7 +270,7 @@ describe('RetryManager Additional Tests', () => {
     test('should clean up resources after request completion', async () => {
       mock.onGet('/cleanup').reply(200);
 
-      await retryManager.getAxiosInstance().get('/cleanup');
+      await retryManager.axiosInstance.get('/cleanup');
 
       expect(retryManager['activeRequests'].size).toBe(0);
       const requestStore = retryManager['requestStore'];
@@ -282,9 +282,9 @@ describe('RetryManager Additional Tests', () => {
       mock.onGet('/cleanup2').reply(500);
 
       await Promise.all([
-        retryManager.getAxiosInstance().get('/cleanup1'),
+        retryManager.axiosInstance.get('/cleanup1'),
         retryManager
-          .getAxiosInstance()
+          .axiosInstance
           .get('/cleanup2')
           .catch(() => {}),
       ]);

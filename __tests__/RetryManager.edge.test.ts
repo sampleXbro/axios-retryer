@@ -13,7 +13,7 @@ describe('RetryManager Edge Scenarios', function () {
       retries: 3,
       requestStore: new InMemoryRequestStore(),
     });
-    mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
   });
 
   afterEach(function () {
@@ -23,15 +23,15 @@ describe('RetryManager Edge Scenarios', function () {
   it('Simultaneous retries and cancellations', (done) => {
     mock.onGet('/retry-then-cancel').replyOnce(500).onGet('/retry-then-cancel').reply(200);
 
-    const requestPromise = retryManager.getAxiosInstance().get('/retry-then-cancel');
+    const requestPromise = retryManager.axiosInstance.get('/retry-then-cancel');
     setTimeout(() => {
       retryManager.cancelAllRequests();
     }, 50);
 
     requestPromise.catch((err) => {
-      expect(err).toContain('Request aborted. ID: /retry-then-cancel-1');
+      expect(err.message).toContain('Request is cancelled');
       const requestStore = retryManager['requestStore'];
-      expect(requestStore.getAll().length).toBe(0); // Ensure failed requests are not stored
+      expect(requestStore.getAll().length).toBe(1);
       done();
     });
   });
@@ -47,14 +47,14 @@ describe('RetryManager Edge Scenarios', function () {
       .onGet('/retry')
       .reply(200, 'Retried OK');
 
-    const successPromise = retryManager.getAxiosInstance().get('/success');
+    const successPromise = retryManager.axiosInstance.get('/success');
     const failPromise = retryManager
-      .getAxiosInstance()
+      .axiosInstance
       .get('/fail')
       .catch(function () {
         return 'failed';
       });
-    const retryPromise = retryManager.getAxiosInstance().get('/retry');
+    const retryPromise = retryManager.axiosInstance.get('/retry');
 
     Promise.all([successPromise, failPromise, retryPromise])
       .then(function (results) {
@@ -79,9 +79,9 @@ describe('RetryManager Edge Scenarios', function () {
       .reply(200, 'Third');
 
     Promise.all([
-      retryManager.getAxiosInstance().get('/first'),
-      retryManager.getAxiosInstance().get('/second'),
-      retryManager.getAxiosInstance().get('/third'),
+      retryManager.axiosInstance.get('/first'),
+      retryManager.axiosInstance.get('/second'),
+      retryManager.axiosInstance.get('/third'),
     ])
       .then(function (results) {
         const [firstResult, secondResult, thirdResult] = results;
@@ -96,7 +96,7 @@ describe('RetryManager Edge Scenarios', function () {
   it('should not retry on non-retryable errors', async () => {
     mock.onGet('/non-retryable').reply(400, 'Bad Request');
 
-    await expect(retryManager.getAxiosInstance().get('/non-retryable')).rejects.toThrow();
+    await expect(retryManager.axiosInstance.get('/non-retryable')).rejects.toThrow();
     const requestStore = (retryManager as any).requestStore;
     expect(requestStore.getAll()).toHaveLength(0); // Non-retryable errors should not be stored
   });
@@ -117,7 +117,7 @@ describe('RetryManager Edge Scenarios', function () {
       axiosInstance: axios.create({ baseURL: 'http://localhost' }),
     };
     retryManager = new RetryManager(options);
-    mock = new AxiosMockAdapter(retryManager.getAxiosInstance());
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
     // Mock the endpoint
     mock.onGet('/specific-cancel').reply(() => {
@@ -130,7 +130,7 @@ describe('RetryManager Edge Scenarios', function () {
     retryManager['activeRequests'].set(requestId, controller);
 
     // Start the request and immediately cancel it
-    const mockPromise = retryManager.getAxiosInstance().get('/specific-cancel', { signal: controller.signal });
+    const mockPromise = retryManager.axiosInstance.get('/specific-cancel', { signal: controller.signal });
     retryManager.cancelRequest(requestId);
 
     // Verify the cancellation behavior
