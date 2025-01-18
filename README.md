@@ -1,25 +1,30 @@
 # axios-retryer
 
-A powerful library that enables automatic or manual retries for Axios requests with rich configuration, hooks, and custom strategies. Perfect for handling intermittent network issues or flaky endpoints without rewriting all your Axios logic.
+A powerful library that enables automatic **or** manual retries for Axios requests with rich configuration, concurrency controls, priority-based queuing, hooks, and custom strategies. Perfect for handling intermittent network issues or flaky endpoints without rewriting all your Axios logic.
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Features](#features)
-- [Quick Example](#quick-example)
-- [Usage](#usage)
-    - [Creating a RetryManager](#creating-a-retrymanager)
-    - [Automatic vs. Manual Mode](#automatic-vs-manual-mode)
-    - [Retry Strategies](#retry-strategies)
-    - [Hooks (Lifecycle Events)](#hooks-lifecycle-events)
-    - [Canceling Requests](#canceling-requests)
-    - [Debug Mode](#debug-mode)
-- [API Reference](#api-reference)
-- [Examples](#examples)
-    - [Automatic Retries with Default Strategy](#1-automatic-retries-with-default-strategy)
-    - [Manual Mode: Queue & Retry Later](#2-manual-mode-queue--retry-later)
-- [Contributing](#contributing)
-- [License](#license)
+1. [Installation](#installation)
+2. [Features](#features)
+3. [Comparison with Other Libraries](#comparison-with-other-libraries)
+4. [Sequence Diagram](#sequence-diagram)
+5. [Quick Example](#quick-example)
+6. [Usage](#usage)
+  1. [Creating a RetryManager](#creating-a-retrymanager)
+  2. [Automatic vs. Manual Mode](#automatic-vs-manual-mode)
+  3. [Retry Strategies](#retry-strategies)
+  4. [Hooks (Lifecycle Events)](#hooks-lifecycle-events)
+  5. [Canceling Requests](#canceling-requests)
+  6. [Concurrency & Priority](#concurrency--priority)
+  7. [Plugins](#plugins)
+  8. [Debug Mode](#debug-mode)
+7. [API Reference](#api-reference)
+8. [Examples](#examples)
+  1. [Automatic Retries with Default Strategy](#1-automatic-retries-with-default-strategy)
+  2. [Manual Mode: Queue & Retry Later](#2-manual-mode-queue--retry-later)
+  3. [Priority & Concurrency Example](#3-priority--concurrency-example)
+9. [Contributing](#contributing)
+10. [License](#license)
 
 ## Installation
 
@@ -27,7 +32,7 @@ A powerful library that enables automatic or manual retries for Axios requests w
 npm install axios-retryer
 ```
 
-or
+Or:
 
 ```bash
 yarn add axios-retryer
@@ -35,28 +40,30 @@ yarn add axios-retryer
 
 ## Features
 
-- **Automatic or/and Manual Retry Modes**: Choose 'automatic' to retry network/server errors automatically or 'manual' to queue failed requests for later retry.
-- **Configurable Retry Logic**: Provide your own RetryStrategy or use the built-in one.
-- **Request Store**: Failed requests are stored in an `InMemoryRequestStore`, which keeps requests in memory for quick access and retries.
-- **Hooks**: Tie into each stage (before retry, after retry, failure, all retries completed).
-- **Cancellation**: Cancel individual requests or all ongoing requests at once.
+- **Automatic or Manual Retry Modes**: Configure 'automatic' to retry network/server errors based on a retry strategy, or 'manual' to queue failed requests and retry them later.
+- **Advanced Concurrency & Priority**: Limit concurrent requests with maxConcurrentRequests and manage them via a priority-based queue. Higher-priority requests can block lower-priority ones using blockingQueueThreshold.
+- **Configurable Retry Logic**: Provide your own RetryStrategy (e.g., exponential or custom backoff) or use the built-in defaults.
+- **Request Store**: Failed requests are stored in an in-memory RequestStore by default (or use your own). This makes it easy to retry manually.
+- **Hooks**: Tie into each stage (before retry, after retry, failure, all retries completed) for fine-grained control.
+- **Plugin System**: Extend or modify behavior via simple plugin objects that can implement any of the lifecycle hooks.
+- **Cancellation**: Cancel individual requests or all ongoing requests at once, leveraging AbortController.
+- **Metrics**: Track total requests, failed retries, successful retries, cancellations, etc.
+- **Debug Logging**: Optionally enable debug mode for detailed logs about the retry process.
 - **TypeScript Support**: All types are included out of the box.
 
-### Why Choose `axios-retryer`?
+## Comparison with Other Libraries
 
-When compared to alternatives, `axios-retryer` stands out with its advanced features and flexibility:
-
-| Feature                      | `axios-retryer`                                                                      | `axios-retry`                                              | `retry-axios`                                               |
-|-----------------------------|--------------------------------------------------------------------------------------|------------------------------------------------------------|-------------------------------------------------------------|
-| **Automatic vs. Manual**    | ✅ Supports both (configurable via `mode` + manual calls like `retryFailedRequests()`) | ✅ Automatic only                                          | ✅ Automatic only                                           |
-| **Request Cancellation**    | ✅ Full support for aborting in-flight requests via `AbortController`                 | ❌ Limited / no direct support                             | ❌ Limited / no direct support                              |
-| **Custom Plugins**          | ✅ Extend functionality via custom plugins (e.g., hooks, version checks)              | ❌ Not supported                                           | ❌ Not supported                                            |
-| **Request Store Options**   | ✅ In-memory request stores                                                           | ❌ No concept of storing failed requests                   | ❌ No concept of storing failed requests                    |
-| **Hook-Based Control**      | ✅ Detailed lifecycle hooks (`beforeRetry`, `afterRetry`, `onFailure`, etc.)          | ❌ Basic or no hooks                                       | ❌ Basic or no hooks                                        |
-| **Metrics**                 | ✅ Built-in metrics (total requests, successful retries, failed retries, etc.)        | ❌ No built-in metrics                                     | ❌ No built-in metrics                                      |
-| **TypeScript Support**      | ✅ Fully typed, leverages generics in config and interceptors                         | ✅ Partial / basic typings                                 | ✅ Partial / basic typings                                  |
-| **Debugging / Logging**     | ✅ Integrated debug logs (via internal `RetryLogger`)                                 | ❌ Minimal logging                                         | ❌ Minimal logging                                          |
-| **Backoff / Delay Strategy**| ✅ Pluggable via `RetryStrategy` (e.g., exponential, linear, custom)                  | ✅ Built-in exponential backoff (configurable)            | ✅ Built-in exponential backoff (via `RAXOptions`)          |
+| Feature | axios-retryer | axios-retry | retry-axios |
+|---------|--------------|-------------|-------------|
+| Automatic & Manual Modes | Yes. Either auto-retry or manually queue & retry (retryFailedRequests()). | Automatic only. | Automatic only. |
+| Concurrency Control | Yes. maxConcurrentRequests + a priority-based queue. | No concurrency management. | No concurrency management. |
+| Priority-Based Request Handling | Yes. (CRITICAL, HIGHEST, HIGH, MEDIUM, LOW) with a blockingQueueThreshold. | Not supported. | Not supported. |
+| Customizable Retry Strategy | Yes. Provide a custom class implementing RetryStrategy. | Some built-in config. | Some built-in config. |
+| Request Store / Manual Retry | Yes. Store failed requests in memory (or custom) and retry later. | No. | No. |
+| Hooks & Plugin System | Yes. Lifecycle hooks (beforeRetry, afterRetry, etc.) plus plugin architecture. | Limited or no hooks. | Limited or no hooks. |
+| Cancellation | Yes. Use cancelRequest/cancelAllRequests, internally uses AbortController. | Minimal or no direct support. | Minimal or no direct support. |
+| Detailed Metrics & Debugging | Yes. Built-in metrics and optional debug logging. | Basic logging. | Basic logging. |
+| TypeScript Support | Yes. Strong typings for hooks, config, strategies, etc. | Basic typings. | Basic typings. |
 
 ## Sequence Diagram
 
@@ -72,8 +79,9 @@ sequenceDiagram
     RetryManager->>RetryManager: Generate Request ID & Setup AbortController
     RetryManager->>Axios: Send request
     Axios-->>RetryManager: Response (Success/Failure)
+
     alt Request Fails
-        RetryManager->>RetryStrategy: ShouldRetry? (Error, Attempt, MaxRetries)
+        RetryManager->>RetryStrategy: shouldRetry? (Error, Attempt, MaxRetries)
         RetryStrategy-->>RetryManager: Yes/No
         alt Retry Allowed (Automatic Mode)
             RetryManager->>RetryManager: Schedule Retry
@@ -86,19 +94,19 @@ sequenceDiagram
         RetryManager->>RequestStore: Clear Request (if previously stored)
         RetryManager->>User: Notify Success
     end
-    RetryManager->>Hooks: Trigger Lifecycle Hooks (e.g., BeforeRetry, AfterRetry)
+    RetryManager->>Hooks: Trigger Lifecycle Hooks (e.g., beforeRetry, afterRetry)
 
     %% Manual Retry Logic
     User->>RetryManager: Trigger Manual Retry
-    RetryManager->>RequestStore: Fetch Stored Failed Requests
+    RetryManager->>RequestStore: Fetch stored failed requests
     loop For each failed request
         RetryManager->>Axios: Retry request
         Axios-->>RetryManager: Response (Success/Failure)
         alt Request Succeeds
-            RetryManager->>RequestStore: Remove from Failed Requests
+            RetryManager->>RequestStore: Remove from failed requests
             RetryManager->>User: Notify Success
         else Request Fails Again
-            RetryManager->>RetryStrategy: ShouldRetry?
+            RetryManager->>RetryStrategy: shouldRetry?
             RetryStrategy-->>RetryManager: Yes/No
             alt Retry Allowed
                 RetryManager->>RetryManager: Schedule Retry
@@ -109,28 +117,26 @@ sequenceDiagram
     end
 
     %% Cancellation Logic
-    User->>RetryManager: Cancel Request by ID
-    RetryManager->>RetryManager: Find AbortController for Request ID
+    User->>RetryManager: cancelRequest(requestId)
+    RetryManager->>RetryManager: Find AbortController
     alt Controller Found
-        RetryManager->>RetryManager: Abort Request
-        RetryManager->>RequestStore: Remove Request (if stored)
-        RetryManager->>User: Notify Cancellation Success
+        RetryManager->>RetryManager: Abort request
+        RetryManager->>RequestStore: Remove request if stored
+        RetryManager->>User: Notify cancellation success
     else Controller Not Found
-        RetryManager->>User: Notify Failure (Request Already Completed or Not Found)
+        RetryManager->>User: Notify not found or completed
     end
 
     %% Cancel All Requests
-    User->>RetryManager: Cancel All Requests
-    loop For each Active Request
-        RetryManager->>RetryManager: Abort Request
-        RetryManager->>RequestStore: Remove Requests (if stored)
+    User->>RetryManager: cancelAllRequests()
+    loop For each active request
+        RetryManager->>RetryManager: Abort request
+        RetryManager->>RequestStore: Remove from store if stored
     end
-    RetryManager->>User: Notify All Requests Cancelled
+    RetryManager->>User: Notify all requests cancelled
 ```
 
 ## Quick Example
-
-Here is a short snippet showing how to instantiate the `RetryManager` for automatic retries:
 
 ```typescript
 import { RetryManager } from 'axios-retryer';
@@ -138,11 +144,10 @@ import { RetryManager } from 'axios-retryer';
 const manager = new RetryManager({
   mode: 'automatic',
   retries: 3,
-  throwErrorOnFailedRetries: true, // (default=true) Throw error if all retries fail
+  debug: false, // Enable if you want verbose logs
 });
 
-// Use the internal Axios instance to make requests
-manager.getAxiosInstance().get('https://jsonplaceholder.typicode.com/posts')
+manager.axiosInstance.get('https://jsonplaceholder.typicode.com/posts')
   .then((response) => {
     console.log('Received data:', response.data);
   })
@@ -156,120 +161,96 @@ manager.getAxiosInstance().get('https://jsonplaceholder.typicode.com/posts')
 ### Creating a RetryManager
 
 ```typescript
-import { RetryManager } from 'axios-retryer';
+import { RetryManager, RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';
 
 const retryManager = new RetryManager({
-  mode: 'automatic',
+  mode: RETRY_MODES.AUTOMATIC,
   retries: 2,
-  throwErrorOnFailedRetries: true, // (default=true)
-  throwErrorOnCancelRequest: true, // (default=true)
-  // You can also pass hooks, custom strategy, request store, or debug flag
+  throwErrorOnFailedRetries: true, // default
+  throwErrorOnCancelRequest: true, // default
+  debug: false,
+
+  // Concurrency & Queue
+  maxConcurrentRequests: 5,
+  queueDelay: 100,
+  blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
+
+  // Retry strategy config
+  retryableStatuses: [408, [500, 599]],
+  retryableMethods: ['get', 'head', 'options'],
+  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
 });
 ```
 
-Available options (`RetryManagerOptions`):
+#### Important Options
+- `mode ('automatic' | 'manual')`: How the manager handles retries by default.
+- `retries (number)`: Maximum number of auto-retries.
+- `maxConcurrentRequests (number)`: Limits concurrent requests; others are queued.
+- `queueDelay (number)`: A small delay before dequeuing requests (in ms).
+- `blockingQueueThreshold (AxiosRetryerRequestPriority)`: Priority threshold above which lower-priority requests are blocked.
+- `throwErrorOnFailedRetries`: Whether to throw an error after all retries fail (default true).
+- `throwErrorOnCancelRequest`: Whether to throw an error if a request is canceled (default true).
+- `debug`: Enable to get verbose logs.
+- `retryableStatuses`, `retryableMethods`, `backoffType`: Configure how/when requests should retry.
 
-- `mode` (`'automatic' | 'manual'`): Determines how retries occur. Use `RETRY_MODES.AUTOMATIC` for automatic retries or `RETRY_MODES.MANUAL` for manual handling.
-- `retries?` (`number`, default: `3`): Max number of retry attempts for automatic mode.
-- `retryStrategy?` (`RetryStrategy`): Custom logic for deciding if and when to retry.
-- `requestStore?` (`RequestStore`): Where failed requests are stored; defaults to an in-memory store.
-- `hooks?` (`RetryHooks`): Lifecycle hooks (e.g., `beforeRetry`, `afterRetry`, `onFailure`, `onAllRetriesCompleted`).
-- `axiosInstance?` (`AxiosInstance`): Provide a pre-configured Axios instance; otherwise, a new one is created.
-- `throwErrorOnFailedRetries?` (`boolean`, default: `true`): Whether to throw an error after all retries fail.
-- `throwErrorOnCancelRequest?` (`boolean`, default: `true`): Whether to throw if a request is canceled.
-- `debug?` (`boolean`, default: `false`): If true, logs debug messages about the retry process.
+You can pass your own AxiosInstance if you want to share interceptors or custom config:
+
+```typescript
+import axios from 'axios';
+
+const customAxios = axios.create({ baseURL: 'https://api.example.com' });
+
+const manager = new RetryManager({
+  mode: 'automatic',
+  axiosInstance: customAxios,
+  // ...
+});
+```
 
 ### Automatic vs. Manual Mode
 
-#### Automatic (`mode: 'automatic'`):
+#### Automatic Mode
+- Retries happen automatically based on the retryStrategy logic (default or custom).
+- Once retries are exhausted for a request, it is stored in the RequestStore.
+- You can still manually retry them later if you want (e.g., `manager.retryFailedRequests()`).
 
-- Requests are retried automatically according to your chosen `retryStrategy` and `retries` count.
-- Once retries are exhausted, the request is stored in the `requestStore`.
-- You can then manually retry them later with `.retryFailedRequests()` if desired.
-
-#### Manual (`mode: 'manual'`):
-
-- Requests are not retried automatically.
-- Once a request fails, it’s stored in the `requestStore`.
-- You can later call `.retryFailedRequests()` to attempt them again in bulk.
+#### Manual Mode
+- Each request is attempted only once initially.
+- Any failed request is stored in the RequestStore.
+- You can call `manager.retryFailedRequests()` to bulk-retry them at a later time (useful for offline scenarios or user-driven retrigger).
 
 ### Retry Strategies
 
-By default, `axios-retryer` uses a `DefaultRetryStrategy`:
+By default, axios-retryer uses a DefaultRetryStrategy that treats network errors, 408, 429, and 5xx status codes as retryable, plus an exponential backoff.
+
+You can implement the RetryStrategy interface to customize when or how to retry:
 
 ```typescript
-export class DefaultRetryStrategy implements RetryStrategy {
-  constructor(
-          private readonly retryableStatuses: (number | [number, number])[] = [408, 429, 500, 502, 503, 504],
-          private readonly retryableMethods: string[] = ['get', 'head', 'options', 'put'],
-          private readonly backoffType: AxiosRetryerBackoffType = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
-  ) {}
-
-  public getIsRetryable(error: AxiosError): boolean {
-    // Network errors
-    if (!error.response) {
-      return true;
-    }
-
-    const method = error.config?.method?.toLowerCase();
-    const status = error.response.status;
-
-    if (
-            method &&
-            this.retryableMethods.indexOf(method) !== -1 &&
-            status &&
-            isInRangeOrExact(status, this.retryableStatuses)
-    ) {
-      return true;
-    }
-
-    // Special case for POST - check idempotency header
-    if (method === 'post' && error.config?.headers?.['Idempotency-Key']) {
-      return true;
-    }
-
-    return false;
-  }
-
-  public shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
-    return this.getIsRetryable(error) && attempt <= maxRetries;
-  }
-
-  public getDelay(attempt: number) {
-    return getBackoffDelay(attempt, this.backoffType);
-  }
-}
-
-```
-
-If you want custom logic, just implement the `RetryStrategy` interface:
-
-```typescript
-import { RetryStrategy } from 'axios-retryer';
 import type { AxiosError } from 'axios';
+import { RetryStrategy } from 'axios-retryer';
 
 export class CustomRetryStrategy implements RetryStrategy {
-  constructor(
-    private readonly retryableStatuses: (number | [number, number])[],
-    private readonly retryableMethods: string[],
-    private readonly backoffType: AxiosRetryerBackoffType,
-  ) {}
-  
   getIsRetryable(error: AxiosError): boolean {
-    const isNetworkError = !error.response;
-    const isServerError = error.response && error.response.status >= 500 && error.response.status < 600;
-    return (isNetworkError || isServerError) || false;
+    // Only retry 5xx errors or no response (network error)
+    const status = error.response?.status;
+    const isServerError = status && status >= 500 && status < 600;
+    return !error.response || isServerError;
   }
 
   shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
-    return (this.getIsRetryable(error) && attempt <= maxRetries);
+    return this.getIsRetryable(error) && attempt <= maxRetries;
   }
 
-  getDelay(attempt: number) {
-    return 1000; // Linear backoff: 1s
+  getDelay(attempt: number): number {
+    // Simple linear backoff (1s, 2s, etc.)
+    return attempt * 1000;
   }
 }
+```
 
+Use it like:
+
+```typescript
 const manager = new RetryManager({
   mode: 'automatic',
   retries: 3,
@@ -279,26 +260,22 @@ const manager = new RetryManager({
 
 ### Hooks (Lifecycle Events)
 
-You can subscribe to hooks that provide additional control over or insight into the retry flow:
-
 ```typescript
-const retryManager = new RetryManager({
+const manager = new RetryManager({
   mode: 'automatic',
   hooks: {
+    onRetryProcessStarted: () => console.log('Retry process started'),
     beforeRetry: (config) => {
-      console.log('Will retry this config:', config.url);
+      console.log('Will retry:', config.url);
     },
     afterRetry: (config, success) => {
-      console.log(`Attempt finished for ${config.url}. Success? ${success}`);
+      console.log(`Retried ${config.url}, Success? ${success}`);
     },
     onFailure: (config) => {
-      console.log(`Request has finally failed: ${config.url}`);
+      console.log('Final failure for:', config.url);
     },
-    onRetryProcessStarted: () => {
-      console.log(`Retry process started`);
-    },
-    onRetryProcessFinished: (failedRequests) => {
-      console.log(`All retries completed. ${failedRequests} request(s) failed in total.`);
+    onRetryProcessFinished: (metrics) => {
+      console.log('All retry attempts done. Metrics:', metrics);
     },
   },
 });
@@ -306,28 +283,82 @@ const retryManager = new RetryManager({
 
 ### Canceling Requests
 
-Each request is assigned an internal `requestId`. You can cancel them either individually or all at once:
+Each request has a unique `__requestId`. You can cancel in-flight requests individually:
 
 ```typescript
-const manager = new RetryManager({ mode: 'automatic' });
-const axiosInstance = manager.getAxiosInstance();
+manager.cancelRequest('my-request-id');
+```
 
-axiosInstance.get('https://example.com/slow-endpoint')
-  .catch(err => {
-    if (err.message.includes('aborted')) {
-      console.log('This request was canceled');
-    }
-  });
+Or you can cancel all ongoing requests:
 
-// Later, if we want to cancel all ongoing requests:
+```typescript
 manager.cancelAllRequests();
 ```
 
-You can also call `cancelRequest(requestId)` if you happen to know the exact `requestId`.
+In both cases, aborted requests are counted as canceled in the built-in metrics.
+
+### Concurrency & Priority
+
+axios-retryer supports concurrency control (`maxConcurrentRequests`) and a priority-based queue.
+
+- `maxConcurrentRequests`: The maximum number of requests processed at once.
+- `blockingQueueThreshold`: If set, any request with priority >= threshold will block lower-priority requests until it finishes.
+
+Priority constants:
+- `AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL = 4`
+- `AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST = 3`
+- `AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH = 2`
+- `AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM = 1`
+- `AXIOS_RETRYER_REQUEST_PRIORITIES.LOW = 0`
+
+To assign a priority, simply include `__priority` in your request config:
+
+```typescript
+manager.axiosInstance.get('/some-url', {
+  __priority: 3, // 'HIGHEST'
+});
+```
+
+### Plugins
+
+Plugins let you extend axios-retryer without modifying core code. A plugin is an object with:
+
+```typescript
+{
+  name: string;
+  version: string;
+  initialize: (manager: RetryManager) => {};
+  hooks: RetryHooks;
+}
+```
+
+- `initialize` is called when the plugin is registered, giving you access to the RetryManager.
+- `hooks` can implement any of the same lifecycle hooks as the manager's hooks object.
+
+Example:
+
+```typescript
+const LoggingPlugin = {
+  name: 'LoggingPlugin',
+  version: '1.0.0',
+  initialize(manager) {
+    console.log('LoggingPlugin initialized');
+  },
+  hooks: {
+    afterRetry: (config, success) => {
+      console.log(`Request ${config.url} retry result: ${success ? 'success' : 'failure'}`);
+    }
+  }
+};
+
+manager.use(LoggingPlugin);
+```
+
+You can list plugins with `manager.listPlugins()`.
 
 ### Debug Mode
 
-Set `debug: true` in the `RetryManagerOptions` to log detailed messages about retries, failures, store operations, etc. This can help troubleshoot issues during development.
+Set `debug: true` in your RetryManagerOptions to enable verbose logging:
 
 ```typescript
 const manager = new RetryManager({
@@ -339,30 +370,40 @@ const manager = new RetryManager({
 
 ## API Reference
 
-### RetryManager
+### class RetryManager
+- Constructor: `new RetryManager(options: RetryManagerOptions)`
+- `axiosInstance`: Returns the wrapped Axios instance.
+- `retryFailedRequests()`: Manually retry all requests stored as failed.
+- `cancelRequest(requestId: string)`: Cancel a specific ongoing request.
+- `cancelAllRequests()`: Cancel all ongoing requests.
+- `use(plugin: RetryPlugin)`: Register a plugin.
+- `listPlugins()`: Retrieve a list of registered plugins.
+- `getMetrics()`: Returns `{ totalRequests, successfulRetries, failedRetries, completelyFailedRequests, canceledRequests }`.
 
-- `constructor(options: RetryManagerOptions)`
-- `.getAxiosInstance()`: Returns the underlying Axios instance.
-- `.retryFailedRequests()`: Manually retry all stored (failed) requests.
-- `.cancelRequest(requestId: string)`: Cancel a specific in-progress request.
-- `.cancelAllRequests()`: Cancel all in-progress requests.
-- `.use()`: Add a new plugin
-- `.listPlugins()`: List all attached plugin names
+### interface RetryManagerOptions
+- `throwErrorOnCancelRequest? (boolean)`
+- `debug? (boolean)`
+- `retryableStatuses? ((number | [number, number])[])`
+- `retryableMethods? (string[])`
+- `backoffType? (AxiosRetryerBackoffType)`
+- `maxRequestsToStore? (number)`
+- `maxConcurrentRequests? (number)`
+- `queueDelay? (number)`
+- `blockingQueueThreshold? (AxiosRetryerRequestPriority)`
 
-### RequestStore
+### interface RetryStrategy
+- `getIsRetryable(error: AxiosError): boolean`
+- `shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean`
+- `getDelay(attempt: number, maxRetries: number): number`
 
-- `.add(request: AxiosRetryerRequestConfig)`
-- `.remove(request: AxiosRetryerRequestConfig)`
-- `.getAll()`
-- `.clear()`
-
-### RetryStrategy
-
-- `.getIsRetryable(error: AxiosError): boolean`
-- `.shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean`
-- `.getDelay(attempt: number, maxRetries: number): number`
-
-For a complete list of all exported types and classes, see the source code or your IDE’s intellisense (if using TypeScript).
+### interface RetryHooks
+- `onRetryProcessStarted?(): void`
+- `beforeRetry?(config: AxiosRetryerRequestConfig): void`
+- `afterRetry?(config: AxiosRetryerRequestConfig, success: boolean): void`
+- `onFailure?(config: AxiosRetryerRequestConfig): void`
+- `onRetryProcessFinished?(metrics: AxiosRetryerMetrics): void`
+- `onCriticalRequestFailed?(): void`
+- `onRequestRemovedFromStore?(request: AxiosRetryerRequestConfig): void`
 
 ## Examples
 
@@ -376,174 +417,74 @@ const manager = new RetryManager({
   retries: 3,
 });
 
-manager.getAxiosInstance().get('https://httpbin.org/status/500')
-  .then(response => console.log('Response:', response.data))
+manager.axiosInstance.get('https://httpbin.org/status/500')
+  .then(response => console.log('Success:', response.data))
   .catch(error => console.error('Request failed after 3 retries:', error));
 ```
 
 ### 2. Manual Mode: Queue & Retry Later
 
 ```typescript
-import { RetryManager } from 'axios-retryer';
+import { RetryManager, RETRY_MODES } from 'axios-retryer';
 
 const manager = new RetryManager({
-  mode: 'manual',
+  mode: RETRY_MODES.MANUAL,
   retries: 2,
 });
 
-manager.getAxiosInstance().get('https://httpbin.org/status/500')
+// Initial request fails, then we'll retry later
+manager.axiosInstance.get('https://httpbin.org/status/500')
   .catch(error => {
     console.error('Initial request failed:', error);
   });
 
+// At some point in the future...
 manager.retryFailedRequests().then((responses) => {
   console.log('Retried responses:', responses);
 }).catch(err => {
-  console.error('Error retrying all failed requests:', err);
+  console.error('Error retrying failed requests:', err);
 });
 ```
 
-The `RetryManager` library supports plugins to extend its functionality dynamically. Plugins can hook into the retry lifecycle and perform custom logic such as logging, metrics tracking, request tagging, and more.
-
----
-
-## Plugin Examples
-
-### **1. Logging Plugin**
-
-Logs retry events for debugging purposes.
+### 3. Priority & Concurrency Example
 
 ```typescript
-const LoggingPlugin = {
-  name: 'LoggingPlugin',
-  version: '1.0.0',
-  initialize(manager) {
-    console.log('LoggingPlugin initialized');
-  },
-  hooks: {
-    beforeRetry: (config) => {
-      console.log(`Retrying request to: ${config.url}`);
-    },
-    afterRetry: (config, success) => {
-      console.log(`Retry ${success ? 'succeeded' : 'failed'} for request: ${config.url}`);
-    },
-    onFailure: (config) => {
-      console.log(`Request permanently failed: ${config.url}`);
-    },
-  },
-};
+import { RetryManager, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';
 
-retryManager.use(LoggingPlugin);
-```
----
+const manager = new RetryManager({
+  mode: 'automatic',
+  maxConcurrentRequests: 2,
+  blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
+  debug: true,
+});
 
-### **2. Metrics Plugin**
+const axiosInstance = manager.axiosInstance;
 
-Tracks the total number of retries and logs the count after retries are exhausted.
+// High priority
+axiosInstance({
+  url: 'https://example.com/api/high',
+  method: 'GET',
+  __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
+})
+  .then(() => console.log('High priority request succeeded'))
+  .catch(() => console.log('High priority request failed'));
 
-```typescript
-const MetricsPlugin = {
-  name: 'MetricsPlugin',
-  version: '1.0.0',
-  initialize(manager) {
-    let retryCount = 0; // Use closure for state management
-
-    this.hooks = {
-      beforeRetry: () => {
-        retryCount++;
-      },
-      onFailure: () => {
-        console.log(`Total retries attempted: ${retryCount}`);
-      },
-      onRetryProcessFinished: () => {
-        console.log(manager.getMetrics());
-      }
-    };
-  },
-};
-
-retryManager.use(MetricsPlugin);
-```
-
-### **3. Request Tagging Plugin**
-
-Adds a custom tag to the request headers for tracking retries.
-
-```typescript
-const RequestTaggingPlugin = {
-  name: 'RequestTaggingPlugin',
-  version: '1.0.0',
-  initialize(manager) {
-    this.hooks = {
-      beforeRetry: (config) => {
-        config.headers = config.headers || {};
-        config.headers['X-Retry-Tag'] = `Retry-Attempt-${config.__retryAttempt}`;
-        console.log(`Added retry tag: ${config.headers['X-Retry-Tag']}`);
-      },
-    };
-  },
-};
-
-retryManager.use(RequestTaggingPlugin);
-```
-
----
-
-### **4. Analytics Plugin**
-
-Logs retry metrics to an external analytics service.
-
-```typescript
-const AnalyticsPlugin = {
-  name: 'AnalyticsPlugin',
-  version: '1.0.0',
-  initialize(manager) {
-    const analyticsService = {
-      logEvent: (event, data) => {
-        console.log(`Analytics event: ${event}`, data);
-      },
-    };
-
-    this.hooks = {
-      beforeRetry: (config) => {
-        analyticsService.logEvent('RetryScheduled', {
-          url: config.url,
-          attempt: config.__retryAttempt,
-        });
-      },
-      afterRetry: (config, success) => {
-        analyticsService.logEvent('RetryResult', {
-          url: config.url,
-          success,
-        });
-      },
-    };
-  },
-};
-
-retryManager.use(AnalyticsPlugin);
-```
-## Adding Plugins to Your `RetryManager`
-
-To use any of these plugins, register them with the `RetryManager`:
-
-```typescript
-const retryManager = new RetryManager({ mode: 'automatic', retries: 3 });
-
-// Register plugins
-retryManager.use(LoggingPlugin);
-retryManager.use(MetricsPlugin);
-retryManager.use(RequestTaggingPlugin);
+// Low priority
+axiosInstance({
+  url: 'https://example.com/api/low',
+  method: 'GET',
+  __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW,
+})
+  .then(() => console.log('Low priority request succeeded'))
+  .catch(() => console.log('Low priority request failed'));
 ```
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome. Please see the [Contributing](./CONTRIBUTING.md) guidelines for more details! 
-Feel free to check the issues page if you have any questions or suggestions.
-
+Contributions, issues, and feature requests are welcome! Please see the Contributing guidelines for more details. Feel free to open issues if you have questions or suggestions.
 
 ## License
 
 This project is licensed under the MIT License.
 
-Enjoy reliable Axios requests with `axios-retryer`!
+Enjoy more reliable Axios requests with axios-retryer!

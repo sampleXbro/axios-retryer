@@ -2,7 +2,8 @@
 
 import type { AxiosError } from 'axios';
 
-import { AXIOS_RETRYER_BACKOFF_TYPES, AxiosRetryerBackoffType, RetryStrategy } from '../types';
+import type { AxiosRetryerBackoffType, RetryStrategy } from '../types';
+import { AXIOS_RETRYER_BACKOFF_TYPES } from '../types';
 import { getBackoffDelay, isInRangeOrExact } from '../utils';
 
 export class DefaultRetryStrategy implements RetryStrategy {
@@ -12,7 +13,7 @@ export class DefaultRetryStrategy implements RetryStrategy {
     private readonly backoffType: AxiosRetryerBackoffType = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
   ) {}
 
-  public getIsRetryable(error: AxiosError): boolean {
+  public getIsRetryable = (error: AxiosError): boolean => {
     // Network errors
     if (!error.response) {
       return true;
@@ -23,7 +24,7 @@ export class DefaultRetryStrategy implements RetryStrategy {
 
     if (
       method &&
-      this.retryableMethods.indexOf(method) !== -1 &&
+      this.retryableMethods.includes(method) &&
       status &&
       isInRangeOrExact(status, this.retryableStatuses)
     ) {
@@ -36,13 +37,13 @@ export class DefaultRetryStrategy implements RetryStrategy {
     }
 
     return false;
-  }
+  };
 
-  public shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
+  public shouldRetry = (error: AxiosError, attempt: number, maxRetries: number): boolean => {
     return this.getIsRetryable(error) && attempt <= maxRetries;
-  }
+  };
 
-  public getDelay(attempt: number) {
+  public getDelay = (attempt: number) => {
     return getBackoffDelay(attempt, this.backoffType);
-  }
+  };
 }

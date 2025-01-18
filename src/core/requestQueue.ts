@@ -1,126 +1,178 @@
-import type { AxiosRetryerRequestConfig } from '../types';
+'use strict';
+
+import type { InternalAxiosRequestConfig } from 'axios';
+import { AxiosError } from 'axios';
+
+import type { AxiosRetryerRequestConfig, AxiosRetryerRequestPriority } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
 
+interface EnqueuedItem {
+  config: AxiosRetryerRequestConfig;
+  resolve: (cfg: AxiosRetryerRequestConfig) => void;
+  reject: (err: unknown) => void;
+}
+
 /**
- * A queue that manages AxiosRetryerRequestConfigs with concurrency limits
- * and priority-based ordering. Higher priority requests are dequeued first;
- * if priorities are equal, requests are handled in FIFO order.
+ * A queue that holds AxiosRetryerRequestConfig objects and resolves them
+ * once concurrency is available, prioritizing higher priorities first.
  */
 export class RequestQueue {
   private readonly maxConcurrent: number;
-  // The main queue holding waiting requests
-  private readonly queue: AxiosRetryerRequestConfig[] = [];
-  // A Set tracking actively processing requests
-  private readonly inProgress = new Set<string>();
+  private readonly queueDelay: number;
+  private readonly hasActiveCriticalRequests: () => boolean;
+  private readonly waiting: EnqueuedItem[] = [];
+  private readonly blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
+  private inProgressCount = 0;
 
   /**
    * @param maxConcurrent - maximum number of requests to process at once
+   * @param queueDelay - delay of every enqueued request
+   * @param hasActiveCriticalRequests - delay of every enqueued request
+   * @param blockingQueueThreshold - delay of every enqueued request
    */
-  constructor(maxConcurrent = 5) {
+  constructor(
+    maxConcurrent = 5,
+    queueDelay = 100,
+    hasActiveCriticalRequests: typeof this.hasActiveCriticalRequests,
+    blockingQueueThreshold: AxiosRetryerRequestPriority | undefined,
+  ) {
+    if (maxConcurrent < 1) {
+      throw new Error(`maxConcurrent must be >= 1. Received: ${maxConcurrent}`);
+    }
     this.maxConcurrent = maxConcurrent;
+    this.queueDelay = queueDelay;
+    this.hasActiveCriticalRequests = hasActiveCriticalRequests;
+    this.blockingQueueThreshold = blockingQueueThreshold;
   }
 
   /**
-   * Insert a new request into the queue.
-   *
-   * @param config - request configuration object
+   * Enqueue a config and return a promise that resolves to that config
+   * once concurrency is available.
    */
-  public enqueue(config: AxiosRetryerRequestConfig): void {
-    // Instead of pushing and sorting the entire array,
-    // you could do a binary insertion if performance is critical.
-    this.queue.push(config);
-    this.sortQueue();
-  }
-
-  /**
-   * Retrieve the next request from the queue if below concurrency limits.
-   * Marks that request as "in progress" until you call `markComplete`.
-   *
-   * @returns the highest-priority request or null if none is available
-   */
-  public dequeue(): AxiosRetryerRequestConfig | null {
-    // No work if empty or we’ve hit concurrency limit
-    if (this.queue.length === 0 || this.inProgress.size >= this.maxConcurrent) {
-      return null;
-    }
-
-    const item = this.queue.shift();
-    if (item?.__requestId) {
-      this.inProgress.add(item.__requestId);
-    }
-
-    return item ?? null;
-  }
-
-  /**
-   * Mark a request as complete (finished processing).
-   * This frees a concurrency slot for the next request.
-   *
-   * @param requestId - the request ID to complete
-   */
-  public markComplete(requestId: string): void {
-    if (!this.inProgress.has(requestId)) {
-      // Optionally throw an Error or log a warning if not found
-      // throw new Error(`RequestID ${requestId} not found in progress.`);
-      return;
-    }
-    this.inProgress.delete(requestId);
-  }
-
-  /**
-   * Returns true if the queue has no more waiting requests.
-   */
-  public isEmpty(): boolean {
-    return this.queue.length === 0;
-  }
-
-  /**
-   * Returns true if we're under the concurrency limit
-   * and can dequeue another request.
-   */
-  public hasCapacity(): boolean {
-    return this.inProgress.size < this.maxConcurrent;
-  }
-
-  /**
-   * Total number of queued items.
-   */
-  public getQueueLength(): number {
-    return this.queue.length;
-  }
-
-  /**
-   * Number of active requests in progress.
-   */
-  public getInProgressCount(): number {
-    return this.inProgress.size;
-  }
-
-  /**
-   * Clears all waiting requests and active in-progress tracking.
-   * (Use carefully; it can abruptly remove your queue state.)
-   */
-  public clearAll(): void {
-    this.queue.length = 0;
-    this.inProgress.clear();
-  }
-
-  /**
-   * Sorts the underlying array so the highest priority is at the front.
-   * If priorities match, earlier timestamp is served first (FIFO).
-   */
-  private sortQueue(): void {
-    this.queue.sort((a, b) => {
-      // Higher priority number => handled first
-      const priorityA = a.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-      const priorityB = b.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-      if (priorityA !== priorityB) {
-        return priorityB - priorityA;
-      }
-      // If same priority, FIFO by timestamp
-      const tsA = a.__timestamp ?? 0;
-      const tsB = b.__timestamp ?? 0;
-      return tsA - tsB;
+  public enqueue(config: AxiosRetryerRequestConfig): Promise<AxiosRetryerRequestConfig> {
+    return new Promise<AxiosRetryerRequestConfig>((resolve, reject) => {
+      const item: EnqueuedItem = { config, resolve, reject };
+      this.insertByPriority(item);
+      this.tryDequeue();
     });
+  }
+
+  /**
+   * Call this after a request finishes, freeing a concurrency slot
+   * so the next item can proceed.
+   */
+  public markComplete(): void {
+    this.inProgressCount = Math.max(0, this.inProgressCount - 1);
+    this.tryDequeue();
+  }
+
+  /**
+   * Returns how many items are currently waiting (not yet resolved).
+   */
+  public getWaitingCount(): number {
+    return this.waiting.length;
+  }
+
+  public getWaiting(): EnqueuedItem[] {
+    return [...this.waiting];
+  }
+
+  public get isBusy(): boolean {
+    return this.waiting.length === 0 && this.inProgressCount === 0;
+  }
+
+  /**
+   * Cancel a specific request in the queue before it starts.
+   * @param requestId The request ID to cancel.
+   * @returns true if successfully canceled, false if not found (or already dequeued).
+   */
+  public cancelQueuedRequest(requestId: string): boolean {
+    // Find the index of the matching EnqueuedItem
+    const index = this.waiting.findIndex((item) => item.config.__requestId === requestId);
+
+    if (index === -1) {
+      return false; // Not found, possibly already dequeued or wrong ID
+    }
+
+    // Remove the item from the queue
+    const [request] = this.waiting.splice(index, 1);
+
+    request.reject(
+      new AxiosError(
+        `Request is cancelled ID: ${requestId}`,
+        'REQUEST_CANCELED',
+        request.config as InternalAxiosRequestConfig,
+      ),
+    );
+
+    return true;
+  }
+
+  /**
+   * Insert the request into `waiting` in the correct position based on priority,
+   * then timestamp (FIFO for same priority).
+   *
+   * If performance is not an issue for your queue size, you can just do:
+   *   this.waiting.push(item);
+   *   this.waiting.sort((a, b) => comparePriority(a, b));
+   */
+  private insertByPriority(item: EnqueuedItem): void {
+    // use binary insertion:
+    let low = 0;
+    let high = this.waiting.length - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1; // floor((low+high)/2)
+      const c = this.comparePriority(item, this.waiting[mid]);
+      if (c < 0) {
+        // item should come before mid element
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
+    this.waiting.splice(low, 0, item);
+  }
+
+  /**
+   * If there's capacity, shift items out of `waiting` and resolve them
+   * so those requests can start.
+   */
+  private tryDequeue = async (): Promise<void> => {
+    await new Promise((resolve) => setTimeout(resolve, this.queueDelay));
+
+    // While there's capacity, shift from waiting and resolve the promise
+    while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const { config, resolve } = this.waiting[0]!; // Peek at the first item
+      const isCritical =
+        // eslint-disable-next-line eqeqeq
+        this.blockingQueueThreshold == undefined || Number(config.__priority) >= this.blockingQueueThreshold;
+
+      if (isCritical || !this.hasActiveCriticalRequests()) {
+        // Remove from queue and resolve
+        this.waiting.shift();
+        this.inProgressCount++;
+        resolve(config);
+      } else {
+        // Stop processing non-critical requests while critical ones exist
+        break;
+      }
+    }
+  };
+
+  /**
+   * Compare by priority desc, then timestamp asc.
+   */
+  private comparePriority(a: EnqueuedItem, b: EnqueuedItem): number {
+    const pA = a.config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
+    const pB = b.config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
+    if (pA !== pB) {
+      // higher priority first => return negative if a > b
+      return pB - pA;
+    }
+    // tie-break by earliest timestamp first
+    const tA = a.config.__timestamp ?? 0;
+    const tB = b.config.__timestamp ?? 0;
+    return tA - tB;
   }
 }
