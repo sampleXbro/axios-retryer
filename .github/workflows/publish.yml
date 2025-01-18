@@ -42,7 +42,7 @@ jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
-    if: github.ref_name == 'main' && github.event_name == 'release' && github.event.action == 'published' # Only run on the main branch and after release is published
+    if: github.event.release.target_commitish == 'main' && github.event_name == 'release' && github.event.action == 'published' # Only run on the main branch and after release is published
 
     steps:
       # 1. Checkout the code
