@@ -7,9 +7,8 @@ A powerful library that enables automatic **or** manual retries for Axios reques
 1. [Installation](#installation)
 2. [Features](#features)
 3. [Comparison with Other Libraries](#comparison-with-other-libraries)
-4. [Sequence Diagram](#sequence-diagram)
-5. [Quick Example](#quick-example)
-6. [Usage](#usage)
+4. [Quick Example](#quick-example)
+5. [Usage](#usage)
   1. [Creating a RetryManager](#creating-a-retrymanager)
   2. [Automatic vs. Manual Mode](#automatic-vs-manual-mode)
   3. [Retry Strategies](#retry-strategies)
@@ -18,13 +17,13 @@ A powerful library that enables automatic **or** manual retries for Axios reques
   6. [Concurrency & Priority](#concurrency--priority)
   7. [Plugins](#plugins)
   8. [Debug Mode](#debug-mode)
-7. [API Reference](#api-reference)
-8. [Examples](#examples)
+6. [API Reference](#api-reference)
+7. [Examples](#examples)
   1. [Automatic Retries with Default Strategy](#1-automatic-retries-with-default-strategy)
   2. [Manual Mode: Queue & Retry Later](#2-manual-mode-queue--retry-later)
   3. [Priority & Concurrency Example](#3-priority--concurrency-example)
-9. [Contributing](#contributing)
-10. [License](#license)
+8. [Contributing](#contributing)
+9. [License](#license)
 
 ## Installation
 
@@ -64,77 +63,6 @@ yarn add axios-retryer
 | Cancellation | Yes. Use cancelRequest/cancelAllRequests, internally uses AbortController. | Minimal or no direct support. | Minimal or no direct support. |
 | Detailed Metrics & Debugging | Yes. Built-in metrics and optional debug logging. | Basic logging. | Basic logging. |
 | TypeScript Support | Yes. Strong typings for hooks, config, strategies, etc. | Basic typings. | Basic typings. |
-
-## Sequence Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant RetryManager
-    participant Axios
-    participant RetryStrategy
-    participant RequestStore
-
-    User->>RetryManager: Initiates request
-    RetryManager->>RetryManager: Generate Request ID & Setup AbortController
-    RetryManager->>Axios: Send request
-    Axios-->>RetryManager: Response (Success/Failure)
-
-    alt Request Fails
-        RetryManager->>RetryStrategy: shouldRetry? (Error, Attempt, MaxRetries)
-        RetryStrategy-->>RetryManager: Yes/No
-        alt Retry Allowed (Automatic Mode)
-            RetryManager->>RetryManager: Schedule Retry
-            RetryManager->>Axios: Retry request
-        else Max Retries Reached
-            RetryManager->>RequestStore: Store Failed Request
-            RetryManager->>User: Notify Failure
-        end
-    else Request Succeeds
-        RetryManager->>RequestStore: Clear Request (if previously stored)
-        RetryManager->>User: Notify Success
-    end
-    RetryManager->>Hooks: Trigger Lifecycle Hooks (e.g., beforeRetry, afterRetry)
-
-    %% Manual Retry Logic
-    User->>RetryManager: Trigger Manual Retry
-    RetryManager->>RequestStore: Fetch stored failed requests
-    loop For each failed request
-        RetryManager->>Axios: Retry request
-        Axios-->>RetryManager: Response (Success/Failure)
-        alt Request Succeeds
-            RetryManager->>RequestStore: Remove from failed requests
-            RetryManager->>User: Notify Success
-        else Request Fails Again
-            RetryManager->>RetryStrategy: shouldRetry?
-            RetryStrategy-->>RetryManager: Yes/No
-            alt Retry Allowed
-                RetryManager->>RetryManager: Schedule Retry
-            else Retry Aborted
-                RetryManager->>User: Notify Failure
-            end
-        end
-    end
-
-    %% Cancellation Logic
-    User->>RetryManager: cancelRequest(requestId)
-    RetryManager->>RetryManager: Find AbortController
-    alt Controller Found
-        RetryManager->>RetryManager: Abort request
-        RetryManager->>RequestStore: Remove request if stored
-        RetryManager->>User: Notify cancellation success
-    else Controller Not Found
-        RetryManager->>User: Notify not found or completed
-    end
-
-    %% Cancel All Requests
-    User->>RetryManager: cancelAllRequests()
-    loop For each active request
-        RetryManager->>RetryManager: Abort request
-        RetryManager->>RequestStore: Remove from store if stored
-    end
-    RetryManager->>User: Notify all requests cancelled
-```
 
 ## Quick Example
 
@@ -481,7 +409,7 @@ axiosInstance({
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome! Please see the Contributing guidelines for more details. Feel free to open issues if you have questions or suggestions.
+Contributions, issues, and feature requests are welcome! Please see the [Contributing](./CONTRIBUTING.md) guidelines for more details. Feel free to open issues if you have questions or suggestions.
 
 ## License
 
