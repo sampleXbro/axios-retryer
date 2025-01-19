@@ -1,5 +1,5 @@
 - Expose an event (like onRequestCancelled) so any external UI or state management can track these cancellations
-- Expose onMetricsUpdated hook
+- Create and expose onMetricsUpdated hook
 - Add per-request and global timeouts to avoid indefinitely hanging requests
 - Add priorities for queued requests, allowing higher-priority requests to skip ahead
 - Add log levels (e.g., debug, info, warn, error) for better control over output verbosity
