@@ -17,7 +17,7 @@ jobs:
   ci:
     name: CI (Tests & Linting)
     runs-on: ubuntu-latest
-    if: github.ref_name == 'develop' # Only run on the develop branch
+    if: github.ref_name == 'develop'
 
     steps:
       # 1. Checkout the code
@@ -70,5 +70,5 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc 
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc 
           npm publish --access public --loglevel verbose
