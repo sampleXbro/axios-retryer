@@ -9,12 +9,12 @@ module.exports = {
         {
             file: 'dist/index.cjs.js',
             format: 'cjs',
-            sourcemap: true
+            sourcemap: false
         },
         {
             file: 'dist/index.esm.js',
             format: 'es',
-            sourcemap: true,
+            sourcemap: false,
         }
     ],
     plugins: [
