@@ -70,4 +70,5 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm publish
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc 
+          npm publish --access public --loglevel verbose
