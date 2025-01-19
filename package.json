@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "1.0.0-beta.1.3",
+  "version": "1.0.0-beta.1.4",
   "description": "A powerful Axios extension for managing retries with customizable strategies, priority-based queuing, concurrency control, and detailed hooks for lifecycle management.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -10,7 +10,7 @@
     "url": "git+https://github.com/sampleXbro/axios-retryer.git"
   },
   "scripts": {
-    "build": "jest && rollup -c --bundleConfigAsCjs",
+    "build": "rollup -c --bundleConfigAsCjs",
     "prepare": "npm run build",
     "test": "jest"
   },
