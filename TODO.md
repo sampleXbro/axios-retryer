@@ -1,3 +1,2 @@
-- Expose an event (like onRequestCancelled) so any external UI or state management can track these cancellations
-- Create and expose onMetricsUpdated hook
+- add event subscription system
 - Add per-request and global timeouts to avoid indefinitely hanging requests

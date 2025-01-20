@@ -49,22 +49,15 @@ export class RetryManager {
   private readonly logger: RetryLogger;
   private readonly hooks?: RetryHooks;
   private readonly blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
+  private readonly metrics: AxiosRetryerMetrics;
   private inRetryProgress: boolean;
   private retryStrategy: RetryStrategy;
   private requestStore: RequestStore;
   private activeRequests: Map<string, ExtendedAbortController>;
   private requestIndex: number;
   private plugins: Map<string, RetryPlugin>;
-  private requestQueue: RequestQueue;
 
-  // request metrics
-  private metrics: AxiosRetryerMetrics = {
-    totalRequests: 0,
-    successfulRetries: 0,
-    failedRetries: 0,
-    completelyFailedRequests: 0,
-    canceledRequests: 0,
-  };
+  private requestQueue: RequestQueue;
 
   constructor(options: RetryManagerOptions) {
     this.validateOptions(options);
@@ -96,6 +89,24 @@ export class RetryManager {
     this.blockingQueueThreshold = options.blockingQueueThreshold;
 
     this.axiosInternalInstance = options.axiosInstance || this.createAxiosInstance();
+
+    this.metrics = new Proxy<AxiosRetryerMetrics>({
+      totalRequests: 0,
+      successfulRetries: 0,
+      failedRetries: 0,
+      completelyFailedRequests: 0,
+      canceledRequests: 0,
+    }, {
+      get: (target, prop, receiver) => {
+        return Reflect.get(target, prop, receiver);
+      },
+      set: (target, prop, value, receiver) => {
+        const success = Reflect.set(target, prop, value, receiver);
+        this.hooks?.onMetricsUpdated?.(target);
+        return success;
+      },
+    });
+
     this.setupInterceptors();
   }
 
@@ -396,6 +407,7 @@ export class RetryManager {
       this.metrics.canceledRequests++;
       this.requestQueue.cancelQueuedRequest(requestId);
       this.logger.log(`Request ${requestId} cancelled.`);
+      this.hooks?.onRequestCancelled?.(requestId);
     }
   };
 
@@ -408,6 +420,7 @@ export class RetryManager {
       this.metrics.canceledRequests++;
       this.requestQueue.cancelQueuedRequest(requestId);
       this.logger.log(`Request ${requestId} cancelled.`);
+      this.hooks?.onRequestCancelled?.(requestId);
     });
     this.activeRequests.clear();
   };

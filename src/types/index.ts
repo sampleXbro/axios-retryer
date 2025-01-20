@@ -81,6 +81,16 @@ export interface RetryHooks {
    * A critical request is defined by {@link RetryManagerOptions.blockingQueueThreshold}.
    */
   onCriticalRequestFailed?: () => void;
+  /**
+   * Triggered when a request cancelled.
+   * @param requestId Id of the cancelled request.
+   */
+  onRequestCancelled?: (requestId: string) => void;
+  /**
+   * Triggered when metrics updated.
+   * @param metrics Axios Retryer metrics object.
+   */
+  onMetricsUpdated?: (metrics: AxiosRetryerMetrics) => void;
 }
 
 export interface RetryManagerOptions {
@@ -251,20 +261,6 @@ export interface RetryManagerOptions {
    */
   blockingQueueThreshold?: AxiosRetryerRequestPriority;
 }
-
-/**
- * Extended AxiosRequestConfig with Retryer params
- * */
-// export interface AxiosRetryerRequestConfig extends AxiosRequestConfig {
-//   __retryAttempt?: number;
-//   __requestRetries?: number;
-//   __requestMode?: RetryMode;
-//   __requestId?: string;
-//   __abortController?: AbortController;
-//   __isRetrying?: boolean;
-//   __priority?: AxiosRetryerRequestPriority;
-//   __timestamp?: number;
-// }
 
 /**
  * AxiosRetryer metrics

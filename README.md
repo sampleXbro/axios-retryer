@@ -52,17 +52,17 @@ yarn add axios-retryer
 
 ## Comparison with Other Libraries
 
-| Feature | axios-retryer | axios-retry | retry-axios |
-|---------|--------------|-------------|-------------|
-| Automatic & Manual Modes | Yes. Either auto-retry or manually queue & retry (retryFailedRequests()). | Automatic only. | Automatic only. |
-| Concurrency Control | Yes. maxConcurrentRequests + a priority-based queue. | No concurrency management. | No concurrency management. |
-| Priority-Based Request Handling | Yes. (CRITICAL, HIGHEST, HIGH, MEDIUM, LOW) with a blockingQueueThreshold. | Not supported. | Not supported. |
-| Customizable Retry Strategy | Yes. Provide a custom class implementing RetryStrategy. | Some built-in config. | Some built-in config. |
-| Request Store / Manual Retry | Yes. Store failed requests in memory (or custom) and retry later. | No. | No. |
-| Hooks & Plugin System | Yes. Lifecycle hooks (beforeRetry, afterRetry, etc.) plus plugin architecture. | Limited or no hooks. | Limited or no hooks. |
-| Cancellation | Yes. Use cancelRequest/cancelAllRequests, internally uses AbortController. | Minimal or no direct support. | Minimal or no direct support. |
-| Detailed Metrics & Debugging | Yes. Built-in metrics and optional debug logging. | Basic logging. | Basic logging. |
-| TypeScript Support | Yes. Strong typings for hooks, config, strategies, etc. | Basic typings. | Basic typings. |
+| Feature | axios-retryer | axios-retry | retry-axios                    |
+|---------|--------------|-------------|--------------------------------|
+| Automatic & Manual Modes | ✅ Either auto-retry or manually queue & retry (retryFailedRequests()). | ❌Automatic only. | ❌Automatic only.               |
+| Concurrency Control | ✅ maxConcurrentRequests + a priority-based queue. | ❌No concurrency management. | ❌No concurrency management.    |
+| Priority-Based Request Handling | ✅ (CRITICAL, HIGHEST, HIGH, MEDIUM, LOW) with a blockingQueueThreshold. | ❌Not supported. | ❌Not supported.                |
+| Customizable Retry Strategy | ✅ Provide a custom class implementing RetryStrategy. | ❌Some built-in config. | ❌Some built-in config.         |
+| Request Store / Manual Retry | ✅ Store failed requests in memory (or custom) and retry later. | ❌No. | ❌No.                           |
+| Hooks & Plugin System | ✅ Lifecycle hooks (beforeRetry, afterRetry, etc.) plus plugin architecture. | ❌Limited or no hooks. | ❌Limited or no hooks.          |
+| Cancellation | ✅ Use cancelRequest/cancelAllRequests, internally uses AbortController. | ❌Minimal or no direct support. | ❌Minimal or no direct support. |
+| Detailed Metrics & Debugging | ✅ Built-in metrics and optional debug logging. | ✅Basic logging. | ✅Basic logging.                |
+| TypeScript Support | ✅ Strong typings for hooks, config, strategies, etc. | ✅Basic typings. | ✅Basic typings.                |
 
 ## Quick Example
 
@@ -92,21 +92,21 @@ manager.axiosInstance.get('https://jsonplaceholder.typicode.com/posts')
 import { RetryManager, RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';
 
 const retryManager = new RetryManager({
-  mode: RETRY_MODES.AUTOMATIC,
-  retries: 2,
-  throwErrorOnFailedRetries: true, // default
-  throwErrorOnCancelRequest: true, // default
-  debug: false,
+  mode: RETRY_MODES.AUTOMATIC, // default = RETRY_MODES.AUTOMATIC
+  retries: 2, // default = 3
+  throwErrorOnFailedRetries: true, // default = true
+  throwErrorOnCancelRequest: true, // default = true
+  debug: false, // default = false
 
   // Concurrency & Queue
-  maxConcurrentRequests: 5,
-  queueDelay: 100,
-  blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
+  maxConcurrentRequests: 5, // default = 5
+  queueDelay: 100, // default = 100
+  blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST, // default = not set
 
   // Retry strategy config
-  retryableStatuses: [408, [500, 599]],
-  retryableMethods: ['get', 'head', 'options'],
-  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
+  retryableStatuses: [408, [500, 599]], // default = [408, 429, 500, 502, 503, 504]
+  retryableMethods: ['get', 'head', 'options'], // default = ['get', 'head', 'options', 'put']
+  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL, // default = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL
 });
 ```
 
@@ -201,6 +201,12 @@ const manager = new RetryManager({
     },
     onFailure: (config) => {
       console.log('Final failure for:', config.url);
+    },
+    onRequestCancelled: (requestId: string) => {
+      console.log('Request is cancelled:', requestId);
+    },
+    onMetricsUpdated: (metrics) => {
+      console.log('Metrics updated. Metrics:', metrics);
     },
     onRetryProcessFinished: (metrics) => {
       console.log('All retry attempts done. Metrics:', metrics);
@@ -318,6 +324,7 @@ const manager = new RetryManager({
 - `maxConcurrentRequests? (number)`
 - `queueDelay? (number)`
 - `blockingQueueThreshold? (AxiosRetryerRequestPriority)`
+- `hooks?  (RetryHooks)`
 
 ### interface RetryStrategy
 - `getIsRetryable(error: AxiosError): boolean`
@@ -326,12 +333,12 @@ const manager = new RetryManager({
 
 ### interface RetryHooks
 - `onRetryProcessStarted?(): void`
-- `beforeRetry?(config: AxiosRetryerRequestConfig): void`
-- `afterRetry?(config: AxiosRetryerRequestConfig, success: boolean): void`
-- `onFailure?(config: AxiosRetryerRequestConfig): void`
+- `beforeRetry?(config: AxiosRequestConfig): void`
+- `afterRetry?(config: AxiosRequestConfig, success: boolean): void`
+- `onFailure?(config: AxiosRequestConfig): void`
 - `onRetryProcessFinished?(metrics: AxiosRetryerMetrics): void`
 - `onCriticalRequestFailed?(): void`
-- `onRequestRemovedFromStore?(request: AxiosRetryerRequestConfig): void`
+- `onRequestRemovedFromStore?(request: AxiosRequestConfig): void`
 
 ## Examples
 
