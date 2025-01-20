@@ -54,11 +54,16 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          cache: 'npm'
+          registry-url: "https://registry.npmjs.org"
+          always-auth: true
+          token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Who am I?
+        run: npm whoami
 
       # 3. Install dependencies
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       # 4. Run tests
       - name: Run tests
@@ -67,8 +72,5 @@ jobs:
       # 5. Bump version and publish to npm
       # temporarily removed - npm version patch -m "Bump version to %s [ci skip]"
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc 
           npm publish --access public --loglevel verbose
