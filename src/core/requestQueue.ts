@@ -1,14 +1,14 @@
 'use strict';
 
-import type { InternalAxiosRequestConfig } from 'axios';
+import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { AxiosError } from 'axios';
 
-import type { AxiosRetryerRequestConfig, AxiosRetryerRequestPriority } from '../types';
+import type { AxiosRetryerRequestPriority } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
 
 interface EnqueuedItem {
-  config: AxiosRetryerRequestConfig;
-  resolve: (cfg: AxiosRetryerRequestConfig) => void;
+  config: AxiosRequestConfig;
+  resolve: (cfg: AxiosRequestConfig) => void;
   reject: (err: unknown) => void;
 }
 
@@ -49,8 +49,8 @@ export class RequestQueue {
    * Enqueue a config and return a promise that resolves to that config
    * once concurrency is available.
    */
-  public enqueue(config: AxiosRetryerRequestConfig): Promise<AxiosRetryerRequestConfig> {
-    return new Promise<AxiosRetryerRequestConfig>((resolve, reject) => {
+  public enqueue(config: AxiosRequestConfig): Promise<AxiosRequestConfig> {
+    return new Promise<AxiosRequestConfig>((resolve, reject) => {
       const item: EnqueuedItem = { config, resolve, reject };
       this.insertByPriority(item);
       this.tryDequeue();

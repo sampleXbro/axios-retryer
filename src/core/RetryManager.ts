@@ -1,13 +1,12 @@
 'use strict';
 
-import type { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 
 import { RetryLogger } from '../services/logger';
 import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
 import type {
   AxiosRetryerMetrics,
-  AxiosRetryerRequestConfig,
   AxiosRetryerRequestPriority,
   RequestStore,
   RetryHooks,
@@ -135,7 +134,7 @@ export class RetryManager {
     return Promise.reject(error);
   };
 
-  private onRequest = (config: AxiosRetryerRequestConfig) => {
+  private onRequest = (config: AxiosRequestConfig) => {
     const controller = new AbortController() as ExtendedAbortController;
     const requestId = config.__requestId ?? this.generateRequestId(config.url);
 
@@ -160,7 +159,7 @@ export class RetryManager {
   };
 
   private onSuccessfulResponse = (response: AxiosResponse): AxiosResponse => {
-    const config = response.config as AxiosRetryerRequestConfig;
+    const config = response.config;
     const requestId = config.__requestId;
 
     if (requestId) {
@@ -180,7 +179,7 @@ export class RetryManager {
   };
 
   private async scheduleRetry(
-    config: AxiosRetryerRequestConfig,
+    config: AxiosRequestConfig,
     attempt: number,
     maxRetries: number,
   ): Promise<AxiosResponse> {
@@ -218,7 +217,7 @@ export class RetryManager {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private handleCancelAction(config: AxiosRetryerRequestConfig): Promise<never> {
+  private handleCancelAction(config: AxiosRequestConfig): Promise<never> {
     config.__isRetrying = false;
 
     this.handleRetryProcessFinish();
@@ -230,7 +229,7 @@ export class RetryManager {
 
   private handleError = async (error: AxiosError): Promise<AxiosResponse | null> => {
     let cancelled = false;
-    const config = error.config as AxiosRetryerRequestConfig;
+    const config = error.config;
 
     if (!config || Object.values(config).length === 0) {
       return Promise.reject(error);
@@ -264,7 +263,7 @@ export class RetryManager {
   };
 
   private handleNoRetriesAction(error: AxiosError, shouldStore = true): Promise<null> {
-    const config = error.config as AxiosRetryerRequestConfig;
+    const config = error.config as AxiosRequestConfig;
     config.__isRetrying = false;
 
     this.triggerHook('onFailure', config);

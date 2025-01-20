@@ -1,16 +1,17 @@
 'use strict';
 
-import type { AxiosRetryerRequestConfig, RequestStore } from '../types';
+import type { RequestStore } from '../types';
+import type { AxiosRequestConfig } from 'axios';
 
 export class InMemoryRequestStore implements RequestStore {
-  private requests: AxiosRetryerRequestConfig[] = [];
+  private requests: AxiosRequestConfig[] = [];
 
   constructor(
     private readonly maxStoreSize = 200,
-    private readonly onRequestRemovedFromStore?: (request: AxiosRetryerRequestConfig) => void,
+    private readonly onRequestRemovedFromStore?: (request: AxiosRequestConfig) => void,
   ) {}
 
-  add(request: AxiosRetryerRequestConfig): void {
+  add(request: AxiosRequestConfig): void {
     this.requests.push(request);
 
     // If the store exceeds the maximum size, remove the last (lowest priority and latest timestamp)
@@ -22,11 +23,11 @@ export class InMemoryRequestStore implements RequestStore {
     }
   }
 
-  remove(request: AxiosRetryerRequestConfig): void {
+  remove(request: AxiosRequestConfig): void {
     this.requests = this.requests.filter((req) => req.__requestId !== request.__requestId);
   }
 
-  getAll(): AxiosRetryerRequestConfig[] {
+  getAll(): AxiosRequestConfig[] {
     return [...this.requests];
   }
 
