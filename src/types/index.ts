@@ -49,20 +49,20 @@ export interface RetryHooks {
    * Triggered before each retry attempt.
    * @param config The Axios request configuration being retried.
    */
-  beforeRetry?: (config: AxiosRetryerRequestConfig) => void;
+  beforeRetry?: (config: AxiosRequestConfig) => void;
 
   /**
    * Triggered after a retry attempt.
    * @param config The Axios request configuration being retried.
    * @param success Whether the retry was successful.
    */
-  afterRetry?: (config: AxiosRetryerRequestConfig, success: boolean) => void;
+  afterRetry?: (config: AxiosRequestConfig, success: boolean) => void;
 
   /**
    * Triggered for each failed retry attempt.
    * @param config The failed Axios request configuration.
    */
-  onFailure?: (config: AxiosRetryerRequestConfig) => void;
+  onFailure?: (config: AxiosRequestConfig) => void;
 
   /**
    * Triggered when all retries are completed.
@@ -74,7 +74,7 @@ export interface RetryHooks {
    * Triggered when a request is removed from the store due to storage limits.
    * @param request The removed Axios request configuration.
    */
-  onRequestRemovedFromStore?: (request: AxiosRetryerRequestConfig) => void;
+  onRequestRemovedFromStore?: (request: AxiosRequestConfig) => void;
 
   /**
    * Triggered when a critical request fails.
@@ -255,16 +255,16 @@ export interface RetryManagerOptions {
 /**
  * Extended AxiosRequestConfig with Retryer params
  * */
-export interface AxiosRetryerRequestConfig extends AxiosRequestConfig {
-  __retryAttempt?: number;
-  __requestRetries?: number;
-  __requestMode?: RetryMode;
-  __requestId?: string;
-  __abortController?: AbortController;
-  __isRetrying?: boolean;
-  __priority?: AxiosRetryerRequestPriority;
-  __timestamp?: number;
-}
+// export interface AxiosRetryerRequestConfig extends AxiosRequestConfig {
+//   __retryAttempt?: number;
+//   __requestRetries?: number;
+//   __requestMode?: RetryMode;
+//   __requestId?: string;
+//   __abortController?: AbortController;
+//   __isRetrying?: boolean;
+//   __priority?: AxiosRetryerRequestPriority;
+//   __timestamp?: number;
+// }
 
 /**
  * AxiosRetryer metrics
@@ -305,15 +305,15 @@ export interface RequestStore {
   /**
    * Add a request config to the store
    * */
-  add(request: AxiosRetryerRequestConfig): void;
+  add(request: AxiosRequestConfig): void;
   /**
    * Remove a request config to the store
    * */
-  remove(request: AxiosRetryerRequestConfig): void;
+  remove(request: AxiosRequestConfig): void;
   /**
    * Get all request configs from the store
    * */
-  getAll(): AxiosRetryerRequestConfig[];
+  getAll(): AxiosRequestConfig[];
   /**
    * Clear request store
    * */

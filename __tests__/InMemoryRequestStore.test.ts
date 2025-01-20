@@ -1,14 +1,15 @@
-import {AxiosRetryerRequestConfig, InMemoryRequestStore} from "../src";
+import { InMemoryRequestStore} from "../src";
+import { AxiosRequestConfig } from 'axios';
 
 describe('InMemoryRequestStore', () => {
     let store: InMemoryRequestStore;
-    let mockRequest1: AxiosRetryerRequestConfig;
-    let mockRequest2: AxiosRetryerRequestConfig;
+    let mockRequest1: AxiosRequestConfig;
+    let mockRequest2: AxiosRequestConfig;
 
     beforeEach(() => {
         store = new InMemoryRequestStore();
-        mockRequest1 = { url: 'http://example.com/request1', method: 'GET', __requestId: 'ID1' } as AxiosRetryerRequestConfig;
-        mockRequest2 = { url: 'http://example.com/request2', method: 'POST', __requestId: 'ID2' } as AxiosRetryerRequestConfig;
+        mockRequest1 = { url: 'http://example.com/request1', method: 'GET', __requestId: 'ID1' } as AxiosRequestConfig;
+        mockRequest2 = { url: 'http://example.com/request2', method: 'POST', __requestId: 'ID2' } as AxiosRequestConfig;
     });
 
     describe('add', () => {

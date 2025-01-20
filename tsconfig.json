@@ -10,12 +10,19 @@
     "moduleResolution": "Node",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "sourceMap": true,
+    "sourceMap": false,
     "types": ["jest"],
     "declaration": true,
     "outDir": "dist",
     "declarationDir": "dist/types",
     "rootDir": "src"
   },
-  "include": ["src"],
+  "include": [
+    "src",
+    "src/global-axios-augmentation.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
