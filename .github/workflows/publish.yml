@@ -54,9 +54,7 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          registry-url: "https://registry.npmjs.org"
-          always-auth: true
-          token: ${{ secrets.NPM_TOKEN }}
+          registry-url: 'https://registry.npmjs.org'
 
       # 3. Install dependencies
       - name: Install dependencies
@@ -66,9 +64,23 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Debug npm authentication
+        run: |
+          echo "Registry configuration:"
+          npm config list
+          echo "Attempting npm whoami:"
+          npm whoami || true
+          echo "Current user configuration:"
+          npm config get userconfig
+          echo "Registry URL:"
+          npm config get registry
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       # 5. Bump version and publish to npm
       # temporarily removed - npm version patch -m "Bump version to %s [ci skip]"
       - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm whoami
           npm publish --access public --loglevel verbose
