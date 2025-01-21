@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.0.0-beta.2 - 21-01-2025
+## 1.0.0-beta.2.1 - 21-01-2025
 
 ### Added
 - Added event lifecycle system
@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - Improved typescript typings
 - Removed ability to add custom request store due to limitations
 - Added ability to specify request codes and methods that should be retried
+- Added more lifecycle hooks
+- Added `onBeforeDestroy` and `unuse` methods for plugins
 
 ## 1.0.0-beta.1 - 24-12-2024
 

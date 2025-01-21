@@ -44,7 +44,10 @@ export interface RetryHooks {
    * Triggered when the retry process begins.
    */
   onRetryProcessStarted?: () => void;
-
+  /**
+   * Triggered when manual retry process begins.
+   */
+  onManualRetryProcessStarted?: () => void;
   /**
    * Triggered before each retry attempt.
    * @param config The Axios request configuration being retried.
@@ -91,6 +94,10 @@ export interface RetryHooks {
    * @param metrics Axios Retryer metrics object.
    */
   onMetricsUpdated?: (metrics: AxiosRetryerMetrics) => void;
+  /**
+   * Triggered when all critical requests resolved.
+   */
+  onAllCriticalRequestsResolved?: () => void;
 }
 
 export interface RetryManagerOptions {
@@ -271,6 +278,7 @@ export interface AxiosRetryerMetrics {
   failedRetries: number;
   completelyFailedRequests: number;
   canceledRequests: number;
+  completelyFailedCriticalRequests: number;
 }
 
 /**
@@ -317,7 +325,7 @@ export interface RequestStore {
 }
 
 /**
- * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use}
+ * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use} and removed with {@link RetryManager.unuse}
  * */
 export interface RetryPlugin {
   /**
@@ -333,6 +341,11 @@ export interface RetryPlugin {
    * @param manager RetryManager instance
    * */
   initialize: (manager: RetryManager) => void;
+  /**
+   * Called before the plugin is removed
+   * @param manager RetryManager instance
+   * */
+  onBeforeDestroyed?: (manager: RetryManager) => void;
   /**
    * RetryManager lifecycle hooks {@link RetryHooks}
    * */

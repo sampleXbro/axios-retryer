@@ -29,7 +29,7 @@ const DEFAULT_CONFIG = {
 } as const;
 
 interface ExtendedAbortController extends AbortController {
-  priority: number;
+  __priority: number;
 }
 
 type HookListeners = {
@@ -89,6 +89,7 @@ export class RetryManager {
       options.maxConcurrentRequests || 5,
       options.queueDelay,
       this.checkCriticalRequests,
+      this.isCriticalRequest,
       options.blockingQueueThreshold,
     );
     this.blockingQueueThreshold = options.blockingQueueThreshold;
@@ -101,6 +102,7 @@ export class RetryManager {
       failedRetries: 0,
       completelyFailedRequests: 0,
       canceledRequests: 0,
+      completelyFailedCriticalRequests: 0,
     }, {
       get: (target, prop, receiver) => {
         return Reflect.get(target, prop, receiver);
@@ -158,7 +160,7 @@ export class RetryManager {
     config.__timestamp = Date.now();
     config.__priority = config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
     config.signal = controller.signal;
-    controller.priority = config.__priority;
+    controller.__priority = config.__priority;
 
     this.activeRequests.set(requestId, controller);
     this.metrics.totalRequests++;
@@ -169,8 +171,8 @@ export class RetryManager {
   private handleRetryProcessFinish = (): void => {
     if (this.activeRequests.size === 0 && this.inRetryProgress) {
       this.metrics.completelyFailedRequests = this.requestStore.getAll()?.length ?? 0;
-      this.triggerHook('onRetryProcessFinished', this.metrics);
-      this.emit('onRetryProcessFinished', this.metrics);
+      this.metrics.completelyFailedCriticalRequests = this.requestStore.getAll()?.filter(this.isCriticalRequest).length ?? 0;
+      this.triggerAndEmit('onRetryProcessFinished', this.metrics);
       this.inRetryProgress = false;
     }
   };
@@ -183,14 +185,17 @@ export class RetryManager {
       this.activeRequests.delete(requestId);
     }
 
+    this.requestQueue.markComplete();
+
     if (config.__isRetrying) {
       this.metrics.successfulRetries++;
-      this.triggerHook('afterRetry', config, true);
-      this.emit('afterRetry', config, true);
+      this.triggerAndEmit('afterRetry', config, true);
       config.__isRetrying = false;
     }
 
-    this.requestQueue.markComplete();
+    if(this.isCriticalRequest(config) && !this.checkCriticalRequests()) {
+      this.triggerAndEmit('onAllCriticalRequestsResolved');
+    }
 
     this.handleRetryProcessFinish();
     return response;
@@ -200,10 +205,10 @@ export class RetryManager {
     config: AxiosRequestConfig,
     attempt: number,
     maxRetries: number,
+    cancelledFromQueue = false
   ): Promise<AxiosResponse> {
     if (!this.inRetryProgress) {
-      this.triggerHook('onRetryProcessStarted');
-      this.emit('onRetryProcessStarted');
+      this.triggerAndEmit('onRetryProcessStarted');
       this.inRetryProgress = true;
     }
 
@@ -214,21 +219,21 @@ export class RetryManager {
       `Retry scheduled: Priority: ${config.__priority}; Attempt: ${attempt}/${maxRetries}; RequestID: ${config.__requestId}`,
     );
 
-    this.triggerHook('beforeRetry', config);
-    this.emit('beforeRetry', config);
-
     const delay = this.retryStrategy.getDelay(Number(config.__retryAttempt), maxRetries);
 
     await this.sleep(delay);
 
-    if (config.signal?.aborted) {
-      this.metrics.canceledRequests++;
-      return this.handleCancelAction(config);
-    }
-
     if (config.__requestId) {
       this.activeRequests.delete(config.__requestId);
     }
+
+    if (cancelledFromQueue || config.signal?.aborted) {
+      this.metrics.canceledRequests++;
+      cancelledFromQueue && this.requestStore.add(config);
+      return this.handleCancelAction(config);
+    }
+
+    this.triggerAndEmit('beforeRetry', config);
 
     return this.axiosInternalInstance.request(config);
   }
@@ -248,7 +253,7 @@ export class RetryManager {
   }
 
   private handleError = async (error: AxiosError): Promise<AxiosResponse | null> => {
-    let cancelled = false;
+    let cancelledInQueue = false;
     const config = error.config;
 
     if (!config || Object.values(config).length === 0) {
@@ -256,15 +261,14 @@ export class RetryManager {
     }
 
     if (error.code === 'REQUEST_CANCELED') {
-      cancelled = true;
+      cancelledInQueue = true;
     }
 
     this.requestQueue.markComplete();
 
-    if (config.__isRetrying) {
+    if (!cancelledInQueue && config.__isRetrying) {
       this.metrics.failedRetries++;
-      this.triggerHook('afterRetry', config, false);
-      this.emit('afterRetry', config, false);
+      this.triggerAndEmit('afterRetry', config, false);
     }
 
     config.__priority = config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
@@ -273,11 +277,10 @@ export class RetryManager {
     const attempt = (config.__retryAttempt || 0) + 1;
 
     if (
-      !cancelled &&
       requestMode === RETRY_MODES.AUTOMATIC &&
       this.retryStrategy.shouldRetry(error, attempt, maxRetries)
     ) {
-      return this.scheduleRetry(config, attempt, maxRetries);
+      return this.scheduleRetry(config, attempt, maxRetries, cancelledInQueue);
     }
 
     return this.handleNoRetriesAction(error, this.retryStrategy.getIsRetryable(error));
@@ -287,8 +290,7 @@ export class RetryManager {
     const config = error.config as AxiosRequestConfig;
     config.__isRetrying = false;
 
-    this.triggerHook('onFailure', config);
-    this.emit('onFailure', config);
+    this.triggerAndEmit('onFailure', config);
 
     if (shouldStore) {
       this.requestStore.add(config);
@@ -301,9 +303,8 @@ export class RetryManager {
     this.handleRetryProcessFinish();
 
     // eslint-disable-next-line eqeqeq
-    if (this.blockingQueueThreshold != undefined && Number(config.__priority) >= this.blockingQueueThreshold) {
-      this.triggerHook('onCriticalRequestFailed');
-      this.emit('onCriticalRequestFailed');
+    if (this.isCriticalRequest(config)) {
+      this.triggerAndEmit('onCriticalRequestFailed');
       this.activeRequests.forEach((_, requestId) => {
         this.requestQueue.cancelQueuedRequest(requestId);
       });
@@ -334,12 +335,15 @@ export class RetryManager {
     }
   }
 
+  private isCriticalRequest = (request: AxiosRequestConfig | ExtendedAbortController): boolean => {
+    return this.blockingQueueThreshold != undefined && Number(request.__priority) >= this.blockingQueueThreshold
+  }
+
   private checkCriticalRequests = (): boolean => {
     let has = false;
 
     this.activeRequests.forEach((r) => {
-      // eslint-disable-next-line eqeqeq
-      if (this.blockingQueueThreshold != undefined && Number(r.priority) >= this.blockingQueueThreshold) {
+      if (this.isCriticalRequest(r)) {
         has = true;
       }
     });
@@ -359,6 +363,14 @@ export class RetryManager {
       listener(...args);
     });
   };
+
+  private triggerAndEmit =  <K extends keyof RetryHooks>(
+    event: K,
+    ...args: Parameters<NonNullable<RetryHooks[K]>>
+  ): void => {
+    this.triggerHook(event, ...args);
+    this.emit(event, ...args);
+  }
 
   private validatePluginVersion(version: string): boolean {
     return /^\d+\.\d+\.\d+$/.test(version);
@@ -382,6 +394,37 @@ export class RetryManager {
     plugin.initialize(this);
 
     this.logger.log(`Plugin registered: ${plugin.name}@${plugin.version}`);
+  };
+
+  /**
+   * Remove a plugin by name.
+   * @param pluginName The name of the plugin to remove.
+   * @returns true if successfully removed, false if not found.
+   */
+  public unuse = (pluginName: string): boolean => {
+    const plugin = this.plugins.get(pluginName);
+    if (!plugin) {
+      // No plugin with this name is registered
+      return false;
+    }
+
+    // If the plugin has a cleanup method, call it
+    if (typeof plugin.onBeforeDestroyed === 'function') {
+      plugin.onBeforeDestroyed(this);
+    }
+
+    // Remove it from the map
+    this.plugins.delete(pluginName);
+
+    this.logger.log(`Plugin "${pluginName}" removed.`);
+    return true;
+  }
+
+  /**
+   * Get currently registered plugins.
+   */
+  public listPlugins = (): { name: string; version: string }[] => {
+    return Array.from(this.plugins.values()).map(({ name, version }) => ({ name, version }));
   };
 
   /**
@@ -427,19 +470,16 @@ export class RetryManager {
   }
 
   /**
-   * Get currently registered plugins.
-   */
-  public listPlugins = (): { name: string; version: string }[] => {
-    return Array.from(this.plugins.values()).map(({ name, version }) => ({ name, version }));
-  };
-
-  /**
    * Retry all failed requests with exponential backoff.
    */
   public async retryFailedRequests<T = unknown>(): Promise<AxiosResponse<T>[]> {
     const failedRequests = this.requestStore.getAll();
 
     this.requestStore.clear();
+
+    if(failedRequests.length > 0) {
+      this.triggerAndEmit('onManualRetryProcessStarted');
+    }
 
     return Promise.all(
       failedRequests.map(async (config) => {

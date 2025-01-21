@@ -20,6 +20,7 @@ export class RequestQueue {
   private readonly maxConcurrent: number;
   private readonly queueDelay: number;
   private readonly hasActiveCriticalRequests: () => boolean;
+  private readonly isCriticalRequest: (request: AxiosRequestConfig) => boolean;
   private readonly waiting: EnqueuedItem[] = [];
   private readonly blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
   private inProgressCount = 0;
@@ -27,13 +28,15 @@ export class RequestQueue {
   /**
    * @param maxConcurrent - maximum number of requests to process at once
    * @param queueDelay - delay of every enqueued request
-   * @param hasActiveCriticalRequests - delay of every enqueued request
-   * @param blockingQueueThreshold - delay of every enqueued request
+   * @param hasActiveCriticalRequests - check if there are active critical requests
+   * @param isCriticalRequest - check if a request is critical
+   * @param blockingQueueThreshold - blocking queue threshold
    */
   constructor(
     maxConcurrent = 5,
     queueDelay = 100,
     hasActiveCriticalRequests: typeof this.hasActiveCriticalRequests,
+    isCriticalRequest: typeof this.isCriticalRequest,
     blockingQueueThreshold: AxiosRetryerRequestPriority | undefined,
   ) {
     if (maxConcurrent < 1) {
@@ -43,6 +46,7 @@ export class RequestQueue {
     this.queueDelay = queueDelay;
     this.hasActiveCriticalRequests = hasActiveCriticalRequests;
     this.blockingQueueThreshold = blockingQueueThreshold;
+    this.isCriticalRequest = isCriticalRequest;
   }
 
   /**
@@ -144,11 +148,8 @@ export class RequestQueue {
     while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const { config, resolve } = this.waiting[0]!; // Peek at the first item
-      const isCritical =
-        // eslint-disable-next-line eqeqeq
-        this.blockingQueueThreshold == undefined || Number(config.__priority) >= this.blockingQueueThreshold;
 
-      if (isCritical || !this.hasActiveCriticalRequests()) {
+      if (this.isCriticalRequest(config) || !this.hasActiveCriticalRequests()) {
         // Remove from queue and resolve
         this.waiting.shift();
         this.inProgressCount++;

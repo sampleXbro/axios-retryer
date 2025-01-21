@@ -72,7 +72,7 @@ describe('RetryManager', () => {
     const axiosInstance = retryManager.axiosInstance;
     const requestPromise = axiosInstance.get('/cancel-before-retry').catch((err) => {
       // We expect a cancellation error here
-      expect(err.message).toMatch(/Request is cancelled/);
+      expect(err).toMatch(/Request aborted/);
     });
 
     // Wait for the first attempt, then cancel all requests
@@ -182,7 +182,7 @@ describe('RetryManager', () => {
     }, 50);
 
     await requestPromise.catch((err) => {
-      expect(err.message).toMatch(/Request is cancelled/);
+      expect(err).toMatch(/Request aborted/);
     });
   });
 
@@ -229,6 +229,7 @@ describe('RetryManager', () => {
     expect(hooks.onRetryProcessFinished).toHaveBeenCalledTimes(1);
     expect(hooks.onRetryProcessFinished).toHaveBeenCalledWith({
       canceledRequests: 0,
+      completelyFailedCriticalRequests: 0,
       completelyFailedRequests: 1,
       failedRetries: 1,
       successfulRetries: 0,
@@ -313,7 +314,7 @@ describe('RetryManager', () => {
       .axiosInstance
       .get('/cancel-late')
       .catch((err) => {
-        expect(err.message).toMatch(/Request is cancelled/);
+        expect(err).toMatch(/Request aborted/);
       });
 
     // Cancel all ongoing requests after the retry is scheduled
