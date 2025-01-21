@@ -229,6 +229,7 @@ describe('RetryManager', () => {
     expect(hooks.onRetryProcessFinished).toHaveBeenCalledTimes(1);
     expect(hooks.onRetryProcessFinished).toHaveBeenCalledWith({
       canceledRequests: 0,
+      completelyFailedCriticalRequests: 0,
       completelyFailedRequests: 1,
       failedRetries: 1,
       successfulRetries: 0,
