@@ -397,6 +397,37 @@ export class RetryManager {
   };
 
   /**
+   * Remove a plugin by name.
+   * @param pluginName The name of the plugin to remove.
+   * @returns true if successfully removed, false if not found.
+   */
+  public unuse = (pluginName: string): boolean => {
+    const plugin = this.plugins.get(pluginName);
+    if (!plugin) {
+      // No plugin with this name is registered
+      return false;
+    }
+
+    // If the plugin has a cleanup method, call it
+    if (typeof plugin.onBeforeDestroyed === 'function') {
+      plugin.onBeforeDestroyed(this);
+    }
+
+    // Remove it from the map
+    this.plugins.delete(pluginName);
+
+    this.logger.log(`Plugin "${pluginName}" removed.`);
+    return true;
+  }
+
+  /**
+   * Get currently registered plugins.
+   */
+  public listPlugins = (): { name: string; version: string }[] => {
+    return Array.from(this.plugins.values()).map(({ name, version }) => ({ name, version }));
+  };
+
+  /**
    * Subscribe to a hook event with a listener that matches
    * that hook’s parameter types.
    */
@@ -437,13 +468,6 @@ export class RetryManager {
     }
     return true;
   }
-
-  /**
-   * Get currently registered plugins.
-   */
-  public listPlugins = (): { name: string; version: string }[] => {
-    return Array.from(this.plugins.values()).map(({ name, version }) => ({ name, version }));
-  };
 
   /**
    * Retry all failed requests with exponential backoff.
