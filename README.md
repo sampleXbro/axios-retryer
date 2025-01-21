@@ -319,13 +319,14 @@ manager.axiosInstance.get('/some-url', {
 
 ### Plugins
 
-Plugins let you extend axios-retryer without modifying core code. A plugin is an object with:
+Plugins let you extend axios-retryer without modifying core code. A plugin is an object (or a class that implements RetryPlugin interface) with:
 
 ```typescript
 {
   name: string;
   version: string;
   initialize: (manager: RetryManager) => {};
+  onBeforeDestroyed: (manager: RetryManager) => {};
   hooks: RetryHooks;
 }
 ```
@@ -333,25 +334,37 @@ Plugins let you extend axios-retryer without modifying core code. A plugin is an
 - `name` is the plugin name.
 - `version` is the plugin version.
 - `initialize` is called when the plugin is registered, giving you access to the RetryManager.
-- `hooks` can implement any of the same lifecycle hooks as the manager's hooks object.
+- `onBeforeDestroyed` (optional) is called before the plugin is unregistered (unuse), giving you access to the RetryManager.
+- `hooks` (optional) can implement any of the same lifecycle hooks as the manager's hooks object.
 
 Example:
 
 ```typescript
-const LoggingPlugin = {
-  name: 'LoggingPlugin',
-  version: '1.0.0',
-  initialize(manager) {
-    console.log('LoggingPlugin initialized');
-  },
-  hooks: {
-    afterRetry: (config, success) => {
-      console.log(`Request ${config.url} retry result: ${success ? 'success' : 'failure'}`);
+export class OfflineRetryPlugin implements RetryPlugin {
+  name = 'OfflineRetryPlugin';
+  version = '1.0.0';
+
+  private async handleOnline(manager: RetryManager) {
+    //
+  }
+
+  initialize = (manager: RetryManager): void => {
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('online', this.handleOnline.bind(this, manager));
+    }
+  };
+
+  onBeforeDestroy(manager: RetryManager) {
+    if (typeof window !== 'undefined' && window.removeEventListener) {
+      window.removeEventListener('online', this.handleOnline.bind(this, manager));
     }
   }
-};
+}
 
-manager.use(LoggingPlugin);
+// Add the plugin
+manager.use(new OfflineRetryPlugin);
+// Remove the plugin (if needed)
+manager.unuse('OfflineRetryPlugin');
 ```
 
 You can list plugins with `manager.listPlugins()`.

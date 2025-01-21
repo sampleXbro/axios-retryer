@@ -325,7 +325,7 @@ export interface RequestStore {
 }
 
 /**
- * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use}
+ * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use} and removed with {@link RetryManager.unuse}
  * */
 export interface RetryPlugin {
   /**
@@ -341,6 +341,11 @@ export interface RetryPlugin {
    * @param manager RetryManager instance
    * */
   initialize: (manager: RetryManager) => void;
+  /**
+   * Called before the plugin is removed
+   * @param manager RetryManager instance
+   * */
+  onBeforeDestroyed?: (manager: RetryManager) => void;
   /**
    * RetryManager lifecycle hooks {@link RetryHooks}
    * */
