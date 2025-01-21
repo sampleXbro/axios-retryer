@@ -12,7 +12,7 @@ A powerful library that enables automatic **or** manual retries for Axios reques
   1. [Creating a RetryManager](#creating-a-retrymanager)
   2. [Automatic vs. Manual Mode](#automatic-vs-manual-mode)
   3. [Retry Strategies](#retry-strategies)
-  4. [Hooks (Lifecycle Events)](#hooks-lifecycle-events)
+  4. [Hooks (Lifecycle Events)](#lifecycle-events)
   5. [Canceling Requests](#canceling-requests)
   6. [Concurrency & Priority](#concurrency--priority)
   7. [Plugins](#plugins)
@@ -43,7 +43,7 @@ yarn add axios-retryer
 - **Advanced Concurrency & Priority**: Limit concurrent requests with maxConcurrentRequests and manage them via a priority-based queue. Higher-priority requests can block lower-priority ones using blockingQueueThreshold.
 - **Configurable Retry Logic**: Provide your own RetryStrategy (e.g., exponential or custom backoff) or use the built-in defaults.
 - **Request Store**: Failed requests are stored in an in-memory RequestStore by default (or use your own). This makes it easy to retry manually.
-- **Hooks**: Tie into each stage (before retry, after retry, failure, all retries completed) for fine-grained control.
+- **Hooks and Events**: Tie into each stage (before retry, after retry, failure, all retries completed) for fine-grained control.
 - **Plugin System**: Extend or modify behavior via simple plugin objects that can implement any of the lifecycle hooks.
 - **Cancellation**: Cancel individual requests or all ongoing requests at once, leveraging AbortController.
 - **Metrics**: Track total requests, failed retries, successful retries, cancellations, etc.
@@ -52,17 +52,17 @@ yarn add axios-retryer
 
 ## Comparison with Other Libraries
 
-| Feature | axios-retryer | axios-retry | retry-axios                    |
-|---------|--------------|-------------|--------------------------------|
-| Automatic & Manual Modes | ✅ Either auto-retry or manually queue & retry (retryFailedRequests()). | ❌Automatic only. | ❌Automatic only.               |
-| Concurrency Control | ✅ maxConcurrentRequests + a priority-based queue. | ❌No concurrency management. | ❌No concurrency management.    |
-| Priority-Based Request Handling | ✅ (CRITICAL, HIGHEST, HIGH, MEDIUM, LOW) with a blockingQueueThreshold. | ❌Not supported. | ❌Not supported.                |
-| Customizable Retry Strategy | ✅ Provide a custom class implementing RetryStrategy. | ❌Some built-in config. | ❌Some built-in config.         |
-| Request Store / Manual Retry | ✅ Store failed requests in memory (or custom) and retry later. | ❌No. | ❌No.                           |
-| Hooks & Plugin System | ✅ Lifecycle hooks (beforeRetry, afterRetry, etc.) plus plugin architecture. | ❌Limited or no hooks. | ❌Limited or no hooks.          |
-| Cancellation | ✅ Use cancelRequest/cancelAllRequests, internally uses AbortController. | ❌Minimal or no direct support. | ❌Minimal or no direct support. |
-| Detailed Metrics & Debugging | ✅ Built-in metrics and optional debug logging. | ✅Basic logging. | ✅Basic logging.                |
-| TypeScript Support | ✅ Strong typings for hooks, config, strategies, etc. | ✅Basic typings. | ✅Basic typings.                |
+| Feature                         | axios-retryer                                                                          | axios-retry                     | retry-axios                    |
+|---------------------------------|----------------------------------------------------------------------------------------|---------------------------------|--------------------------------|
+| Automatic & Manual Modes        | ✅ Either auto-retry or manually queue & retry (retryFailedRequests()).                 | ❌Automatic only.                | ❌Automatic only.               |
+| Concurrency Control             | ✅ maxConcurrentRequests + a priority-based queue.                                      | ❌No concurrency management.     | ❌No concurrency management.    |
+| Priority-Based Request Handling | ✅ (CRITICAL, HIGHEST, HIGH, MEDIUM, LOW) with a blockingQueueThreshold.                | ❌Not supported.                 | ❌Not supported.                |
+| Customizable Retry Strategy     | ✅ Provide a custom class implementing RetryStrategy.                                   | ❌Some built-in config.          | ❌Some built-in config.         |
+| Request Store / Manual Retry    | ✅ Store failed requests in memory (or custom) and retry later.                         | ❌No.                            | ❌No.                           |
+| Hooks & Events & Plugin System  | ✅ Lifecycle hooks and events (beforeRetry, afterRetry, etc.) plus plugin architecture. | ❌Limited or no hooks or events. | ❌Limited or no hooks or evens. |
+| Cancellation                    | ✅ Use cancelRequest/cancelAllRequests, internally uses AbortController.                | ❌Minimal or no direct support.  | ❌Minimal or no direct support. |
+| Detailed Metrics & Debugging    | ✅ Built-in metrics and optional debug logging.                                         | ✅Basic logging.                 | ✅Basic logging.                |
+| TypeScript Support              | ✅ Strong typings for hooks, config, strategies, etc.                                   | ✅Basic typings.                 | ✅Basic typings.                |
 
 ## Quick Example
 
@@ -102,6 +102,7 @@ const retryManager = new RetryManager({
   maxConcurrentRequests: 5, // default = 5
   queueDelay: 100, // default = 100
   blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST, // default = not set
+  maxRequestsToStore: 100, // default = 200
 
   // Retry strategy config
   retryableStatuses: [408, [500, 599]], // default = [408, 429, 500, 502, 503, 504]
@@ -120,6 +121,7 @@ const retryManager = new RetryManager({
 - `throwErrorOnCancelRequest`: Whether to throw an error if a request is canceled (default true).
 - `debug`: Enable to get verbose logs.
 - `retryableStatuses`, `retryableMethods`, `backoffType`: Configure how/when requests should retry.
+- `hooks`: Lifecycle hooks 
 
 You can pass your own AxiosInstance if you want to share interceptors or custom config:
 
@@ -186,7 +188,26 @@ const manager = new RetryManager({
 });
 ```
 
-### Hooks (Lifecycle Events)
+### Lifecycle Events
+
+The RetryManager provides a lightweight event system that allows you to subscribe to and unsubscribe from various 
+hooks (events) tied to the retry lifecycle. This lets you monitor or modify behavior at runtime without needing to rely 
+solely on constructor-time callbacks or configuration options.
+
+#### Available Events
+
+These events correspond to the hooks in RetryHooks:
+-	`onRetryProcessStarted` - Triggered when the retry process begins.
+-	`beforeRetry` - Triggered before each retry attempt. Receives (config: AxiosRequestConfig).
+-	`afterRetry` - Triggered after a retry attempt. Receives (config: AxiosRequestConfig, success: boolean).
+-	`onFailure` - Triggered for each failed retry attempt. Receives (config: AxiosRequestConfig).
+-	`onRetryProcessFinished` - Triggered when all retries are completed. Receives (metrics: AxiosRetryerMetrics).
+-	`onRequestRemovedFromStore` - Triggered when a request is removed from the store due to storage limits. Receives (request: AxiosRequestConfig).
+-	`onCriticalRequestFailed` - Triggered when a critical request fails, as defined by blockingQueueThreshold in your RetryManagerOptions.
+-	`onRequestCancelled` - Triggered when a request is cancelled. Receives (requestId: string).
+- 	`onMetricsUpdated` - Triggered whenever metrics are updated. Receives (metrics: AxiosRetryerMetrics).
+
+#### Hooks
 
 ```typescript
 const manager = new RetryManager({
@@ -214,6 +235,47 @@ const manager = new RetryManager({
   },
 });
 ```
+
+#### Events
+
+You can subscribe/unsubscribe to/from any of these events at runtime using the on/off method:
+
+```typescript
+import { RetryManager } from 'axios-retryer';
+
+const manager = new RetryManager({
+  retries: 3,
+});
+
+// Subscribing to multiple events
+manager
+  .on('onRetryProcessStarted', () => {
+  console.log('Retry process started');
+  })
+  .on('afterRetry', (config, success) => {
+    console.log(`Attempt for ${config.url}: success? ${success}`);
+  })
+  .on('onRetryProcessFinished', (metrics) => {
+    console.log('Retry process finished with metrics:', metrics);
+  });
+
+const handler = (config, success) => {
+  console.log('No longer interested in afterRetry');
+};
+
+// Subscribe
+manager.on('afterRetry', handler);
+
+// Unsubscribe
+manager.off('afterRetry', handler);
+```
+Because each event has its own parameters, TypeScript will correctly infer the signature based on the event string. 
+For example, `onFailure` expects `(config: AxiosRequestConfig)`, while `afterRetry` expects `(config: AxiosRequestConfig, success: boolean)`.
+
+#### Why Use the Event System?
+-	Observability: You can log, measure, or alert based on retry successes/failures without injecting logic all over your codebase.
+-	Extensibility: Create plugins or extensions that hook into these events to modify behavior (e.g., dynamic backoff).
+-	Simplicity: It’s more intuitive than hooking into low-level interceptors or custom code, especially for cross-cutting concerns like metrics.
 
 ### Canceling Requests
 
@@ -266,6 +328,8 @@ Plugins let you extend axios-retryer without modifying core code. A plugin is an
 }
 ```
 
+- `name` is the plugin name.
+- `version` is the plugin version.
 - `initialize` is called when the plugin is registered, giving you access to the RetryManager.
 - `hooks` can implement any of the same lifecycle hooks as the manager's hooks object.
 
@@ -311,6 +375,8 @@ const manager = new RetryManager({
 - `cancelRequest(requestId: string)`: Cancel a specific ongoing request.
 - `cancelAllRequests()`: Cancel all ongoing requests.
 - `use(plugin: RetryPlugin)`: Register a plugin.
+- `on(event, listener)`: Subscribe for an event with a listener.
+- `off(event, listener)`: Unsubscribe from an event.
 - `listPlugins()`: Retrieve a list of registered plugins.
 - `getMetrics()`: Returns `{ totalRequests, successfulRetries, failedRetries, completelyFailedRequests, canceledRequests }`.
 

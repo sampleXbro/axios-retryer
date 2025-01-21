@@ -1,5 +1,5 @@
 //@ts-nocheck
-import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { RetryHooks, RetryManager } from '../src';
 import {
   AXIOS_RETRYER_REQUEST_PRIORITIES,
@@ -960,6 +960,89 @@ describe('RetryManager Integration Tests', () => {
       await expect(requestPromise).rejects.toContain('Request aborted');
       expect(retryManager['activeRequests'].size).toBe(0);
       expect(retryManager['requestQueue'].getWaitingCount()).toBe(0);
+    });
+  });
+
+  describe('RetryManager Events Integration', () => {
+    let manager: RetryManager;
+
+    beforeEach(() => {
+      manager = new RetryManager({
+        retries: 2,
+        debug: true,
+        maxConcurrentRequests: 3,
+      });
+    });
+
+    it('should register a listener and call it when event is emitted', () => {
+      const mockListener = jest.fn();
+
+      manager.on('onFailure', mockListener);
+
+      // Emit the "onFailure" event with a mock config
+      const fakeConfig: AxiosRequestConfig = { url: '/fake-endpoint' };
+      manager.emit('onFailure', fakeConfig);
+
+      // The listener should be called exactly once with the correct argument
+      expect(mockListener).toHaveBeenCalledTimes(1);
+      expect(mockListener).toHaveBeenCalledWith(fakeConfig);
+    });
+
+    it('should support multiple listeners on the same event', () => {
+      const listenerA = jest.fn();
+      const listenerB = jest.fn();
+
+      manager.on('afterRetry', listenerA);
+      manager.on('afterRetry', listenerB);
+
+      // Emit "afterRetry" with mock arguments (config, success)
+      const fakeConfig: AxiosRequestConfig = { url: '/fake-endpoint-2' };
+      manager.emit('afterRetry', fakeConfig, true);
+
+      // Both listeners should be called once with the same arguments
+      expect(listenerA).toHaveBeenCalledWith(fakeConfig, true);
+      expect(listenerB).toHaveBeenCalledWith(fakeConfig, true);
+      expect(listenerA).toHaveBeenCalledTimes(1);
+      expect(listenerB).toHaveBeenCalledTimes(1);
+    });
+
+    it('should remove a listener and stop calling it after "off"', () => {
+      const listener = jest.fn();
+
+      manager.on('onRetryProcessStarted', listener);
+      // Emit once
+      manager.emit('onRetryProcessStarted');
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // Now remove the listener
+      const result = manager.off('onRetryProcessStarted', listener);
+      expect(result).toBe(true);
+
+      // Emit again
+      manager.emit('onRetryProcessStarted');
+
+      // Listener should no longer be called
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('should do nothing when off() is called for an unregistered listener', () => {
+      const listener = jest.fn();
+
+      // We never did manager.on('onFailure', listener)
+      const result = manager.off('onFailure', listener);
+      expect(result).toBe(false); // Indicates listener wasn't found
+
+      // Emitting "onFailure" won't call it
+      const fakeConfig: AxiosRequestConfig = { url: '/another-endpoint' };
+      manager.emit('onFailure', fakeConfig);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('should handle emit() when no listeners are registered', () => {
+      // Nothing is registered for "onCriticalRequestFailed"
+      // So emit() should simply do nothing (and not throw errors)
+      manager.emit('onCriticalRequestFailed');
+      // If it doesn't crash or throw, test passes
     });
   });
 });

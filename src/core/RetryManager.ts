@@ -32,6 +32,10 @@ interface ExtendedAbortController extends AbortController {
   priority: number;
 }
 
+type HookListeners = {
+  [K in keyof RetryHooks]?: Array<(...args: Parameters<NonNullable<RetryHooks[K]>>) => void>;
+};
+
 /**
  * Manages retries for Axios requests, including manual and automatic modes.
  *
@@ -56,6 +60,7 @@ export class RetryManager {
   private activeRequests: Map<string, ExtendedAbortController>;
   private requestIndex: number;
   private plugins: Map<string, RetryPlugin>;
+  private listeners: HookListeners = {};
 
   private requestQueue: RequestQueue;
 
@@ -165,6 +170,7 @@ export class RetryManager {
     if (this.activeRequests.size === 0 && this.inRetryProgress) {
       this.metrics.completelyFailedRequests = this.requestStore.getAll()?.length ?? 0;
       this.triggerHook('onRetryProcessFinished', this.metrics);
+      this.emit('onRetryProcessFinished', this.metrics);
       this.inRetryProgress = false;
     }
   };
@@ -180,6 +186,7 @@ export class RetryManager {
     if (config.__isRetrying) {
       this.metrics.successfulRetries++;
       this.triggerHook('afterRetry', config, true);
+      this.emit('afterRetry', config, true);
       config.__isRetrying = false;
     }
 
@@ -196,6 +203,7 @@ export class RetryManager {
   ): Promise<AxiosResponse> {
     if (!this.inRetryProgress) {
       this.triggerHook('onRetryProcessStarted');
+      this.emit('onRetryProcessStarted');
       this.inRetryProgress = true;
     }
 
@@ -207,6 +215,7 @@ export class RetryManager {
     );
 
     this.triggerHook('beforeRetry', config);
+    this.emit('beforeRetry', config);
 
     const delay = this.retryStrategy.getDelay(Number(config.__retryAttempt), maxRetries);
 
@@ -255,6 +264,7 @@ export class RetryManager {
     if (config.__isRetrying) {
       this.metrics.failedRetries++;
       this.triggerHook('afterRetry', config, false);
+      this.emit('afterRetry', config, false);
     }
 
     config.__priority = config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
@@ -278,6 +288,7 @@ export class RetryManager {
     config.__isRetrying = false;
 
     this.triggerHook('onFailure', config);
+    this.emit('onFailure', config);
 
     if (shouldStore) {
       this.requestStore.add(config);
@@ -292,6 +303,7 @@ export class RetryManager {
     // eslint-disable-next-line eqeqeq
     if (this.blockingQueueThreshold != undefined && Number(config.__priority) >= this.blockingQueueThreshold) {
       this.triggerHook('onCriticalRequestFailed');
+      this.emit('onCriticalRequestFailed');
       this.activeRequests.forEach((_, requestId) => {
         this.requestQueue.cancelQueuedRequest(requestId);
       });
@@ -335,6 +347,19 @@ export class RetryManager {
     return has;
   };
 
+  /**
+   * Example: Emit an event by calling all registered listeners,
+   * passing them the correct argument types.
+   */
+  private emit = <K extends keyof RetryHooks>(
+    event: K,
+    ...args: Parameters<NonNullable<RetryHooks[K]>>
+  ): void => {
+    this.listeners[event]?.forEach((listener) => {
+      listener(...args);
+    });
+  };
+
   private validatePluginVersion(version: string): boolean {
     return /^\d+\.\d+\.\d+$/.test(version);
   }
@@ -358,6 +383,48 @@ export class RetryManager {
 
     this.logger.log(`Plugin registered: ${plugin.name}@${plugin.version}`);
   };
+
+  /**
+   * Subscribe to a hook event with a listener that matches
+   * that hook’s parameter types.
+   */
+  public on = <K extends keyof RetryHooks>(
+    event: K,
+    listener: (...args: Parameters<NonNullable<RetryHooks[K]>>) => void
+  ): RetryManager => {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
+    }
+    this.listeners[event]!.push(listener);
+
+    return this;
+  };
+
+  /**
+   * Unsubscribe a listener from a specific event.
+   * @returns `true` if the listener was removed, `false` otherwise.
+   */
+  public off<K extends keyof RetryHooks>(
+    event: K,
+    listener: (...args: Parameters<NonNullable<RetryHooks[K]>>) => void
+  ): boolean {
+    const arr = this.listeners[event];
+    if (!arr) {
+      return false;
+    }
+
+    const index = arr.indexOf(listener);
+    if (index === -1) {
+      return false;
+    }
+
+    arr.splice(index, 1);
+    // optionally remove the array if empty
+    if (arr.length === 0) {
+      delete this.listeners[event];
+    }
+    return true;
+  }
 
   /**
    * Get currently registered plugins.
