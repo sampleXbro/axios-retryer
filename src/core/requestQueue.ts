@@ -13,7 +13,7 @@ interface EnqueuedItem {
 }
 
 /**
- * A queue that holds AxiosRetryerRequestConfig objects and resolves them
+ * A queue that holds AxiosRequestConfig objects and resolves them
  * once concurrency is available, prioritizing higher priorities first.
  */
 export class RequestQueue {

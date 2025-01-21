@@ -415,7 +415,7 @@ describe('RetryManager', () => {
     manager.use(plugin1);
     manager.use(plugin2);
 
-    const config = { url: 'http://example.com' } as AxiosRetryerRequestConfig;
+    const config = { url: 'http://example.com' };
     manager['triggerHook']('beforeRetry', config);
 
     expect(plugin1.hooks?.beforeRetry).toHaveBeenCalledWith(config);
@@ -437,7 +437,7 @@ describe('RetryManager', () => {
 
     manager.use(faultyPlugin);
 
-    const config = { url: 'http://example.com' } as AxiosRetryerRequestConfig;
+    const config = { url: 'http://example.com' };
     expect(() => manager['triggerHook']('beforeRetry', config)).not.toThrow();
   });
 
@@ -466,7 +466,7 @@ describe('RetryManager', () => {
     manager.use(plugin1);
     manager.use(plugin2);
 
-    const config = { url: 'http://example.com' } as AxiosRetryerRequestConfig;
+    const config = { url: 'http://example.com' };
     manager['triggerHook']('beforeRetry', config);
 
     expect(executionOrder).toEqual(['PluginOne', 'PluginTwo']);

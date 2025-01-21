@@ -1,6 +1,6 @@
 //@ts-nocheck
-import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import { AxiosRetryerRequestConfig, RetryHooks, RetryManager } from '../src';
+import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { RetryHooks, RetryManager } from '../src';
 import {
   AXIOS_RETRYER_REQUEST_PRIORITIES,
   RETRY_MODES,
@@ -52,7 +52,7 @@ describe('RetryManager Integration Tests', () => {
   });
 
   // Helper function to simulate full request chain
-  const processRequest = async (cfg: AxiosRetryerRequestConfig): Promise<AxiosResponse> => {
+  const processRequest = async (cfg: AxiosRequestConfig): Promise<AxiosResponse> => {
     try {
       return await axiosInstance.request(cfg);
     } catch (err) {
@@ -62,7 +62,7 @@ describe('RetryManager Integration Tests', () => {
 
   describe('Request Processing and Priority Management', () => {
     it('should handle dynamic priority changes during retries', async () => {
-      const request: AxiosRetryerRequestConfig = {
+      const request: AxiosRequestConfig = {
         url: '/dynamic-priority',
         __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW,
         __requestRetries: 2
@@ -163,7 +163,7 @@ describe('RetryManager Integration Tests', () => {
     it('should process requests according to priority order', async () => {
       retryManager.blockingQueueThreshold = undefined;
 
-      const requests: AxiosRetryerRequestConfig[] = [
+      const requests: AxiosRequestConfig[] = [
         { url: '/low', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },
         { url: '/critical', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },
         { url: '/high', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },
@@ -190,7 +190,7 @@ describe('RetryManager Integration Tests', () => {
     it('should maintain correct order when mixing priorities and retry attempts', async () => {
       retryManager.blockingQueueThreshold = undefined;
 
-      const requests: AxiosRetryerRequestConfig[] = [
+      const requests: AxiosRequestConfig[] = [
         { url: '/low', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },
         { url: '/high-retry', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },
         { url: '/medium', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM },
@@ -248,7 +248,7 @@ describe('RetryManager Integration Tests', () => {
       mock.onAny('/metadata-test').replyOnce(500, 'error')
         .onAny('/metadata-test').reply(200, 'success');
 
-      const request: AxiosRetryerRequestConfig = {
+      const request: AxiosRequestConfig = {
         url: '/metadata-test',
         __requestRetries: 1,
         metadata
@@ -265,7 +265,7 @@ describe('RetryManager Integration Tests', () => {
       mock.onGet('/api1').reply(500, 'Error');
       mock.onGet('/api2').reply(500, 'Error');
 
-      const failedRequests: AxiosRetryerRequestConfig[] = [
+      const failedRequests: AxiosRequestConfig[] = [
         { url: '/api1', method: 'get' },
         { url: '/api2', method: 'get' },
       ];
@@ -296,7 +296,7 @@ describe('RetryManager Integration Tests', () => {
       mock.onAny().reply(500, 'Error');
 
       // Create more requests than the store capacity (100)
-      const requests: AxiosRetryerRequestConfig[] = Array.from({ length: 150 }, (_, i) => ({
+      const requests: AxiosRequestConfig[] = Array.from({ length: 150 }, (_, i) => ({
         url: `/api${i}`,
         method: 'get',
         __timestamp: Date.now() + i,
@@ -534,7 +534,7 @@ describe('RetryManager Integration Tests', () => {
         );
       });
 
-      const requests: AxiosRetryerRequestConfig[] = [
+      const requests: AxiosRequestConfig[] = [
         { url: '/critical', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },
         { url: '/low1', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },
         { url: '/low2', __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },
@@ -622,7 +622,7 @@ describe('RetryManager Integration Tests', () => {
       );
       mock.onAny('/test3').reply(200, 'success');
 
-      const requests: AxiosRetryerRequestConfig[] = [
+      const requests: AxiosRequestConfig[] = [
         { url: '/test1', __requestId: 'req1' },
         { url: '/test2', __requestId: 'req2' },
         { url: '/test3', __requestId: 'req3' },
@@ -690,7 +690,7 @@ describe('RetryManager Integration Tests', () => {
     });
 
     // Helper function to simulate full request chain for custom RetryManager
-    const customProcessRequest = async (cfg: AxiosRetryerRequestConfig): Promise<AxiosResponse> => {
+    const customProcessRequest = async (cfg: AxiosRequestConfig): Promise<AxiosResponse> => {
       try {
         return await retryManagerWithCustomBackoff.axiosInstance.request(cfg);
       } catch (err) {
@@ -789,7 +789,7 @@ describe('RetryManager Integration Tests', () => {
 
     describe('Concurrency and Queue Management', () => {
       it('should handle concurrent requests with mixed priorities and errors', async () => {
-        const requests: AxiosRetryerRequestConfig[] = [
+        const requests: AxiosRequestConfig[] = [
           {
             url: '/priority1',
             __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
@@ -891,7 +891,7 @@ describe('RetryManager Integration Tests', () => {
     });
 
     it('should handle multiple retry delays correctly', async () => {
-      const request: AxiosRetryerRequestConfig = {
+      const request: AxiosRequestConfig = {
         url: '/retry-delays',
         __requestRetries: 2
       };
@@ -924,7 +924,7 @@ describe('RetryManager Integration Tests', () => {
 
   describe('Request Cancellation Scenarios', () => {
     it('should handle cancellation during retry delay', async () => {
-      const request: AxiosRetryerRequestConfig = {
+      const request: AxiosRequestConfig = {
         url: '/cancel-during-delay',
         __requestRetries: 2,
         __requestId: 'cancel-during-delay-id'
@@ -943,7 +943,7 @@ describe('RetryManager Integration Tests', () => {
     });
 
     it('should cleanup resources after cancellation', async () => {
-      const request: AxiosRetryerRequestConfig = {
+      const request: AxiosRequestConfig = {
         url: '/cleanup-test',
         __requestId: 'cleanup-request',
       };
@@ -960,6 +960,89 @@ describe('RetryManager Integration Tests', () => {
       await expect(requestPromise).rejects.toContain('Request aborted');
       expect(retryManager['activeRequests'].size).toBe(0);
       expect(retryManager['requestQueue'].getWaitingCount()).toBe(0);
+    });
+  });
+
+  describe('RetryManager Events Integration', () => {
+    let manager: RetryManager;
+
+    beforeEach(() => {
+      manager = new RetryManager({
+        retries: 2,
+        debug: true,
+        maxConcurrentRequests: 3,
+      });
+    });
+
+    it('should register a listener and call it when event is emitted', () => {
+      const mockListener = jest.fn();
+
+      manager.on('onFailure', mockListener);
+
+      // Emit the "onFailure" event with a mock config
+      const fakeConfig: AxiosRequestConfig = { url: '/fake-endpoint' };
+      manager.emit('onFailure', fakeConfig);
+
+      // The listener should be called exactly once with the correct argument
+      expect(mockListener).toHaveBeenCalledTimes(1);
+      expect(mockListener).toHaveBeenCalledWith(fakeConfig);
+    });
+
+    it('should support multiple listeners on the same event', () => {
+      const listenerA = jest.fn();
+      const listenerB = jest.fn();
+
+      manager.on('afterRetry', listenerA);
+      manager.on('afterRetry', listenerB);
+
+      // Emit "afterRetry" with mock arguments (config, success)
+      const fakeConfig: AxiosRequestConfig = { url: '/fake-endpoint-2' };
+      manager.emit('afterRetry', fakeConfig, true);
+
+      // Both listeners should be called once with the same arguments
+      expect(listenerA).toHaveBeenCalledWith(fakeConfig, true);
+      expect(listenerB).toHaveBeenCalledWith(fakeConfig, true);
+      expect(listenerA).toHaveBeenCalledTimes(1);
+      expect(listenerB).toHaveBeenCalledTimes(1);
+    });
+
+    it('should remove a listener and stop calling it after "off"', () => {
+      const listener = jest.fn();
+
+      manager.on('onRetryProcessStarted', listener);
+      // Emit once
+      manager.emit('onRetryProcessStarted');
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // Now remove the listener
+      const result = manager.off('onRetryProcessStarted', listener);
+      expect(result).toBe(true);
+
+      // Emit again
+      manager.emit('onRetryProcessStarted');
+
+      // Listener should no longer be called
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('should do nothing when off() is called for an unregistered listener', () => {
+      const listener = jest.fn();
+
+      // We never did manager.on('onFailure', listener)
+      const result = manager.off('onFailure', listener);
+      expect(result).toBe(false); // Indicates listener wasn't found
+
+      // Emitting "onFailure" won't call it
+      const fakeConfig: AxiosRequestConfig = { url: '/another-endpoint' };
+      manager.emit('onFailure', fakeConfig);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('should handle emit() when no listeners are registered', () => {
+      // Nothing is registered for "onCriticalRequestFailed"
+      // So emit() should simply do nothing (and not throw errors)
+      manager.emit('onCriticalRequestFailed');
+      // If it doesn't crash or throw, test passes
     });
   });
 });
