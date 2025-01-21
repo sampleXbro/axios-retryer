@@ -206,6 +206,8 @@ These events correspond to the hooks in RetryHooks:
 -	`onCriticalRequestFailed` - Triggered when a critical request fails, as defined by blockingQueueThreshold in your RetryManagerOptions.
 -	`onRequestCancelled` - Triggered when a request is cancelled. Receives (requestId: string).
 - 	`onMetricsUpdated` - Triggered whenever metrics are updated. Receives (metrics: AxiosRetryerMetrics).
+- 	`onAllCriticalRequestsResolved` - Triggered when all critical requests resolved.
+- 	`onManualRetryProcessStarted` - Triggered when manual retry process begins.
 
 #### Hooks
 
