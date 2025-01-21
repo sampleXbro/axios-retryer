@@ -205,6 +205,7 @@ export class RetryManager {
     config: AxiosRequestConfig,
     attempt: number,
     maxRetries: number,
+    cancelledFromQueue = false
   ): Promise<AxiosResponse> {
     if (!this.inRetryProgress) {
       this.triggerAndEmit('onRetryProcessStarted');
@@ -218,20 +219,21 @@ export class RetryManager {
       `Retry scheduled: Priority: ${config.__priority}; Attempt: ${attempt}/${maxRetries}; RequestID: ${config.__requestId}`,
     );
 
-    this.triggerAndEmit('beforeRetry', config);
-
     const delay = this.retryStrategy.getDelay(Number(config.__retryAttempt), maxRetries);
 
     await this.sleep(delay);
 
-    if (config.signal?.aborted) {
-      this.metrics.canceledRequests++;
-      return this.handleCancelAction(config);
-    }
-
     if (config.__requestId) {
       this.activeRequests.delete(config.__requestId);
     }
+
+    if (cancelledFromQueue || config.signal?.aborted) {
+      this.metrics.canceledRequests++;
+      cancelledFromQueue && this.requestStore.add(config);
+      return this.handleCancelAction(config);
+    }
+
+    this.triggerAndEmit('beforeRetry', config);
 
     return this.axiosInternalInstance.request(config);
   }
@@ -251,7 +253,7 @@ export class RetryManager {
   }
 
   private handleError = async (error: AxiosError): Promise<AxiosResponse | null> => {
-    let cancelled = false;
+    let cancelledInQueue = false;
     const config = error.config;
 
     if (!config || Object.values(config).length === 0) {
@@ -259,12 +261,12 @@ export class RetryManager {
     }
 
     if (error.code === 'REQUEST_CANCELED') {
-      cancelled = true;
+      cancelledInQueue = true;
     }
 
     this.requestQueue.markComplete();
 
-    if (config.__isRetrying) {
+    if (!cancelledInQueue && config.__isRetrying) {
       this.metrics.failedRetries++;
       this.triggerAndEmit('afterRetry', config, false);
     }
@@ -275,11 +277,10 @@ export class RetryManager {
     const attempt = (config.__retryAttempt || 0) + 1;
 
     if (
-      !cancelled &&
       requestMode === RETRY_MODES.AUTOMATIC &&
       this.retryStrategy.shouldRetry(error, attempt, maxRetries)
     ) {
-      return this.scheduleRetry(config, attempt, maxRetries);
+      return this.scheduleRetry(config, attempt, maxRetries, cancelledInQueue);
     }
 
     return this.handleNoRetriesAction(error, this.retryStrategy.getIsRetryable(error));
