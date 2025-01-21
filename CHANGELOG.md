@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.0-beta.2 - 21-01-2025
+
+### Added
+- Added event lifecycle system
+- Implemented request queue with priorities and concurrency limit
+- Added more integration tests
+- Improved typescript typings
+- Removed ability to add custom request store due to limitations
+- Added ability to specify request codes and methods that should be retried
+
 ## 1.0.0-beta.1 - 24-12-2024
 
 ### Added
