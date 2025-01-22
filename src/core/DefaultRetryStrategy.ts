@@ -4,7 +4,7 @@ import type { AxiosError } from 'axios';
 
 import type { AxiosRetryerBackoffType, RetryStrategy } from '../types';
 import { AXIOS_RETRYER_BACKOFF_TYPES } from '../types';
-import { getBackoffDelay, isInRangeOrExact } from '../utils';
+import { getBackoffDelay } from '../utils';
 
 export class DefaultRetryStrategy implements RetryStrategy {
   private readonly normalizedMethods: Set<string>;
