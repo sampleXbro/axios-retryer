@@ -1,79 +1,149 @@
 import { AxiosError } from 'axios';
+
+//Mock для getBackoffDelay
+jest.mock('../src/utils', () => ({
+  getBackoffDelay: jest.fn((attempt: number, type: AxiosRetryerBackoffType) => {
+    if (type === AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL) return 100 * Math.pow(2, attempt - 1);
+    if (type === AXIOS_RETRYER_BACKOFF_TYPES.LINEAR) return 100 * attempt;
+    return 0;
+  }),
+}));
+
 import { DefaultRetryStrategy } from '../src/core/DefaultRetryStrategy';
+import { AXIOS_RETRYER_BACKOFF_TYPES, AxiosRetryerBackoffType } from '../src';
 
-describe('DefaultRetryStrategy', () => {
-  let strategy: DefaultRetryStrategy;
+describe('DefaultRetryStrategy - Extended Tests', () => {
+  const retryableStatuses: (number | [number, number])[] = [408, 429, 500, [502, 504]];
+  const retryableMethods = ['get', 'head', 'options'];
+  const mockLogger = jest.fn();
 
-  beforeEach(() => {
-    strategy = new DefaultRetryStrategy();
+  const strategy = new DefaultRetryStrategy(
+    retryableStatuses,
+    retryableMethods,
+    AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
+    ['Idempotency-Key'],
+    mockLogger,
+  );
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('shouldRetry', () => {
-    it('should retry on network errors', () => {
-      const error = { response: undefined, config: { method: 'get' } } as AxiosError;
-      const attempt = 1;
-      const maxRetries = 3;
+  describe('getIsRetryable - Extended', () => {
+    it('should return false if error.config is undefined', () => {
+      const error = {
+        response: { status: 429 },
+        config: undefined,
+      } as AxiosError;
 
-      expect(strategy.shouldRetry(error, attempt, maxRetries)).toBe(true);
+      expect(strategy.getIsRetryable(error)).toBe(false);
+      expect(mockLogger).toHaveBeenCalledWith('Not retrying request with method undefined and status 429');
     });
 
-    it('should retry on server errors (5xx)', () => {
-      const error = { response: { status: 500 }, config: { method: 'get' } } as AxiosError;
-      const attempt = 1;
-      const maxRetries = 3;
+    it('should return false if method is missing in config', () => {
+      const error = {
+        response: { status: 429 },
+        config: {},
+      } as AxiosError;
 
-      expect(strategy.shouldRetry(error, attempt, maxRetries)).toBe(true);
+      expect(strategy.getIsRetryable(error)).toBe(false);
+      expect(mockLogger).toHaveBeenCalledWith('Not retrying request with method undefined and status 429');
     });
 
-    it('should not retry on client errors (4xx)', () => {
-      const error = { response: { status: 400 }, config: { method: 'get' } } as AxiosError;
-      const attempt = 1;
-      const maxRetries = 3;
+    it('should handle custom idempotency headers', () => {
+      const customStrategy = new DefaultRetryStrategy(
+        retryableStatuses,
+        retryableMethods,
+        AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
+        ['Custom-Idempotency-Key'],
+        mockLogger,
+      );
 
-      expect(strategy.shouldRetry(error, attempt, maxRetries)).toBe(false);
+      const error = {
+        response: { status: 500 },
+        config: { method: 'post', headers: { 'Custom-Idempotency-Key': 'value' } },
+      } as unknown as AxiosError;
+
+      expect(customStrategy.getIsRetryable(error)).toBe(true);
+      expect(mockLogger).toHaveBeenCalledWith('Retrying idempotent request with method post');
     });
 
-    it('should not retry if max retries exceeded', () => {
-      const error = { response: { status: 500 }, config: { method: 'get' } } as AxiosError;
-      const attempt = 4; // Exceeds maxRetries
-      const maxRetries = 3;
+    it('should return true for retryable statuses in ranges', () => {
+      const error = {
+        response: { status: 503 },
+        config: { method: 'get' },
+      } as AxiosError;
 
-      expect(strategy.shouldRetry(error, attempt, maxRetries)).toBe(false);
+      expect(strategy.getIsRetryable(error)).toBe(true);
+      expect(mockLogger).toHaveBeenCalledWith('Retrying request with status 503 and method get');
     });
 
-    it('should not retry on other scenarios', () => {
-      const error = { response: { status: 200 }, config: { method: 'get' } } as AxiosError; // Non-error response
-      const attempt = 1;
-      const maxRetries = 3;
+    it('should return false for status outside defined ranges', () => {
+      const error = {
+        response: { status: 511 },
+        config: { method: 'get' },
+      } as AxiosError;
 
-      expect(strategy.shouldRetry(error, attempt, maxRetries)).toBe(false);
+      expect(strategy.getIsRetryable(error)).toBe(false);
+      expect(mockLogger).toHaveBeenCalledWith('Not retrying request with method get and status 511');
     });
   });
 
-  describe('getDelay', () => {
-    it('should return 1 second delay for the first attempt', () => {
-      const attempt = 1;
+  describe('shouldRetry - Extended', () => {
+    it('should handle undefined response in error', () => {
+      const error = {
+        response: undefined,
+        config: { method: 'get' },
+      } as AxiosError;
 
-      expect(strategy.getDelay(attempt)).toBe(1000); // 1s
+      expect(strategy.shouldRetry(error, 1, 3)).toBe(true);
+      expect(mockLogger).toHaveBeenCalledWith('Should retry: true, attempt 1/3');
     });
 
-    it('should return 2 seconds delay for the second attempt', () => {
-      const attempt = 2;
+    it('should handle custom maxRetries limit', () => {
+      const error = {
+        response: { status: 500 },
+        config: { method: 'get' },
+      } as AxiosError;
 
-      expect(strategy.getDelay(attempt)).toBe(2000); // 2s
+      expect(strategy.shouldRetry(error, 5, 4)).toBe(false);
+      expect(mockLogger).toHaveBeenCalledWith('Should retry: false, attempt 5/4');
+    });
+  });
+
+  describe('getDelay - Extended', () => {
+    it('should return exponential delay', () => {
+      const delay = strategy.getDelay(2);
+      expect(delay).toBe(200); // 100 * 2^(2-1)
+      expect(mockLogger).toHaveBeenCalledWith('Retry delay for attempt 2: 200ms');
     });
 
-    it('should return 4 seconds delay for the third attempt', () => {
-      const attempt = 3;
+    it('should handle LINEAR backoff type', () => {
+      const linearStrategy = new DefaultRetryStrategy(
+        retryableStatuses,
+        retryableMethods,
+        AXIOS_RETRYER_BACKOFF_TYPES.LINEAR,
+        ['Idempotency-Key'],
+        mockLogger,
+      );
 
-      expect(strategy.getDelay(attempt)).toBe(4000); // 4s
+      const delay = linearStrategy.getDelay(3);
+      expect(delay).toBe(300); // 100 * 3
+      expect(mockLogger).toHaveBeenCalledWith('Retry delay for attempt 3: 300ms');
     });
 
-    it('should return exponential backoff delays for subsequent attempts', () => {
-      const delays = [1000, 2000, 4000, 8000, 16000];
-      delays.forEach((expectedDelay, attempt) => {
-        expect(strategy.getDelay(attempt + 1)).toBe(expectedDelay);
-      });
+    it('should return 0 for unknown backoff type', () => {
+      const customStrategy = new DefaultRetryStrategy(
+        retryableStatuses,
+        retryableMethods,
+        'UNKNOWN' as any,
+        ['Idempotency-Key'],
+        mockLogger,
+      );
+
+      const delay = customStrategy.getDelay(3);
+      expect(delay).toBe(0);
+      expect(mockLogger).toHaveBeenCalledWith('Retry delay for attempt 3: 0ms');
     });
   });
 });
