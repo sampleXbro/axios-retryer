@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.1 - 23-01-2025
+
+### Added
+- Added bugfixes
+- Added security improvements
+- Added metrics improvements
+
 ## 1.0.0-beta.2.1 - 21-01-2025
 
 ### Added
