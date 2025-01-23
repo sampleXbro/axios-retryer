@@ -12,7 +12,7 @@
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
     "prepare": "npm run build",
-    "test": "jest"
+    "test": "jest --coverage"
   },
   "keywords": [
     "axios",

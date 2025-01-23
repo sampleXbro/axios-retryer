@@ -17,7 +17,7 @@ jobs:
   ci:
     name: CI (Tests & Linting)
     runs-on: ubuntu-latest
-    if: github.ref_name == 'develop'
+    if: github.ref_name == 'develop' || github.ref_name == 'main'
 
     steps:
       # 1. Checkout the code
@@ -38,6 +38,13 @@ jobs:
       # 4. Run tests
       - name: Run tests
         run: npm test
+
+      # 5. Send coverage reports to Codecov
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: sampleXbro/axios-retryer
 
   publish:
     name: Publish to npm
@@ -60,10 +67,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 4. Run tests
-      - name: Run tests
-        run: npm test
-
       - name: Debug npm authentication
         run: |
           echo "Registry configuration:"
@@ -77,7 +80,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # 5. Bump version and publish to npm
+      # 4. Bump version and publish to npm
       # temporarily removed - npm version patch -m "Bump version to %s [ci skip]"
       - name: Publish to npm
         env:
