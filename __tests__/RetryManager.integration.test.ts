@@ -288,7 +288,7 @@ describe('RetryManager Integration Tests', () => {
       const retryResults = await retryManager.retryFailedRequests();
 
       expect(retryResults.every((res) => res.data === 'success')).toBe(true);
-      expect(retryManager.getMetrics().completelyFailedRequests).toBe(0);
+      expect(retryManager.requestStore.getAll().length).toBe(0);
     }, 10000);
 
     it('should handle store capacity and removal of old requests', async () => {

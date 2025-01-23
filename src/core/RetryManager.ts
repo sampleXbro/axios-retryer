@@ -170,8 +170,8 @@ export class RetryManager {
 
   private handleRetryProcessFinish = (): void => {
     if (this.activeRequests.size === 0 && this.inRetryProgress) {
-      this.metrics.completelyFailedRequests = this.requestStore.getAll()?.length ?? 0;
-      this.metrics.completelyFailedCriticalRequests = this.requestStore.getAll()?.filter(this.isCriticalRequest).length ?? 0;
+      this.metrics.completelyFailedRequests += this.requestStore.getAll()?.length ?? 0;
+      this.metrics.completelyFailedCriticalRequests += this.requestStore.getAll()?.filter(this.isCriticalRequest).length ?? 0;
       this.triggerAndEmit('onRetryProcessFinished', this.metrics);
       this.inRetryProgress = false;
     }
@@ -416,7 +416,7 @@ export class RetryManager {
     // Remove it from the map
     this.plugins.delete(pluginName);
 
-    this.logger.log(`Plugin "${pluginName}" removed.`);
+    this.logger.log(`Plugin "${plugin.name}@${plugin.version}" removed.`);
     return true;
   }
 
