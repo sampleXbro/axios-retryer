@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "0.1.1",
+  "version": "1.0.1",
   "description": "A powerful Axios extension for managing retries with customizable strategies, priority-based queuing, concurrency control, and detailed hooks for lifecycle management.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
