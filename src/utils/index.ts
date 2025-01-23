@@ -18,7 +18,9 @@ import { AXIOS_RETRYER_BACKOFF_TYPES } from '../types';
  *   getBackoffDelay(4, 'exponential')      -> 8000 ± up to 500 ms
  */
 export function getBackoffDelay(attempt: number, backoffType: AxiosRetryerBackoffType): number {
-  let baseDelay: number;
+  let baseDelay: number = 0;
+
+  if(attempt <= 0) return baseDelay;
 
   switch (backoffType) {
     case AXIOS_RETRYER_BACKOFF_TYPES.STATIC:
