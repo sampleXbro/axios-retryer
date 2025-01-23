@@ -183,7 +183,7 @@ describe('RetryManager Additional Tests', () => {
     });
 
     describe('HTTP Methods', () => {
-      test.each(['get', 'head', 'options', 'put'])('should retry failed %s requests', async (method) => {
+      test.each(['get', 'head', 'options'])('should retry failed %s requests', async (method) => {
         mock.onAny('/method').reply(500);
 
         await expect(retryManager.axiosInstance[method]('/method')).rejects.toThrow();
@@ -209,12 +209,72 @@ describe('RetryManager Additional Tests', () => {
         expect(mock.history.post.length).toBe(3); // Should retry
       });
 
+      test('should retry PUT only with Idempotency-Key', async () => {
+        mock.onPut('/idempotent').reply(500);
+
+        // Without Idempotency-Key
+        await expect(retryManager.axiosInstance.put('/idempotent')).rejects.toThrow();
+        expect(mock.history.put.length).toBe(1); // No retry
+
+        mock.resetHistory();
+
+        // With Idempotency-Key
+        await expect(
+          retryManager.axiosInstance.put('/idempotent', null, {
+            headers: { 'Idempotency-Key': 'abc123' },
+          }),
+        ).rejects.toThrow();
+        expect(mock.history.put.length).toBe(3); // Should retry
+      });
+
+      test('should retry PATCH only with Idempotency-Key', async () => {
+        mock.onPatch('/idempotent').reply(500);
+
+        // Without Idempotency-Key
+        await expect(retryManager.axiosInstance.patch('/idempotent')).rejects.toThrow();
+        expect(mock.history.patch.length).toBe(1); // No retry
+
+        mock.resetHistory();
+
+        // With Idempotency-Key
+        await expect(
+          retryManager.axiosInstance.patch('/idempotent', null, {
+            headers: { 'Idempotency-Key': 'abc123' },
+          }),
+        ).rejects.toThrow();
+        expect(mock.history.patch.length).toBe(3); // Should retry
+      });
+
+      test('should not retry POST requests', async () => {
+        mock.onPost('/no-retry').reply(500);
+
+        await expect(retryManager.axiosInstance.post('/no-retry')).rejects.toThrow();
+
+        expect(mock.history.post.length).toBe(1); // No retries
+      });
+
       test('should not retry PATCH requests', async () => {
         mock.onPatch('/no-retry').reply(500);
 
         await expect(retryManager.axiosInstance.patch('/no-retry')).rejects.toThrow();
 
         expect(mock.history.patch.length).toBe(1); // No retries
+      });
+
+      test('should not retry PUT requests', async () => {
+        mock.onPut('/no-retry').reply(500);
+
+        await expect(retryManager.axiosInstance.put('/no-retry')).rejects.toThrow();
+
+        expect(mock.history.put.length).toBe(1); // No retries
+      });
+
+      test('should not retry DELETE requests', async () => {
+        mock.onDelete('/no-retry').reply(500);
+
+        await expect(retryManager.axiosInstance.delete('/no-retry')).rejects.toThrow();
+
+        expect(mock.history.delete.length).toBe(1); // No retries
       });
     });
   });

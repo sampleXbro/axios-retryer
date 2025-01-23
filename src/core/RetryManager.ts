@@ -67,21 +67,21 @@ export class RetryManager {
   constructor(options: RetryManagerOptions) {
     this.validateOptions(options);
 
+    this.debug = options.debug ?? DEFAULT_CONFIG.DEBUG;
+    this.logger = new RetryLogger(this.debug);
     this.mode = options.mode ?? DEFAULT_CONFIG.MODE;
     this.retries = options.retries ?? DEFAULT_CONFIG.RETRIES;
     this.throwErrorOnFailedRetries = options.throwErrorOnFailedRetries ?? DEFAULT_CONFIG.THROW_ON_FAILED_RETRIES;
     this.throwErrorOnCancelRequest = options.throwErrorOnCancelRequest ?? DEFAULT_CONFIG.THROW_ON_CANCEL;
     this.retryStrategy =
       options.retryStrategy ??
-      new DefaultRetryStrategy(options.retryableStatuses, options.retryableMethods, options.backoffType);
+      new DefaultRetryStrategy(options.retryableStatuses, options.retryableMethods, options.backoffType, undefined, this.logger.log);
     this.requestStore = new InMemoryRequestStore(
       options.maxRequestsToStore || 200,
       options.hooks?.onRequestRemovedFromStore,
     );
     this.hooks = options.hooks;
     this.activeRequests = new Map();
-    this.debug = options.debug ?? DEFAULT_CONFIG.DEBUG;
-    this.logger = new RetryLogger(this.debug);
     this.requestIndex = 0;
     this.plugins = new Map();
     this.inRetryProgress = false;
@@ -170,8 +170,8 @@ export class RetryManager {
 
   private handleRetryProcessFinish = (): void => {
     if (this.activeRequests.size === 0 && this.inRetryProgress) {
-      this.metrics.completelyFailedRequests = this.requestStore.getAll()?.length ?? 0;
-      this.metrics.completelyFailedCriticalRequests = this.requestStore.getAll()?.filter(this.isCriticalRequest).length ?? 0;
+      this.metrics.completelyFailedRequests += this.requestStore.getAll()?.length ?? 0;
+      this.metrics.completelyFailedCriticalRequests += this.requestStore.getAll()?.filter(this.isCriticalRequest).length ?? 0;
       this.triggerAndEmit('onRetryProcessFinished', this.metrics);
       this.inRetryProgress = false;
     }
@@ -416,7 +416,7 @@ export class RetryManager {
     // Remove it from the map
     this.plugins.delete(pluginName);
 
-    this.logger.log(`Plugin "${pluginName}" removed.`);
+    this.logger.log(`Plugin "${plugin.name}@${plugin.version}" removed.`);
     return true;
   }
 

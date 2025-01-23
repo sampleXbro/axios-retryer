@@ -106,7 +106,7 @@ const retryManager = new RetryManager({
 
   // Retry strategy config
   retryableStatuses: [408, [500, 599]], // default = [408, 429, 500, 502, 503, 504]
-  retryableMethods: ['get', 'head', 'options'], // default = ['get', 'head', 'options', 'put']
+  retryableMethods: ['get', 'head', 'options'], // default = ['get', 'head', 'options']
   backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL, // default = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL
 });
 ```
