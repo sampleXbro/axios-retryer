@@ -453,10 +453,10 @@ export class RetryManager {
    * Unsubscribe a listener from a specific event.
    * @returns `true` if the listener was removed, `false` otherwise.
    */
-  public off<K extends keyof RetryHooks>(
+  public off = <K extends keyof RetryHooks>(
     event: K,
     listener: (...args: Parameters<NonNullable<RetryHooks[K]>>) => void
-  ): boolean {
+  ): boolean => {
     const arr = this.listeners[event];
     if (!arr) {
       return false;
@@ -478,7 +478,7 @@ export class RetryManager {
   /**
    * Retry all failed requests with exponential backoff.
    */
-  public async retryFailedRequests<T = unknown>(): Promise<AxiosResponse<T>[]> {
+  public retryFailedRequests = async <T = unknown>(): Promise<AxiosResponse<T>[]> => {
     const failedRequests = this.requestStore.getAll();
 
     this.requestStore.clear();
