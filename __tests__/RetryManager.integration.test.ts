@@ -939,7 +939,7 @@ describe('RetryManager Integration Tests', () => {
         retryManager.cancelRequest(request.__requestId!);
       }, 50);
 
-      await expect(requestPromise).rejects.toContain('Request aborted');
+      await expect(requestPromise).rejects.toThrow('Request aborted');
     });
 
     it('should cleanup resources after cancellation', async () => {
@@ -957,7 +957,7 @@ describe('RetryManager Integration Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
       retryManager.cancelRequest(request.__requestId!);
 
-      await expect(requestPromise).rejects.toContain('Request aborted');
+      await expect(requestPromise).rejects.toThrow('Request aborted');
       expect(retryManager['activeRequests'].size).toBe(0);
       expect(retryManager['requestQueue'].getWaitingCount()).toBe(0);
     });

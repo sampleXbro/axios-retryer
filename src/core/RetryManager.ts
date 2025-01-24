@@ -1,6 +1,12 @@
 'use strict';
 
-import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import {
+  AxiosError,
+  AxiosInstance,
+  AxiosRequestConfig,
+  AxiosResponse,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import axios from 'axios';
 
 import { RetryLogger } from '../services/logger';
@@ -248,7 +254,7 @@ export class RetryManager {
     this.handleRetryProcessFinish();
 
     return this.throwErrorOnCancelRequest
-      ? Promise.reject(`Request aborted. ID: ${config.__requestId}`)
+      ? Promise.reject(new Error(`Request aborted. ID: ${config.__requestId}`))
       : Promise.resolve(null as never);
   }
 
