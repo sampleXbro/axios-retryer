@@ -29,7 +29,7 @@ describe('RetryManager Edge Scenarios', function () {
     }, 50);
 
     requestPromise.catch((err) => {
-      expect(err).toContain('Request aborted');
+      expect(err.message).toContain('Request aborted');
       const requestStore = retryManager['requestStore'];
       expect(requestStore.getAll().length).toBe(1);
       done();
