@@ -9,6 +9,11 @@
 
 A powerful library that enables automatic **or** manual retries for Axios requests with rich configuration, concurrency controls, priority-based queuing, hooks, and custom strategies. Perfect for handling intermittent network issues or flaky endpoints without rewriting all your Axios logic.
 
+## Live Demo
+
+[![Open in CodeSandbox](https://img.shields.io/badge/Open%20in-CodeSandbox-blue?logo=codesandbox)](https://codesandbox.io/p/sandbox/axios-retryer-demo-fppdc4)
+
+
 ## Table of Contents
 
 1. [Installation](#installation)
