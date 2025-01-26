@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.3 - 26-01-2025
+
+### Added
+- Added extended metrics
+- Improved hi-load benchmark
+- Added badges
+
 ## 1.0.2 - 23-01-2025
 
 ### Added

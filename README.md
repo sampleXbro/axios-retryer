@@ -1,9 +1,17 @@
+<div align="center">
+
 [![npm version](https://img.shields.io/npm/v/axios-retryer.svg)](https://www.npmjs.com/package/axios-retryer)
 [![npm downloads](https://img.shields.io/npm/dm/axios-retryer.svg)](https://www.npmjs.com/package/axios-retryer)
 [![codecov](https://codecov.io/github/sampleXbro/axios-retryer/graph/badge.svg?token=BRQB5DJVLK)](https://codecov.io/github/sampleXbro/axios-retryer)
 [![Known Vulnerabilities](https://snyk.io/test/github/sampleXbro/axios-retryer/badge.svg)](https://snyk.io/test/github/sampleXbro/axios-retryer)
 ![Build](https://github.com/sampleXbro/axios-retryer/actions/workflows/publish.yml/badge.svg)
+[![Stress Tested](https://img.shields.io/badge/Stress%20Tested-10K%20Requests-success)](https://github.com/sampleXbro/axios-retryer)
+[![Benchmark](https://img.shields.io/badge/Benchmark-1.1min%2F10K%20reqs-blue)](https://github.com/sampleXbro/axios-retryer/benchmark)
 
+[![install size](https://img.shields.io/badge/dynamic/json?url=https://packagephobia.com/v2/api.json?p=axios-retryer&query=$.install.pretty&label=install%20size&style=flat-square)](https://packagephobia.now.sh/result?p=axios-retryer)
+[![Gzipped Size](https://img.shields.io/bundlephobia/minzip/axios-retryer)](https://bundlephobia.com/package/axios-retryer)
+
+</div>
 
 # axios-retryer
 

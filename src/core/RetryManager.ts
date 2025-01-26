@@ -12,6 +12,7 @@ import axios from 'axios';
 import { RetryLogger } from '../services/logger';
 import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
 import type {
+  AxiosRetryerDetailedMetrics,
   AxiosRetryerMetrics,
   AxiosRetryerRequestPriority,
   RequestStore,
@@ -32,7 +33,35 @@ const DEFAULT_CONFIG = {
   THROW_ON_FAILED_RETRIES: true,
   THROW_ON_CANCEL: true,
   DEBUG: false,
+  MAX_REQUESTS_TO_STORE: 200,
+  MAX_CONCURRENT_REQUESTS: 5
 } as const;
+
+const initialMetrics: AxiosRetryerMetrics = {
+  totalRequests: 0,
+  successfulRetries: 0,
+  failedRetries: 0,
+  completelyFailedRequests: 0,
+  canceledRequests: 0,
+  completelyFailedCriticalRequests: 0,
+  errorTypes: {
+    network: 0,
+    server5xx: 0,
+    client4xx: 0,
+    cancelled: 0
+  },
+  retryAttemptsDistribution: {},
+  retryPrioritiesDistribution: {},
+  requestCountsByPriority: {},
+  queueWaitDuration: 0,
+  retryDelayDuration: 0
+};
+
+const initialPriorityMetrics = {
+  total: 0,
+  successes: 0,
+  failures: 0
+}
 
 interface ExtendedAbortController extends AbortController {
   __priority: number;
@@ -70,7 +99,7 @@ export class RetryManager {
 
   private requestQueue: RequestQueue;
 
-  constructor(options: RetryManagerOptions) {
+  constructor(options: RetryManagerOptions = {}) {
     this.validateOptions(options);
 
     this.debug = options.debug ?? DEFAULT_CONFIG.DEBUG;
@@ -83,7 +112,7 @@ export class RetryManager {
       options.retryStrategy ??
       new DefaultRetryStrategy(options.retryableStatuses, options.retryableMethods, options.backoffType, undefined, this.logger.log);
     this.requestStore = new InMemoryRequestStore(
-      options.maxRequestsToStore || 200,
+      options.maxRequestsToStore ?? DEFAULT_CONFIG.MAX_REQUESTS_TO_STORE,
       options.hooks?.onRequestRemovedFromStore,
     );
     this.hooks = options.hooks;
@@ -92,7 +121,7 @@ export class RetryManager {
     this.plugins = new Map();
     this.inRetryProgress = false;
     this.requestQueue = new RequestQueue(
-      options.maxConcurrentRequests || 5,
+      options.maxConcurrentRequests ?? DEFAULT_CONFIG.MAX_CONCURRENT_REQUESTS,
       options.queueDelay,
       this.checkCriticalRequests,
       this.isCriticalRequest,
@@ -102,23 +131,7 @@ export class RetryManager {
 
     this.axiosInternalInstance = options.axiosInstance || this.createAxiosInstance();
 
-    this.metrics = new Proxy<AxiosRetryerMetrics>({
-      totalRequests: 0,
-      successfulRetries: 0,
-      failedRetries: 0,
-      completelyFailedRequests: 0,
-      canceledRequests: 0,
-      completelyFailedCriticalRequests: 0,
-    }, {
-      get: (target, prop, receiver) => {
-        return Reflect.get(target, prop, receiver);
-      },
-      set: (target, prop, value, receiver) => {
-        const success = Reflect.set(target, prop, value, receiver);
-        this.hooks?.onMetricsUpdated?.(target);
-        return success;
-      },
-    });
+    this.metrics = { ...initialMetrics };
 
     this.setupInterceptors();
   }
@@ -158,7 +171,7 @@ export class RetryManager {
     return Promise.reject(error);
   };
 
-  private onRequest = (config: AxiosRequestConfig) => {
+  private onRequest = async (config: AxiosRequestConfig) => {
     const controller = new AbortController() as ExtendedAbortController;
     const requestId = config.__requestId ?? this.generateRequestId(config.url);
 
@@ -171,14 +184,27 @@ export class RetryManager {
     this.activeRequests.set(requestId, controller);
     this.metrics.totalRequests++;
 
-    return this.requestQueue.enqueue(config);
+    if (!this.metrics.requestCountsByPriority[config.__priority]) {
+      this.metrics.requestCountsByPriority[config.__priority] = 0;
+    }
+    this.metrics.requestCountsByPriority[config.__priority]++;
+
+    const promise =  await this.requestQueue.enqueue(config);
+    //measure time in queue
+    const queueWait = Date.now() - config.__timestamp;
+
+    this.metrics.queueWaitDuration += queueWait;
+
+    this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
+
+    return promise;
   };
 
   private handleRetryProcessFinish = (): void => {
     if (this.activeRequests.size === 0 && this.inRetryProgress) {
       this.metrics.completelyFailedRequests += this.requestStore.getAll()?.length ?? 0;
       this.metrics.completelyFailedCriticalRequests += this.requestStore.getAll()?.filter(this.isCriticalRequest).length ?? 0;
-      this.triggerAndEmit('onRetryProcessFinished', this.metrics);
+      this.triggerAndEmit('onRetryProcessFinished', this.getMetrics());
       this.inRetryProgress = false;
     }
   };
@@ -193,8 +219,12 @@ export class RetryManager {
 
     this.requestQueue.markComplete();
 
-    if (config.__isRetrying) {
+    if (config.__isRetrying && config.__priority != undefined) {
       this.metrics.successfulRetries++;
+      if(!this.metrics.retryPrioritiesDistribution[config.__priority]) {
+        this.metrics.retryPrioritiesDistribution[config.__priority] = {...initialPriorityMetrics}
+      }
+      this.metrics.retryPrioritiesDistribution[config.__priority].successes++;
       this.triggerAndEmit('afterRetry', config, true);
       config.__isRetrying = false;
     }
@@ -204,6 +234,9 @@ export class RetryManager {
     }
 
     this.handleRetryProcessFinish();
+
+    this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
+
     return response;
   };
 
@@ -229,17 +262,29 @@ export class RetryManager {
 
     await this.sleep(delay);
 
+    this.metrics.retryDelayDuration += delay;
+
     if (config.__requestId) {
       this.activeRequests.delete(config.__requestId);
     }
 
     if (cancelledFromQueue || config.signal?.aborted) {
       this.metrics.canceledRequests++;
+      this.metrics.errorTypes.cancelled++;
       cancelledFromQueue && this.requestStore.add(config);
       return this.handleCancelAction(config);
     }
 
+    this.metrics.retryAttemptsDistribution[attempt] = (this.metrics.retryAttemptsDistribution[attempt] ?? 0) + 1;
+
     this.triggerAndEmit('beforeRetry', config);
+
+    if(config.__priority != undefined) {
+      if(!this.metrics.retryPrioritiesDistribution[config.__priority]) {
+        this.metrics.retryPrioritiesDistribution[config.__priority] =  {...initialPriorityMetrics}
+      }
+      this.metrics.retryPrioritiesDistribution[config.__priority].total++;
+    }
 
     return this.axiosInternalInstance.request(config);
   }
@@ -262,6 +307,8 @@ export class RetryManager {
     let cancelledInQueue = false;
     const config = error.config;
 
+    this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
+
     if (!config || Object.values(config).length === 0) {
       return Promise.reject(error);
     }
@@ -272,8 +319,19 @@ export class RetryManager {
 
     this.requestQueue.markComplete();
 
-    if (!cancelledInQueue && config.__isRetrying) {
+    if (!cancelledInQueue && config.__isRetrying && config.__priority != undefined) {
       this.metrics.failedRetries++;
+      if (!error.response) {
+        this.metrics.errorTypes.network++;
+      } else if (error.response.status >= 500) {
+        this.metrics.errorTypes.server5xx++;
+      } else if (error.response.status >= 400) {
+        this.metrics.errorTypes.client4xx++;
+      }
+      if(!this.metrics.retryPrioritiesDistribution[config.__priority]) {
+        this.metrics.retryPrioritiesDistribution[config.__priority] =  {...initialPriorityMetrics};
+      }
+      this.metrics.retryPrioritiesDistribution[config.__priority].failures++;
       this.triggerAndEmit('afterRetry', config, false);
     }
 
@@ -496,13 +554,6 @@ export class RetryManager {
   }
 
   /**
-   * Get metrics about retry operations.
-   */
-  public getMetrics = () => {
-    return { ...this.metrics };
-  };
-
-  /**
    * Get the axios instance for making requests.
    */
   public get axiosInstance(): AxiosInstance {
@@ -537,4 +588,31 @@ export class RetryManager {
     });
     this.activeRequests.clear();
   };
+
+  /**
+   * Get metrics about retry operations.
+   */
+  public getMetrics = (): AxiosRetryerDetailedMetrics => {
+    const totalRetries = this.metrics.failedRetries + this.metrics.successfulRetries;
+
+    return {
+      totalRequests: this.metrics.totalRequests,
+      successfulRetries: this.metrics.successfulRetries,
+      failedRetries: this.metrics.failedRetries,
+      completelyFailedRequests: this.metrics.completelyFailedRequests,
+      canceledRequests: this.metrics.canceledRequests,
+      completelyFailedCriticalRequests: this.metrics.completelyFailedCriticalRequests,
+      errorTypesDistribution: this.metrics.errorTypes,
+      retryAttemptsDistribution: this.metrics.retryAttemptsDistribution,
+      requestCountsByPriority: this.metrics.requestCountsByPriority,
+      avgQueueWait: (this.metrics.queueWaitDuration / this.metrics.totalRequests) * 0.001,
+      avgRetryDelay: (this.metrics.retryDelayDuration / totalRetries) * 0.001,
+      priorityMetrics: Object.entries(this.metrics.retryPrioritiesDistribution).map(([priority, data]) => ({
+        priority: Number(priority),
+        ...data,
+        successRate: data.total > 0 ? (data.successes / data.total) * 100 : 0,
+        failureRate: data.total > 0 ? (data.failures / data.total) * 100 : 0,
+      }))
+    };
+  }
 }

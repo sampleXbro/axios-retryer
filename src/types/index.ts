@@ -71,7 +71,7 @@ export interface RetryHooks {
    * Triggered when all retries are completed.
    * @param metrics Metrics about retry performance.
    */
-  onRetryProcessFinished?: (metrics: AxiosRetryerMetrics) => void;
+  onRetryProcessFinished?: (metrics: AxiosRetryerDetailedMetrics) => void;
 
   /**
    * Triggered when a request is removed from the store due to storage limits.
@@ -93,7 +93,7 @@ export interface RetryHooks {
    * Triggered when metrics updated.
    * @param metrics Axios Retryer metrics object.
    */
-  onMetricsUpdated?: (metrics: AxiosRetryerMetrics) => void;
+  onMetricsUpdated?: (metrics: AxiosRetryerDetailedMetrics) => void;
   /**
    * Triggered when all critical requests resolved.
    */
@@ -112,7 +112,7 @@ export interface RetryManagerOptions {
    * mode: 'automatic'
    * Requests will retry automatically if conditions are met.
    */
-  mode: RetryMode;
+  mode?: RetryMode;
 
   /**
    * The maximum number of retries for requests in 'automatic' mode.
@@ -279,6 +279,79 @@ export interface AxiosRetryerMetrics {
   completelyFailedRequests: number;
   canceledRequests: number;
   completelyFailedCriticalRequests: number;
+  errorTypes: {
+    network: number,
+    server5xx: number,
+    client4xx: number,
+    cancelled: number
+  },
+  retryAttemptsDistribution: Record<string, number>,
+  requestCountsByPriority: Record<string, number>,
+  retryPrioritiesDistribution: Record<string, {total: number, successes: number, failures: number}>,
+  queueWaitDuration: number;
+  retryDelayDuration: number;
+}
+
+/**
+ * Represents the distribution of different error types encountered
+ */
+interface ErrorTypesDistribution {
+  /** Number of network-related errors (e.g., connection failures) */
+  network: number;
+  /** Number of 5xx server errors */
+  server5xx: number;
+  /** Number of 4xx client errors */
+  client4xx: number;
+  /** Number of canceled requests */
+  cancelled: number;
+}
+
+/**
+ * Represents metrics for a specific request priority level
+ */
+interface PriorityMetrics {
+  /** The priority level (higher numbers indicate higher priority) */
+  priority: number;
+  /** Total number of retry attempts for this priority */
+  total: number;
+  /** Number of successful retries for this priority */
+  successes: number;
+  /** Number of failed retries for this priority */
+  failures: number;
+  /** Success rate percentage for this priority (0-100) */
+  successRate: number;
+  /** Failure rate percentage for this priority (0-100) */
+  failureRate: number;
+}
+
+/**
+ * AxiosRetryer metrics
+ * */
+export interface AxiosRetryerDetailedMetrics {
+  /** Total number of requests made through the retryer */
+  totalRequests: number;
+  /** Number of successfully completed retries */
+  successfulRetries: number;
+  /** Number of failed retry attempts */
+  failedRetries: number;
+  /** Requests that failed all retry attempts */
+  completelyFailedRequests: number;
+  /** Requests canceled before completion */
+  canceledRequests: number;
+  /** Critical priority requests that failed all retries */
+  completelyFailedCriticalRequests: number;
+  /** Distribution of error types encountered */
+  errorTypesDistribution: ErrorTypesDistribution;
+  /** Distribution of retry attempts across all requests */
+  retryAttemptsDistribution: Record<number, number>;
+  /** Count of requests by priority level */
+  requestCountsByPriority: Record<number, number>;
+  /** Average time spent in queue (seconds) */
+  avgQueueWait: number;
+  /** Average delay between retry attempts (seconds) */
+  avgRetryDelay: number;
+  /** Detailed metrics grouped by request priority */
+  priorityMetrics: PriorityMetrics[];
 }
 
 /**
