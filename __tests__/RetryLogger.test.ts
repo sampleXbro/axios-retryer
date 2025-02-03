@@ -39,24 +39,24 @@ describe('RetryLogger', () => {
 
     it('should log messages with optional data', () => {
       logger.log('Test log', { key: 'value' });
-      expect(consoleLogSpy).toHaveBeenCalledWith('[axios-retryer] Test log', JSON.stringify({ key: 'value' }));
+      expect(consoleLogSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Test log', JSON.stringify({ key: 'value' }));
 
       logger.log('Test log without data');
-      expect(consoleLogSpy).toHaveBeenCalledWith('[axios-retryer] Test log without data', '');
+      expect(consoleLogSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Test log without data', '');
     });
 
     it('should log errors', () => {
       const error = new Error('Test error');
       logger.error('Test error', error);
-      expect(consoleErrorSpy).toHaveBeenCalledWith('[axios-retryer] Test error', error);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Test error', error);
     });
 
     it('should log warnings with optional data', () => {
       logger.warn('Test warning', { key: 'value' });
-      expect(consoleWarnSpy).toHaveBeenCalledWith('[axios-retryer] Test warning', JSON.stringify({ key: 'value' }));
+      expect(consoleWarnSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Test warning', JSON.stringify({ key: 'value' }));
 
       logger.warn('Test warning without data');
-      expect(consoleWarnSpy).toHaveBeenCalledWith('[axios-retryer] Test warning without data', '');
+      expect(consoleWarnSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Test warning without data', '');
     });
   });
 });
