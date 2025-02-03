@@ -387,7 +387,41 @@ manager.use(new OfflineRetryPlugin);
 manager.unuse('OfflineRetryPlugin');
 ```
 
-You can list plugins with `manager.listPlugins()`.
+### Out Of The Box Plugins
+
+#### TokenRefreshPlugin
+
+The TokenRefreshPlugin is an extension for the Axios-Retryer library, designed to handle automatic token refresh when a request fails due to authentication issues (e.g., HTTP 401 Unauthorized responses). It intercepts failed requests, attempts to refresh the authentication token, and retries any pending requests once a new token is obtained.
+
+Features:
+•	Automatic Token Refresh: Detects expired tokens and attempts to refresh them before retrying requests.
+•	Configurable Behavior: Supports customizable refresh logic, retry limits, and authentication headers.
+•	Queueing Mechanism: Queues failed requests while refreshing the token to prevent multiple refresh attempts.
+•	Timeout Handling: Enforces a maximum wait time for token refresh attempts.
+•	Error Management: Clears queued requests and emits events if the refresh process fails.
+
+This plugin is useful for applications that rely on token-based authentication, ensuring seamless user experience and uninterrupted API communication.
+
+```typescript
+retryManager.use(
+  new TokenRefreshPlugin(
+    async (axiosInstance) => {
+      const refreshToken = lStorage.getParsedFromStorage(LOCAL_STORE_REFRESH_TOKEN);
+      const { data } = await axiosInstance.post('/refresh-token', { refreshToken });
+      return { token: data.AccessToken };
+    },
+    {
+      authHeaderName: 'Authorization', //default value, optional
+      refreshStatusCodes: [401], //default value, optional
+      refreshTimeout: 15_000, //default value, optional
+      retryOnRefreshFail: true, //default value, optional
+      tokenPrefix: 'Bearer ', //default value, optional
+      maxRefreshAttempts: 3, //default value, optional
+    },
+  ),
+);
+```
+You can list attached plugins with `manager.listPlugins()`.
 
 ### Debug Mode
 

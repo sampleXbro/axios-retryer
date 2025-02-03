@@ -261,7 +261,7 @@ describe('RetryManager Additional Tests', () => {
         expect(mock.history.patch.length).toBe(1); // No retries
       });
 
-      test('should not retry PUT requests', async () => {
+      test('should retry PUT requests', async () => {
         mock.onPut('/no-retry').reply(500);
 
         await expect(retryManager.axiosInstance.put('/no-retry')).rejects.toThrow();

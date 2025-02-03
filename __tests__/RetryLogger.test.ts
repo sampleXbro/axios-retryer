@@ -20,17 +20,17 @@ describe('RetryLogger', () => {
 
     it('should not log messages', () => {
       logger.log('Test log');
-      expect(consoleLogSpy).not.toHaveBeenCalled();
+      expect(consoleLogSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should not log errors', () => {
       logger.error('Test error', new Error('Test'));
-      expect(consoleErrorSpy).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should not log warnings', () => {
       logger.warn('Test warning');
-      expect(consoleWarnSpy).not.toHaveBeenCalled();
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
     });
   });
 

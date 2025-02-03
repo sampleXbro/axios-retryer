@@ -3,7 +3,6 @@
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { AxiosError } from 'axios';
 
-import type { AxiosRetryerRequestPriority } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
 
 interface EnqueuedItem {
@@ -22,7 +21,6 @@ export class RequestQueue {
   private readonly hasActiveCriticalRequests: () => boolean;
   private readonly isCriticalRequest: (request: AxiosRequestConfig) => boolean;
   private readonly waiting: EnqueuedItem[] = [];
-  private readonly blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
   private inProgressCount = 0;
 
   /**
@@ -30,14 +28,12 @@ export class RequestQueue {
    * @param queueDelay - delay of every enqueued request
    * @param hasActiveCriticalRequests - check if there are active critical requests
    * @param isCriticalRequest - check if a request is critical
-   * @param blockingQueueThreshold - blocking queue threshold
    */
   constructor(
     maxConcurrent = 5,
     queueDelay = 100,
     hasActiveCriticalRequests: typeof this.hasActiveCriticalRequests,
     isCriticalRequest: typeof this.isCriticalRequest,
-    blockingQueueThreshold: AxiosRetryerRequestPriority | undefined,
   ) {
     if (maxConcurrent < 1) {
       throw new Error(`maxConcurrent must be >= 1. Received: ${maxConcurrent}`);
@@ -45,7 +41,6 @@ export class RequestQueue {
     this.maxConcurrent = maxConcurrent;
     this.queueDelay = queueDelay;
     this.hasActiveCriticalRequests = hasActiveCriticalRequests;
-    this.blockingQueueThreshold = blockingQueueThreshold;
     this.isCriticalRequest = isCriticalRequest;
   }
 

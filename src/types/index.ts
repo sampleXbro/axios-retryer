@@ -98,6 +98,34 @@ export interface RetryHooks {
    * Triggered when all critical requests resolved.
    */
   onAllCriticalRequestsResolved?: () => void;
+  /**
+   * Triggered when internet connection error throw.
+   */
+  /**
+   * Called when a request fails due to network or connection issues, meaning
+   * no valid server response was received (e.g., user is offline).
+   *
+   * @param request - The Axios request config that encountered a connection error.
+   */
+  onInternetConnectionError?: (request: AxiosRequestConfig) => void;
+  /**
+   * Called immediately after a new token is successfully obtained from the refresh flow.
+   *
+   * @param newToken - The newly acquired token string.
+   */
+  onTokenRefreshed?: (newToken: string) => void;
+
+  /**
+   * Called when all token refresh attempts have failed (e.g., server returned errors,
+   * timed out, or other terminal conditions).
+   */
+  onTokenRefreshFailed?: () => void;
+
+  /**
+   * Called right before the token refresh process begins, allowing you to perform
+   * any necessary logging, UI updates, or other side effects prior to refresh attempts.
+   */
+  onBeforeTokenRefresh?: () => void;
 }
 
 export interface RetryManagerOptions {
@@ -280,14 +308,14 @@ export interface AxiosRetryerMetrics {
   canceledRequests: number;
   completelyFailedCriticalRequests: number;
   errorTypes: {
-    network: number,
-    server5xx: number,
-    client4xx: number,
-    cancelled: number
-  },
-  retryAttemptsDistribution: Record<string, number>,
-  requestCountsByPriority: Record<string, number>,
-  retryPrioritiesDistribution: Record<string, {total: number, successes: number, failures: number}>,
+    network: number;
+    server5xx: number;
+    client4xx: number;
+    cancelled: number;
+  };
+  retryAttemptsDistribution: Record<string, number>;
+  requestCountsByPriority: Record<string, number>;
+  retryPrioritiesDistribution: Record<string, { total: number; successes: number; failures: number }>;
   queueWaitDuration: number;
   retryDelayDuration: number;
 }
@@ -372,7 +400,7 @@ export interface RetryStrategy {
    * Add any logic here to get the retry delay on each attempt.
    * @returns number
    * */
-  getDelay(attempt: number, maxRetries: number): number;
+  getDelay(attempt: number, maxRetries: number, backoffType?: AxiosRetryerBackoffType): number;
 }
 
 /**
