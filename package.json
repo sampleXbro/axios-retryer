@@ -1,7 +1,7 @@
 {
   "name": "axios-retryer",
   "version": "1.2.4",
-  "description": "A powerful Axios extension for managing retries with customizable strategies, priority-based queuing, concurrency control, and detailed hooks for lifecycle management.",
+  "description": "axios-retryer is an advanced Axios request manager offering intelligent retry logic with token refresh, concurrency control, priority queuing, and a flexible plugin architecture, all built with TypeScript for robust HTTP client integrations.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
   "types": "dist/types/index.d.ts",
@@ -15,15 +15,7 @@
     "test": "jest --coverage"
   },
   "keywords": [
-    "axios",
-    "retry",
-    "http-client",
-    "priority-queue",
-    "concurrency",
-    "request-cancellation",
-    "typescript",
-    "automatic-retry",
-    "manual-retry"
+    "axios", "retry", "advanced-retry", "priority-queue", "typescript", "token-refresh", "concurrency", "queue", "plugin", "http-client"
   ],
   "author": "sampleX (Serhii Zhabskyi)",
   "license": "MIT",
