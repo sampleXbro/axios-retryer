@@ -7,7 +7,7 @@ describe('InMemoryRequestStore', () => {
     let mockRequest2: AxiosRequestConfig;
 
     beforeEach(() => {
-        store = new InMemoryRequestStore();
+        store = new InMemoryRequestStore(100, () => {});
         mockRequest1 = { url: 'http://example.com/request1', method: 'GET', __requestId: 'ID1' } as AxiosRequestConfig;
         mockRequest2 = { url: 'http://example.com/request2', method: 'POST', __requestId: 'ID2' } as AxiosRequestConfig;
     });

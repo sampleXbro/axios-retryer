@@ -16,10 +16,6 @@ manager.on('beforeRetry', () => {
   console.log(`CONCURRENT REQUESTS: ${manager.requestQueue.inProgressCount}`);
 });
 
-manager.on('afterRetry', (config, success) => {
-  console.log(`After retry: Successful: ${success}, Priority: ${config.__priority}`);
-});
-
 manager.on('onRetryProcessFinished', () => {
   const metrics = manager.getMetrics();
   console.log(`Processed 10K requests in ${performance.now() - start}ms, Metrics: ${JSON.stringify(metrics, null,2)}`);

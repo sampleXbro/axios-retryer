@@ -1,21 +1,24 @@
 export class RetryLogger {
-  constructor(private enabled = false) {}
+  constructor(private debugMode = false) {}
 
+  // eslint-disable-next-line
   log(message: string, data?: any) {
-    if (this.enabled) {
-      console.log(`[axios-retryer] ${message}`, data ? JSON.stringify(data) : '');
-    }
+    // eslint-disable-next-line no-console
+    console.log(`[AXIOS_RETRYER] ${message}`, data ? JSON.stringify(data) : '');
   }
 
-  error(message: string, error: unknown) {
-    if (this.enabled) {
-      console.error(`[axios-retryer] ${message}`, error);
-    }
+  error(message: string, error?: unknown) {
+    console.error(`[AXIOS_RETRYER] ${message}`, error);
   }
 
   warn(message: string, data?: unknown) {
-    if (this.enabled) {
-      console.warn(`[axios-retryer] ${message}`, data ? JSON.stringify(data) : '');
+    console.warn(`[AXIOS_RETRYER] ${message}`, data ? JSON.stringify(data) : '');
+  }
+
+  debug(message: string, meta?: object) {
+    if (this.debugMode) {
+      // eslint-disable-next-line no-console
+      console.debug(`[AXIOS_RETRYER] ${message}`, meta || '');
     }
   }
 }

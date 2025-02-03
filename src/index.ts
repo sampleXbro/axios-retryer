@@ -1,4 +1,4 @@
-import "./global-axios-augmentation";
+import './global-axios-augmentation';
 
 export {
   type RetryMode,
@@ -14,7 +14,10 @@ export {
   AXIOS_RETRYER_REQUEST_PRIORITIES,
   AXIOS_RETRYER_BACKOFF_TYPES,
 } from './types';
+export type { TokenRefreshPluginOptions } from './plugins/TokenRefreshPlugin/types/';
 
 export { RetryManager } from './core/RetryManager';
 export { InMemoryRequestStore } from './store/InMemoryRequestStore';
 export * from './utils';
+
+export { TokenRefreshPlugin } from './plugins/TokenRefreshPlugin/TokenRefresh.plugin';

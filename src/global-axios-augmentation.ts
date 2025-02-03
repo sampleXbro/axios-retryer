@@ -1,5 +1,6 @@
 import 'axios';
-import { AxiosRetryerRequestPriority, RetryMode } from './index';
+import type { AxiosRetryerRequestPriority, RetryMode } from './index';
+import type { AxiosRetryerBackoffType } from './types';
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -10,5 +11,8 @@ declare module 'axios' {
     __isRetrying?: boolean;
     __priority?: AxiosRetryerRequestPriority;
     __timestamp?: number;
+    __backoffType?: AxiosRetryerBackoffType;
+    __retryableStatuses?: (number | [number, number])[];
+    __isRetryRefreshRequest?: boolean;
   }
 }

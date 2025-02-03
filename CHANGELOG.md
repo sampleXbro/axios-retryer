@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.2.4 - 03.02.2025
+
+### Added
+- Added `__backoffType` and `__retryableStatuses` to the request config
+- Added the `TokenRefresh` plugin
+- Added more tests and optimized the logic
+- Added `onInternetConnectionError`, `onTokenRefreshed`, `onTokenRefreshFailed` and `onBeforeTokenRefresh` events/hooks
+- Added the request ID limit up to 40 symbols
+- Added more logs for the `debug: true` mode
+- Added `getLogger` public methods for plugins
+- Tiny fixes
+
 ## 1.0.3 - 26-01-2025
 
 ### Added
