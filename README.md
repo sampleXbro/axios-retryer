@@ -389,7 +389,7 @@ manager.unuse('OfflineRetryPlugin');
 
 ### Out Of The Box Plugins
 
-#### TokenRefreshPlugin
+### TokenRefreshPlugin
 
 The TokenRefreshPlugin is an extension for the Axios-Retryer library, designed to handle automatic token refresh when a request fails due to authentication issues (e.g., HTTP 401 Unauthorized responses). It intercepts failed requests, attempts to refresh the authentication token, and retries any pending requests once a new token is obtained.
 
@@ -403,7 +403,9 @@ Features:
 This plugin is useful for applications that rely on token-based authentication, ensuring seamless user experience and uninterrupted API communication.
 
 ```typescript
-retryManager.use(
+import { TokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin'
+
+manager.use(
   new TokenRefreshPlugin(
     async (axiosInstance) => {
       const refreshToken = lStorage.getParsedFromStorage(LOCAL_STORE_REFRESH_TOKEN);
@@ -421,6 +423,34 @@ retryManager.use(
   ),
 );
 ```
+### CircuitBreakerPlugin
+
+The **CircuitBreakerPlugin** is an extension for the **Axios-Retryer** library that provides a **fail-fast** mechanism to prevent excessive retries when a service is down. By monitoring consecutive failures, it dynamically transitions between states (`CLOSED`, `OPEN`, `HALF_OPEN`) to block requests, test for recovery, and restore normal operation when the service is healthy.
+
+#### Features
+- **Fail-Fast Behavior**: Automatically "trips" the circuit (moves to `OPEN` state) after a configurable number of consecutive failures, preventing unnecessary retries and reducing system strain.
+- **State Management**: Implements `CLOSED`, `OPEN`, and `HALF_OPEN` states to intelligently manage API request flow based on failure trends.
+- **Recovery Testing**: After a cooldown (`openTimeout`) period, it allows a limited number of test requests (`halfOpenMax`) in the `HALF_OPEN` state before deciding whether to reset or re-trip.
+- **Configurable Failure Threshold**: Allows customization of the `failureThreshold` to define how many consecutive failures should cause the circuit to trip.
+- **Resource Protection**: Prevents retry storms, helping maintain service stability when a backend is experiencing issues.
+
+This plugin is particularly useful in distributed systems, microservices architectures, and scenarios where excessive failed requests could impact system performance and availability.
+
+#### Usage Example
+```typescript
+import { CircuitBreakerPlugin } from 'axios-retryer/plugins/CircuitBreakerPlugin'
+
+manager.use(
+  new CircuitBreakerPlugin({
+    failureThreshold: 5,   // Trip circuit after 5 consecutive failures
+    openTimeout: 30_000,   // Remain open for 30s before allowing half-open test
+    halfOpenMax: 1,        // Allow 1 test request in half-open state
+  }),
+);
+```
+
+By integrating this plugin, your application can avoid unnecessary retries during outages and improve overall resilience by dynamically adjusting request behavior based on service availability.
+
 You can list attached plugins with `manager.listPlugins()`.
 
 ### Debug Mode

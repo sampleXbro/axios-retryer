@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## next
+- Added `CircuitBraker` plugin, tests and benchmark for it
+- Made all the plugins tree-shakeable
+
 ## 1.2.4 - 03.02.2025
 
 ### Added

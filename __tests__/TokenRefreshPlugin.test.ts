@@ -4,7 +4,7 @@ import MockAdapter from 'axios-mock-adapter';
 import { jest } from '@jest/globals';
 import { RetryManager, RetryHooks } from '../src';
 import { RetryLogger } from '../src/services/logger';
-import { TokenRefreshPlugin, TokenRefreshPluginOptions } from '../src/plugins/TokenRefreshPlugin/TokenRefresh.plugin';
+import { TokenRefreshPlugin, TokenRefreshPluginOptions } from '../src/plugins/TokenRefreshPlugin';
 
 describe('TokenRefreshPlugin', () => {
   let mockAxios: MockAdapter;
@@ -13,7 +13,6 @@ describe('TokenRefreshPlugin', () => {
   let mockLogger: RetryLogger;
   let refreshFn: jest.Mock;
   let plugin: TokenRefreshPlugin;
-  let hooks: Partial<RetryHooks>;
 
   beforeEach(() => {
     // 1) Create a real Axios instance and mock it.

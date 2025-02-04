@@ -15,14 +15,14 @@
     "declaration": true,
     "outDir": "dist",
     "declarationDir": "dist/types",
+    "declarationMap": false,
     "rootDir": "src"
   },
   "include": [
-    "src",
+    "src/**/*",
     "src/global-axios-augmentation.ts"
   ],
   "exclude": [
     "node_modules",
-    "dist"
   ]
 }
