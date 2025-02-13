@@ -451,6 +451,50 @@ manager.use(
 
 By integrating this plugin, your application can avoid unnecessary retries during outages and improve overall resilience by dynamically adjusting request behavior based on service availability.
 
+### CachingPlugin
+
+The **CachingPlugin** is an extension for Axios‑Retryer that caches successful responses (by default, GET requests) to avoid sending identical requests repeatedly. It generates a unique cache key from the request’s method, URL, parameters, and (optionally) headers. Cached responses are returned immediately if they’re still fresh, based on a configurable time-to-revalidate (TTL). Additional options allow for periodic cleanup of stale entries and limiting the cache size.
+
+#### Features:
+•	Response Caching: Returns cached responses for identical requests.
+•	Time-to-Revalidate: Only uses cached data if it’s younger than the specified TTL.
+•	Periodic Cleanup & Size Limit: Automatically removes stale or excessive cache entries.
+•	Selective Caching: Optionally cache only retried requests.
+
+#### Configuration Options:
+•	compareHeaders (boolean, default: false): Include headers in the cache key.
+•	timeToRevalidate (number, default: 0): TTL for cache freshness (0 means never expires).
+•	cacheMethods (string[], default: `[‘GET’]`): HTTP methods to cache.
+•	cleanupInterval (number, default: 0): How often (ms) to run cache cleanup.
+•	maxAge (number, default: 0): Maximum age (ms) for cached items.
+•	maxItems (number, default: 1000): Maximum number of cached responses.
+•	cacheOnlyRetriedRequests (boolean, default: false): Cache only requests that were retried.
+
+```typescript
+import { RetryManager } from 'axios-retryer';
+import { CachingPlugin } from 'axios-retryer/plugins/CachingPlugin';
+
+const retryManager = new RetryManager({
+  axiosInstance: yourAxiosInstance,
+  // other RetryManager options...
+});
+
+// Cache GET responses for 60 seconds; clean up every 30 seconds.
+const cachingPlugin = new CachingPlugin({
+  compareHeaders: false,
+  timeToRevalidate: 60000, // cache responses for 60 seconds
+  cacheMethods: ['GET'],
+  cleanupInterval: 30000,   // run cleanup every 30 seconds
+  maxAge: 120000,           // remove entries older than 2 minutes
+  maxItems: 100,            // store up to 100 responses
+  cacheOnlyRetriedRequests: false,
+});
+
+retryManager.use(cachingPlugin);
+
+// Identical GET requests within 60s will return the cached response.
+```
+
 You can list attached plugins with `manager.listPlugins()`.
 
 ### Debug Mode
