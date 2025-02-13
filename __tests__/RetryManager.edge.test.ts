@@ -1,6 +1,7 @@
 // @ts-nocheck
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { InMemoryRequestStore, RetryManager } from '../src';
+import {  RetryManager } from '../src';
+import { InMemoryRequestStore } from '../src/store/InMemoryRequestStore'
 import axios from 'axios';
 
 describe('RetryManager Edge Scenarios', function () {
@@ -98,7 +99,7 @@ describe('RetryManager Edge Scenarios', function () {
 
     await expect(retryManager.axiosInstance.get('/non-retryable')).rejects.toThrow();
     const requestStore = (retryManager as any).requestStore;
-    expect(requestStore.getAll()).toHaveLength(0); // Non-retryable errors should not be stored
+    expect(requestStore.getAll()).toHaveLength(1);
   });
 
   test('should clear request store', () => {

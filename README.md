@@ -389,7 +389,7 @@ manager.unuse('OfflineRetryPlugin');
 
 ### Out Of The Box Plugins
 
-#### TokenRefreshPlugin
+### TokenRefreshPlugin
 
 The TokenRefreshPlugin is an extension for the Axios-Retryer library, designed to handle automatic token refresh when a request fails due to authentication issues (e.g., HTTP 401 Unauthorized responses). It intercepts failed requests, attempts to refresh the authentication token, and retries any pending requests once a new token is obtained.
 
@@ -403,7 +403,9 @@ Features:
 This plugin is useful for applications that rely on token-based authentication, ensuring seamless user experience and uninterrupted API communication.
 
 ```typescript
-retryManager.use(
+import { TokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin'
+
+manager.use(
   new TokenRefreshPlugin(
     async (axiosInstance) => {
       const refreshToken = lStorage.getParsedFromStorage(LOCAL_STORE_REFRESH_TOKEN);
@@ -421,6 +423,78 @@ retryManager.use(
   ),
 );
 ```
+### CircuitBreakerPlugin
+
+The **CircuitBreakerPlugin** is an extension for the **Axios-Retryer** library that provides a **fail-fast** mechanism to prevent excessive retries when a service is down. By monitoring consecutive failures, it dynamically transitions between states (`CLOSED`, `OPEN`, `HALF_OPEN`) to block requests, test for recovery, and restore normal operation when the service is healthy.
+
+#### Features
+- **Fail-Fast Behavior**: Automatically "trips" the circuit (moves to `OPEN` state) after a configurable number of consecutive failures, preventing unnecessary retries and reducing system strain.
+- **State Management**: Implements `CLOSED`, `OPEN`, and `HALF_OPEN` states to intelligently manage API request flow based on failure trends.
+- **Recovery Testing**: After a cooldown (`openTimeout`) period, it allows a limited number of test requests (`halfOpenMax`) in the `HALF_OPEN` state before deciding whether to reset or re-trip.
+- **Configurable Failure Threshold**: Allows customization of the `failureThreshold` to define how many consecutive failures should cause the circuit to trip.
+- **Resource Protection**: Prevents retry storms, helping maintain service stability when a backend is experiencing issues.
+
+This plugin is particularly useful in distributed systems, microservices architectures, and scenarios where excessive failed requests could impact system performance and availability.
+
+#### Usage Example
+```typescript
+import { CircuitBreakerPlugin } from 'axios-retryer/plugins/CircuitBreakerPlugin'
+
+manager.use(
+  new CircuitBreakerPlugin({
+    failureThreshold: 5,   // Trip circuit after 5 consecutive failures
+    openTimeout: 30_000,   // Remain open for 30s before allowing half-open test
+    halfOpenMax: 1,        // Allow 1 test request in half-open state
+  }),
+);
+```
+
+By integrating this plugin, your application can avoid unnecessary retries during outages and improve overall resilience by dynamically adjusting request behavior based on service availability.
+
+### CachingPlugin
+
+The **CachingPlugin** is an extension for Axios‑Retryer that caches successful responses (by default, GET requests) to avoid sending identical requests repeatedly. It generates a unique cache key from the request’s method, URL, parameters, and (optionally) headers. Cached responses are returned immediately if they’re still fresh, based on a configurable time-to-revalidate (TTL). Additional options allow for periodic cleanup of stale entries and limiting the cache size.
+
+#### Features:
+•	Response Caching: Returns cached responses for identical requests.
+•	Time-to-Revalidate: Only uses cached data if it’s younger than the specified TTL.
+•	Periodic Cleanup & Size Limit: Automatically removes stale or excessive cache entries.
+•	Selective Caching: Optionally cache only retried requests.
+
+#### Configuration Options:
+•	compareHeaders (boolean, default: false): Include headers in the cache key.
+•	timeToRevalidate (number, default: 0): TTL for cache freshness (0 means never expires).
+•	cacheMethods (string[], default: `[‘GET’]`): HTTP methods to cache.
+•	cleanupInterval (number, default: 0): How often (ms) to run cache cleanup.
+•	maxAge (number, default: 0): Maximum age (ms) for cached items.
+•	maxItems (number, default: 1000): Maximum number of cached responses.
+•	cacheOnlyRetriedRequests (boolean, default: false): Cache only requests that were retried.
+
+```typescript
+import { RetryManager } from 'axios-retryer';
+import { CachingPlugin } from 'axios-retryer/plugins/CachingPlugin';
+
+const retryManager = new RetryManager({
+  axiosInstance: yourAxiosInstance,
+  // other RetryManager options...
+});
+
+// Cache GET responses for 60 seconds; clean up every 30 seconds.
+const cachingPlugin = new CachingPlugin({
+  compareHeaders: false,
+  timeToRevalidate: 60000, // cache responses for 60 seconds
+  cacheMethods: ['GET'],
+  cleanupInterval: 30000,   // run cleanup every 30 seconds
+  maxAge: 120000,           // remove entries older than 2 minutes
+  maxItems: 100,            // store up to 100 responses
+  cacheOnlyRetriedRequests: false,
+});
+
+retryManager.use(cachingPlugin);
+
+// Identical GET requests within 60s will return the cached response.
+```
+
 You can list attached plugins with `manager.listPlugins()`.
 
 ### Debug Mode

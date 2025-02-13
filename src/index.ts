@@ -17,7 +17,5 @@ export {
 export type { TokenRefreshPluginOptions } from './plugins/TokenRefreshPlugin/types/';
 
 export { RetryManager } from './core/RetryManager';
-export { InMemoryRequestStore } from './store/InMemoryRequestStore';
-export * from './utils';
 
 export { TokenRefreshPlugin } from './plugins/TokenRefreshPlugin/TokenRefresh.plugin';

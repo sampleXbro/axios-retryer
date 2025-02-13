@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "1.2.4",
+  "version": "1.3.2",
   "description": "axios-retryer is an advanced Axios request manager offering intelligent retry logic with token refresh, concurrency control, priority queuing, and a flexible plugin architecture, all built with TypeScript for robust HTTP client integrations.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -15,7 +15,16 @@
     "test": "jest --coverage"
   },
   "keywords": [
-    "axios", "retry", "advanced-retry", "priority-queue", "typescript", "token-refresh", "concurrency", "queue", "plugin", "http-client"
+    "axios",
+    "retry",
+    "advanced-retry",
+    "priority-queue",
+    "typescript",
+    "token-refresh",
+    "concurrency",
+    "queue",
+    "plugin",
+    "http-client"
   ],
   "author": "sampleX (Serhii Zhabskyi)",
   "license": "MIT",
@@ -46,6 +55,21 @@
     ".": {
       "types": "./dist/types/index.d.ts",
       "default": "./dist/index.esm.js"
+    },
+    "./plugins/CachingPlugin": {
+      "import": "./dist/plugins/CachingPlugin.esm.js",
+      "require": "./dist/plugins/CachingPlugin.cjs.js",
+      "types": "./dist/types/plugins/CachingPlugin/index.d.ts"
+    },
+    "./plugins/CircuitBreakerPlugin": {
+      "import": "./dist/plugins/CircuitBreakerPlugin.esm.js",
+      "require": "./dist/plugins/CircuitBreakerPlugin.cjs.js",
+      "types": "./dist/types/plugins/CircuitBreakerPlugin/index.d.ts"
+    },
+    "./plugins/TokenRefreshPlugin": {
+      "import": "./dist/plugins/TokenRefreshPlugin.esm.js",
+      "require": "./dist/plugins/TokenRefreshPlugin.cjs.js",
+      "types": "./dist/types/plugins/TokenRefreshPlugin/index.d.ts"
     },
     "./package.json": "./package.json"
   },

@@ -1,4 +1,5 @@
-import { InMemoryRequestStore} from "../src";
+import { InMemoryRequestStore } from '../src/store/InMemoryRequestStore'
+
 import { AxiosRequestConfig } from 'axios';
 
 describe('InMemoryRequestStore', () => {

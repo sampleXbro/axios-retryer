@@ -1,4 +1,5 @@
-import { AXIOS_RETRYER_BACKOFF_TYPES, getBackoffDelay } from '../src';
+import { AXIOS_RETRYER_BACKOFF_TYPES } from '../src';
+import { getBackoffDelay } from '../src/utils'
 
 describe('getBackoffDelay', () => {
   describe('Static Backoff', () => {
