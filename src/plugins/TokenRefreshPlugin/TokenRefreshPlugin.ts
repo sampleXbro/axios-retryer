@@ -1,8 +1,8 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import axios from 'axios';
 
-import type { RetryManager } from '../../core/RetryManager';
-import type { RetryLogger } from '../../services/logger';
+import type { RetryManager } from '../../core/RetryManager.ts';
+import type { RetryLogger } from '../../services/logger.ts';
 import type { RetryPlugin } from '../../types';
 import type { TokenRefreshPluginOptions } from './types';
 
@@ -57,6 +57,15 @@ export class TokenRefreshPlugin implements RetryPlugin {
       (resp) => resp,
       (error: AxiosError) => this.handleResponseError(error),
     );
+
+    this.manager.axiosInstance.interceptors.request.use((config) => {
+      const { authHeaderName } = this.options;
+      //update the auth header
+      if (this.manager.axiosInstance.defaults.headers.common[authHeaderName] && config.headers[authHeaderName]) {
+        config.headers[authHeaderName] = this.manager.axiosInstance.defaults.headers.common[authHeaderName];
+      }
+      return config;
+    });
   }
 
   /**

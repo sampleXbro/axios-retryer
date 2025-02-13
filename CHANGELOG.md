@@ -2,9 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## next
+## 1.3.2 - 13.02.2025
 - Added `CircuitBraker` plugin, tests and benchmark for it
+- Added `Caching` plugin, tests and benchmark for it
 - Made all the plugins tree-shakeable
+- Plugins can now initialize before and after the retry manager interceptors `manager.use(plugin: RetryPlugin, beforeRetryerInterceptors = true)`
 
 ## 1.2.4 - 03.02.2025
 

@@ -3,8 +3,7 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 
-import { RetryLogger } from '../services/logger';
-import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
+
 import type {
   AxiosRetryerDetailedMetrics,
   AxiosRetryerMetrics,
@@ -17,8 +16,11 @@ import type {
   RetryStrategy,
 } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../types';
-import { DefaultRetryStrategy } from './strategies/DefaultRetryStrategy';
+import { RetryLogger } from '../services/logger';
 import { RequestQueue } from './requestQueue';
+import { DefaultRetryStrategy } from './strategies/DefaultRetryStrategy';
+import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
+
 
 // Default configuration constants
 const DEFAULT_CONFIG = {
@@ -83,6 +85,8 @@ export class RetryManager {
   private requestIndex: number;
   private plugins: Map<string, RetryPlugin>;
   private listeners: HookListeners = {};
+  private requestInterceptorId: number | null = null;
+  private responseInterceptorId: number | null = null;
 
   private requestQueue: RequestQueue;
 
@@ -161,17 +165,20 @@ export class RetryManager {
     return `${urlPart}-${timestamp}-${random}-${++this.requestIndex}`;
   }
 
-  private setupInterceptors(): void {
+  private setupInterceptors = (): void => {
     this.logger.debug('Setting up Axios interceptors');
-    this.axiosInternalInstance.interceptors.request.use(
+    this.requestInterceptorId = this.axiosInternalInstance.interceptors.request.use(
       this.onRequest as (
         value: InternalAxiosRequestConfig<unknown>,
       ) => InternalAxiosRequestConfig<unknown> | Promise<InternalAxiosRequestConfig<unknown>>,
       this.onRequestError,
     );
 
-    this.axiosInternalInstance.interceptors.response.use(this.onSuccessfulResponse, this.handleError);
-  }
+    this.responseInterceptorId = this.axiosInternalInstance.interceptors.response.use(
+      this.onSuccessfulResponse,
+      this.handleError,
+    );
+  };
 
   private onRequestError = (error: AxiosError): Promise<AxiosError> => {
     this.logger.error('Request interceptor error', {
@@ -414,7 +421,7 @@ export class RetryManager {
       return this.scheduleRetry(config, attempt, maxRetries, cancelledInQueue);
     }
 
-    return this.handleNoRetriesAction(error, this.retryStrategy.getIsRetryable(error));
+    return this.handleNoRetriesAction(error, true);
   };
 
   private handleNoRetriesAction(error: AxiosError, shouldStore = true): Promise<null> {
@@ -514,7 +521,7 @@ export class RetryManager {
   /**
    * Register a plugin with version validation.
    */
-  public use = (plugin: RetryPlugin): void => {
+  public use = (plugin: RetryPlugin, beforeRetryerInterceptors = true): void => {
     if (this.plugins.has(plugin.name)) {
       this.logger.error('Plugin already registered', { plugin: plugin.name });
       throw new Error(`Plugin "${plugin.name}" is already registered.`);
@@ -526,7 +533,21 @@ export class RetryManager {
     }
 
     this.plugins.set(plugin.name, plugin);
+
+    //remove current interceptors
+    if (beforeRetryerInterceptors) {
+      this.requestInterceptorId !== null &&
+      this.axiosInternalInstance.interceptors.request.eject(this.requestInterceptorId);
+      this.responseInterceptorId !== null &&
+      this.axiosInternalInstance.interceptors.response.eject(this.responseInterceptorId);
+    }
+
     plugin.initialize(this);
+
+    //add interceptors after the plugin initialization
+    if (beforeRetryerInterceptors) {
+      this.setupInterceptors();
+    }
 
     this.logger.log('Plugin registered', {
       name: plugin.name,

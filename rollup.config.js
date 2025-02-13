@@ -22,6 +22,24 @@ module.exports = [
         ],
         external: ['axios']
     },
+    // CachingPlugin
+    {
+        input: './src/plugins/CachingPlugin/index.ts',
+        output: [
+            { file: './dist/plugins/CachingPlugin.cjs.js', format: 'cjs', sourcemap: false },
+            { file: './dist/plugins/CachingPlugin.esm.js', format: 'es', sourcemap: false }
+        ],
+        plugins: [
+            resolve(),
+            commonjs(),
+            typescript({
+                tsconfig: './tsconfig.json',
+                useTsconfigDeclarationDir: true
+            }),
+            terser()
+        ],
+        external: ['axios']
+    },
     // CircuitBreakerPlugin
     {
         input: './src/plugins/CircuitBreakerPlugin/index.ts',
