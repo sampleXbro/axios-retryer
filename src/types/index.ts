@@ -448,6 +448,7 @@ export interface RetryPlugin {
    * */
   onBeforeDestroyed?: (manager: RetryManager) => void;
   /**
+   * @deprecated Use events instead {@link RetryManager.on} and {@link RetryManager.off}
    * RetryManager lifecycle hooks {@link RetryHooks}
    * */
   hooks?: RetryHooks;

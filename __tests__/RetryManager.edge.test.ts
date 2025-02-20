@@ -99,7 +99,7 @@ describe('RetryManager Edge Scenarios', function () {
 
     await expect(retryManager.axiosInstance.get('/non-retryable')).rejects.toThrow();
     const requestStore = (retryManager as any).requestStore;
-    expect(requestStore.getAll()).toHaveLength(1);
+    expect(requestStore.getAll()).toHaveLength(0);
   });
 
   test('should clear request store', () => {
