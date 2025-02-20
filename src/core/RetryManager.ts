@@ -3,7 +3,8 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 
-
+import { RetryLogger } from '../services/logger';
+import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
 import type {
   AxiosRetryerDetailedMetrics,
   AxiosRetryerMetrics,
@@ -16,11 +17,8 @@ import type {
   RetryStrategy,
 } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../types';
-import { RetryLogger } from '../services/logger';
-import { RequestQueue } from './requestQueue';
 import { DefaultRetryStrategy } from './strategies/DefaultRetryStrategy';
-import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
-
+import { RequestQueue } from './requestQueue';
 
 // Default configuration constants
 const DEFAULT_CONFIG = {
@@ -68,7 +66,7 @@ type HookListeners = {
 };
 
 export class RetryManager {
-  private readonly axiosInternalInstance: AxiosInstance;
+  private readonly _axiosInstance: AxiosInstance;
   private readonly mode: RetryMode;
   private readonly retries: number;
   private readonly throwErrorOnFailedRetries: boolean;
@@ -78,17 +76,17 @@ export class RetryManager {
   private readonly hooks?: RetryHooks;
   private readonly blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
   private readonly metrics: AxiosRetryerMetrics;
-  private inRetryProgress: boolean;
+  private inRetryProgress = false;
   private retryStrategy: RetryStrategy;
   private requestStore: RequestStore;
   private activeRequests: Map<string, ExtendedAbortController>;
-  private requestIndex: number;
+  private requestIndex = 0;
   private plugins: Map<string, RetryPlugin>;
   private listeners: HookListeners = {};
-  private requestInterceptorId: number | null = null;
-  private responseInterceptorId: number | null = null;
 
   private requestQueue: RequestQueue;
+  private requestInterceptorId: number | null = null;
+  private responseInterceptorId: number | null = null;
 
   constructor(options: RetryManagerOptions = {}) {
     this.validateOptions(options);
@@ -122,7 +120,6 @@ export class RetryManager {
     );
     this.hooks = options.hooks;
     this.activeRequests = new Map();
-    this.requestIndex = 0;
     this.plugins = new Map();
     this.inRetryProgress = false;
     this.requestQueue = new RequestQueue(
@@ -132,9 +129,7 @@ export class RetryManager {
       this.isCriticalRequest,
     );
     this.blockingQueueThreshold = options.blockingQueueThreshold;
-
-    this.axiosInternalInstance = options.axiosInstance || this.createAxiosInstance();
-
+    this._axiosInstance = options.axiosInstance || this.createAxiosInstance();
     this.metrics = { ...initialMetrics };
 
     this.setupInterceptors();
@@ -152,7 +147,7 @@ export class RetryManager {
   private createAxiosInstance(): AxiosInstance {
     this.logger.debug('Creating default Axios instance');
     return axios.create({
-      timeout: 30_000,
+      timeout: 30000,
       validateStatus: (status) => status >= 200 && status < 300,
     });
   }
@@ -160,21 +155,19 @@ export class RetryManager {
   private generateRequestId(url?: string): string {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(7);
-    // Truncate URL to first 25 characters for cleaner IDs
     const urlPart = url ? url.substring(0, 40) : 'unknown';
     return `${urlPart}-${timestamp}-${random}-${++this.requestIndex}`;
   }
 
   private setupInterceptors = (): void => {
     this.logger.debug('Setting up Axios interceptors');
-    this.requestInterceptorId = this.axiosInternalInstance.interceptors.request.use(
+    this.requestInterceptorId = this._axiosInstance.interceptors.request.use(
       this.onRequest as (
         value: InternalAxiosRequestConfig<unknown>,
       ) => InternalAxiosRequestConfig<unknown> | Promise<InternalAxiosRequestConfig<unknown>>,
       this.onRequestError,
     );
-
-    this.responseInterceptorId = this.axiosInternalInstance.interceptors.response.use(
+    this.responseInterceptorId = this._axiosInstance.interceptors.response.use(
       this.onSuccessfulResponse,
       this.handleError,
     );
@@ -192,7 +185,6 @@ export class RetryManager {
   private onRequest = async (config: AxiosRequestConfig) => {
     const controller = new AbortController() as ExtendedAbortController;
     const requestId = config.__requestId ?? this.generateRequestId(config.url);
-
     config.__requestId = requestId;
     config.__timestamp = Date.now();
     config.__priority = config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
@@ -226,14 +218,16 @@ export class RetryManager {
     });
 
     this.metrics.queueWaitDuration += queueWait;
+    this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
 
     return promise;
   };
 
   private handleRetryProcessFinish = (): void => {
     if (this.activeRequests.size === 0 && this.inRetryProgress) {
-      const failedRequests = this.requestStore.getAll()?.length ?? 0;
-      const failedCritical = this.requestStore.getAll()?.filter(this.isCriticalRequest).length ?? 0;
+      const failed = this.requestStore.getAll() || [];
+      const failedRequests = failed.length;
+      const failedCritical = failed.filter(this.isCriticalRequest).length;
 
       this.metrics.completelyFailedRequests += failedRequests;
       this.metrics.completelyFailedCriticalRequests += failedCritical;
@@ -251,11 +245,9 @@ export class RetryManager {
   private onSuccessfulResponse = (response: AxiosResponse): AxiosResponse => {
     const config = response.config;
     const requestId = config.__requestId;
-
     if (requestId) {
       this.activeRequests.delete(requestId);
     }
-
     this.requestQueue.markComplete();
 
     this.logger.debug('Request succeeded', {
@@ -280,9 +272,7 @@ export class RetryManager {
     }
 
     this.handleRetryProcessFinish();
-
     this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
-
     return response;
   };
 
@@ -330,7 +320,7 @@ export class RetryManager {
       });
       this.metrics.canceledRequests++;
       this.metrics.errorTypes.cancelled++;
-      cancelledFromQueue && this.requestStore.add(config);
+      if (cancelledFromQueue) this.requestStore.add(config);
       return this.handleCancelAction(config);
     }
 
@@ -346,7 +336,7 @@ export class RetryManager {
       this.metrics.retryPrioritiesDistribution[config.__priority].total++;
     }
 
-    return this.axiosInternalInstance.request(config);
+    return this._axiosInstance.request(config);
   }
 
   private sleep(ms: number): Promise<void> {
@@ -360,7 +350,6 @@ export class RetryManager {
     config.__isRetrying = false;
     this.logger.warn('Handling request cancellation', { requestId: config.__requestId });
     this.handleRetryProcessFinish();
-
     return this.throwErrorOnCancelRequest
       ? Promise.reject(new Error(`Request aborted. ID: ${config.__requestId}`))
       : Promise.resolve(null as never);
@@ -421,7 +410,7 @@ export class RetryManager {
       return this.scheduleRetry(config, attempt, maxRetries, cancelledInQueue);
     }
 
-    return this.handleNoRetriesAction(error, true);
+    return this.handleNoRetriesAction(error, this.retryStrategy.getIsRetryable(error));
   };
 
   private handleNoRetriesAction(error: AxiosError, shouldStore = true): Promise<null> {
@@ -463,20 +452,16 @@ export class RetryManager {
 
   private triggerHook<K extends keyof RetryHooks>(hookName: K, ...args: Parameters<NonNullable<RetryHooks[K]>>): void {
     try {
-      // Core hooks
       const hook = this.hooks?.[hookName];
       if (hook) {
         (hook as (...args: Parameters<NonNullable<RetryHooks[K]>>) => void)(...args);
       }
-
-      // Plugin hooks
       this.plugins.forEach((plugin) => {
         const pluginHook = plugin.hooks?.[hookName];
         if (pluginHook) {
           (pluginHook as (...args: Parameters<NonNullable<RetryHooks[K]>>) => void)(...args);
         }
       });
-      // eslint-disable-next-line
       this.logger.debug(`Hook "${hookName}" executed`, (args[0] as any)?.__requestId);
     } catch (error) {
       this.logger.error(`Error executing "${hookName}" hook:`, error);
@@ -503,8 +488,6 @@ export class RetryManager {
       listener(...args);
     });
   };
-
-  // Public Methods
 
   public triggerAndEmit = <K extends keyof RetryHooks>(
     event: K,
@@ -534,17 +517,17 @@ export class RetryManager {
 
     this.plugins.set(plugin.name, plugin);
 
-    //remove current interceptors
     if (beforeRetryerInterceptors) {
-      this.requestInterceptorId !== null &&
-      this.axiosInternalInstance.interceptors.request.eject(this.requestInterceptorId);
-      this.responseInterceptorId !== null &&
-      this.axiosInternalInstance.interceptors.response.eject(this.responseInterceptorId);
+      if (this.requestInterceptorId !== null) {
+        this.axiosInstance.interceptors.request.eject(this.requestInterceptorId);
+      }
+      if (this.responseInterceptorId !== null) {
+        this.axiosInstance.interceptors.response.eject(this.responseInterceptorId);
+      }
     }
 
     plugin.initialize(this);
 
-    //add interceptors after the plugin initialization
     if (beforeRetryerInterceptors) {
       this.setupInterceptors();
     }
@@ -567,10 +550,7 @@ export class RetryManager {
     }
 
     this.plugins.delete(pluginName);
-    this.logger.log('Plugin removed', {
-      name: plugin.name,
-      version: plugin.version,
-    });
+    this.logger.log('Plugin removed', { name: plugin.name, version: plugin.version });
     return true;
   };
 
@@ -589,7 +569,7 @@ export class RetryManager {
     if (!this.listeners[event]) {
       this.listeners[event] = [];
     }
-    this.listeners[event].push(listener);
+    this.listeners[event]?.push(listener);
     this.logger.debug('Event listener added', { event });
     return this;
   };
@@ -602,17 +582,14 @@ export class RetryManager {
     if (!arr) {
       return false;
     }
-
     const index = arr.indexOf(listener);
     if (index === -1) {
       return false;
     }
-
     arr.splice(index, 1);
     if (arr.length === 0) {
       delete this.listeners[event];
     }
-
     this.logger.debug('Event listener removed', { event });
     return true;
   };
@@ -620,12 +597,10 @@ export class RetryManager {
   public retryFailedRequests = async <T = unknown>(): Promise<AxiosResponse<T>[]> => {
     const failedRequests = this.requestStore.getAll();
     this.requestStore.clear();
-
     if (failedRequests.length > 0) {
       this.logger.debug('Starting manual retry process', { count: failedRequests.length });
       this.triggerAndEmit('onManualRetryProcessStarted');
     }
-
     return Promise.all(
       failedRequests.map(async (config) => {
         config.__retryAttempt = 1;
@@ -635,7 +610,7 @@ export class RetryManager {
   };
 
   public get axiosInstance(): AxiosInstance {
-    return this.axiosInternalInstance;
+    return this._axiosInstance;
   }
 
   public cancelRequest = (requestId: string): void => {
@@ -647,7 +622,6 @@ export class RetryManager {
         wasActive: true,
         wasQueued,
       });
-
       controller.abort();
       this.activeRequests.delete(requestId);
       this.metrics.canceledRequests++;
@@ -660,7 +634,6 @@ export class RetryManager {
       activeCount: this.activeRequests.size,
       queuedCount: this.requestQueue.getWaitingCount(),
     });
-
     this.activeRequests.forEach((controller, requestId) => {
       controller.abort();
       this.metrics.canceledRequests++;
@@ -673,7 +646,6 @@ export class RetryManager {
   public getMetrics = (): AxiosRetryerDetailedMetrics => {
     this.logger.debug('Generating metrics snapshot');
     const totalRetries = this.metrics.failedRetries + this.metrics.successfulRetries;
-
     return {
       totalRequests: this.metrics.totalRequests,
       successfulRetries: this.metrics.successfulRetries,

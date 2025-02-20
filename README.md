@@ -229,7 +229,7 @@ These events correspond to the hooks in RetryHooks:
 - 	`onAllCriticalRequestsResolved` - Triggered when all critical requests resolved.
 - 	`onManualRetryProcessStarted` - Triggered when manual retry process begins.
 
-#### Hooks
+#### Hooks (deprecated, use events instead)
 
 ```typescript
 const manager = new RetryManager({
@@ -585,6 +585,7 @@ manager.axiosInstance.get('https://httpbin.org/status/500')
 // At some point in the future...
 manager.retryFailedRequests().then((responses) => {
   console.log('Retried responses:', responses);
+  //set responses to the store
 }).catch(err => {
   console.error('Error retrying failed requests:', err);
 });

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.3.3 - 20.02.2025
+- Hooks are deprecated and will be removed in the next major version
+- RetryManager refactored and optimized
+
 ## 1.3.2 - 13.02.2025
 - Added `CircuitBraker` plugin, tests and benchmark for it
 - Added `Caching` plugin, tests and benchmark for it
