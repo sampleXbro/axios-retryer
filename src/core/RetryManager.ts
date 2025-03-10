@@ -17,6 +17,7 @@ import type {
   RetryStrategy,
 } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../types';
+import { sanitizeData, sanitizeHeaders, sanitizeUrl, type SanitizeOptions } from '../utils/sanitize';
 import { DefaultRetryStrategy } from './strategies/DefaultRetryStrategy';
 import { RequestQueue } from './requestQueue';
 
@@ -29,6 +30,7 @@ const DEFAULT_CONFIG = {
   DEBUG: false,
   MAX_REQUESTS_TO_STORE: 200,
   MAX_CONCURRENT_REQUESTS: 5,
+  ENABLE_SANITIZATION: true,
 };
 
 const initialMetrics: AxiosRetryerMetrics = {
@@ -76,6 +78,8 @@ export class RetryManager {
   private readonly hooks?: RetryHooks;
   private readonly blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
   private readonly metrics: AxiosRetryerMetrics;
+  private readonly enableSanitization: boolean;
+  private readonly sanitizeOptions: SanitizeOptions;
   private inRetryProgress = false;
   private retryStrategy: RetryStrategy;
   private requestStore: RequestStore;
@@ -93,11 +97,16 @@ export class RetryManager {
 
     this.debug = options.debug ?? DEFAULT_CONFIG.DEBUG;
     this.logger = new RetryLogger(this.debug);
+    this.enableSanitization = options.enableSanitization ?? DEFAULT_CONFIG.ENABLE_SANITIZATION;
+    this.sanitizeOptions = options.sanitizeOptions ?? {};
+    
     this.logger.debug('Initializing RetryManager', {
       options: {
         mode: options.mode,
         retries: options.retries,
         maxConcurrent: options.maxConcurrentRequests,
+        maxQueueSize: options.maxQueueSize,
+        enableSanitization: this.enableSanitization,
       },
     });
 
@@ -127,6 +136,7 @@ export class RetryManager {
       options.queueDelay,
       this.checkCriticalRequests,
       this.isCriticalRequest,
+      options.maxQueueSize,
     );
     this.blockingQueueThreshold = options.blockingQueueThreshold;
     this._axiosInstance = options.axiosInstance || this.createAxiosInstance();
@@ -196,9 +206,10 @@ export class RetryManager {
 
     this.logger.debug('New request created', {
       requestId,
-      url: config.url,
+      url: this.enableSanitization ? sanitizeUrl(config.url, this.sanitizeOptions) : config.url,
       method: config.method?.toUpperCase(),
       priority: config.__priority,
+      ...(this.debug ? { headers: this.sanitizeForLogging(config.headers) } : {}),
     });
 
     if (!this.metrics.requestCountsByPriority[config.__priority]) {
@@ -206,21 +217,19 @@ export class RetryManager {
     }
     this.metrics.requestCountsByPriority[config.__priority]++;
 
-    const queueSizeBefore = this.requestQueue.getWaitingCount();
-    const promise = await this.requestQueue.enqueue(config);
-    const queueWait = Date.now() - config.__timestamp;
-
-    this.logger.debug('Request enqueued', {
-      requestId,
-      queueWaitMs: queueWait,
-      queueSizeBefore,
-      queueSizeAfter: this.requestQueue.getWaitingCount(),
-    });
-
-    this.metrics.queueWaitDuration += queueWait;
-    this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
-
-    return promise;
+    try {
+      // Enqueue request and wait for concurrency slot
+      const updatedConfig = await this.requestQueue.enqueue(config);
+      return updatedConfig;
+    } catch (error) {
+      // If queue is full, error gets propagated directly to the user
+      this.activeRequests.delete(requestId);
+      this.logger.error('Queue error when enqueuing request', {
+        requestId,
+        error,
+      });
+      throw error;
+    }
   };
 
   private handleRetryProcessFinish = (): void => {
@@ -372,11 +381,26 @@ export class RetryManager {
 
     this.requestQueue.markComplete();
 
-    this.logger.warn('Request failed', {
+    this.logger.error('Request failed', {
       requestId: config.__requestId,
+      url: this.enableSanitization ? sanitizeUrl(config.url, this.sanitizeOptions) : config.url,
+      method: config.method?.toUpperCase(),
       status: error.response?.status,
+      statusText: error.response?.statusText,
       code: error.code,
-      attempt: config.__retryAttempt || 0,
+      message: error.message,
+      ...(this.debug
+        ? {
+            headers: this.sanitizeForLogging(config.headers),
+            data: this.sanitizeForLogging(config.data),
+            response: error.response
+              ? {
+                  data: this.sanitizeForLogging(error.response.data),
+                  headers: this.sanitizeForLogging(error.response.headers),
+                }
+              : undefined,
+          }
+        : {}),
     });
 
     // eslint-disable-next-line eqeqeq
@@ -519,10 +543,10 @@ export class RetryManager {
 
     if (beforeRetryerInterceptors) {
       if (this.requestInterceptorId !== null) {
-        this.axiosInstance.interceptors.request.eject(this.requestInterceptorId);
+        this._axiosInstance.interceptors.request.eject(this.requestInterceptorId);
       }
       if (this.responseInterceptorId !== null) {
-        this.axiosInstance.interceptors.response.eject(this.responseInterceptorId);
+        this._axiosInstance.interceptors.response.eject(this.responseInterceptorId);
       }
     }
 
@@ -666,4 +690,35 @@ export class RetryManager {
       })),
     };
   };
+
+  /**
+   * Sanitizes any sensitive information in the provided object based on configuration
+   */
+  private sanitizeForLogging<T>(obj: T): T {
+    if (!this.enableSanitization || !obj) return obj;
+    
+    const sanitized = { ...obj } as any;
+    
+    if (sanitized.headers) {
+      sanitized.headers = sanitizeHeaders(sanitized.headers, this.sanitizeOptions);
+    }
+    
+    if (sanitized.data && this.sanitizeOptions.sanitizeRequestData !== false) {
+      sanitized.data = sanitizeData(sanitized.data, this.sanitizeOptions);
+    }
+    
+    if (sanitized.url) {
+      sanitized.url = sanitizeUrl(sanitized.url, this.sanitizeOptions);
+    }
+    
+    if (sanitized.baseURL) {
+      sanitized.baseURL = sanitizeUrl(sanitized.baseURL, this.sanitizeOptions);
+    }
+    
+    if (sanitized.auth) {
+      sanitized.auth = { username: sanitized.auth.username, password: '********' };
+    }
+    
+    return sanitized;
+  }
 }

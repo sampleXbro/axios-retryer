@@ -3,6 +3,7 @@
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { AxiosError } from 'axios';
 
+import { QueueFullError } from './errors/QueueFullError';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
 
 interface EnqueuedItem {
@@ -18,6 +19,7 @@ interface EnqueuedItem {
 export class RequestQueue {
   private readonly maxConcurrent: number;
   private readonly queueDelay: number;
+  private readonly maxQueueSize?: number;
   private readonly hasActiveCriticalRequests: () => boolean;
   private readonly isCriticalRequest: (request: AxiosRequestConfig) => boolean;
   private readonly waiting: EnqueuedItem[] = [];
@@ -28,18 +30,21 @@ export class RequestQueue {
    * @param queueDelay - delay of every enqueued request
    * @param hasActiveCriticalRequests - check if there are active critical requests
    * @param isCriticalRequest - check if a request is critical
+   * @param maxQueueSize - optional maximum number of requests that can be queued
    */
   constructor(
     maxConcurrent = 5,
     queueDelay = 100,
     hasActiveCriticalRequests: typeof this.hasActiveCriticalRequests,
     isCriticalRequest: typeof this.isCriticalRequest,
+    maxQueueSize?: number,
   ) {
     if (maxConcurrent < 1) {
       throw new Error(`maxConcurrent must be >= 1. Received: ${maxConcurrent}`);
     }
     this.maxConcurrent = maxConcurrent;
     this.queueDelay = queueDelay;
+    this.maxQueueSize = maxQueueSize;
     this.hasActiveCriticalRequests = hasActiveCriticalRequests;
     this.isCriticalRequest = isCriticalRequest;
   }
@@ -47,8 +52,14 @@ export class RequestQueue {
   /**
    * Enqueue a config and return a promise that resolves to that config
    * once concurrency is available.
+   * @throws {QueueFullError} When the queue is at maximum capacity
    */
   public enqueue(config: AxiosRequestConfig): Promise<AxiosRequestConfig> {
+    // Check if the queue is at its maximum capacity
+    if (this.maxQueueSize !== undefined && this.waiting.length >= this.maxQueueSize) {
+      throw new QueueFullError(config);
+    }
+
     return new Promise<AxiosRequestConfig>((resolve, reject) => {
       const item: EnqueuedItem = { config, resolve, reject };
       this.insertByPriority(item);

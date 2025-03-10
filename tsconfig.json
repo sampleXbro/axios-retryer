@@ -16,7 +16,10 @@
     "outDir": "dist",
     "declarationDir": "dist/types",
     "declarationMap": false,
-    "rootDir": "src"
+    "rootDir": "src",
+    "jsx": "react",
+    "jsxFactory": "React.createElement",
+    "jsxFragmentFactory": "React.Fragment"
   },
   "include": [
     "src/**/*",

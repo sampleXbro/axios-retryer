@@ -583,4 +583,189 @@ describe('RetryManager', () => {
     expect(storedRequests[0].url).toBe('/fail1');
     expect(storedRequests[1].url).toBe('/fail2');
   }, 10000);
+
+  test('should reject requests with QueueFullError when queue size limit is reached', async () => {
+    // Create spies to monitor what's happening
+    const consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation();
+    
+    // Reinitialize with a max queue size of 2
+    const options = {
+      mode: 'automatic' as const,
+      retries: 0, // No retries to keep test simple
+      maxConcurrentRequests: 1,
+      maxQueueSize: 2,
+      queueDelay: 50, // Add delay to ensure requests are properly queued
+      debug: true, // Enable debug mode to see what's happening
+    };
+    retryManager = new RetryManager(options);
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+    
+    // Create a manually controlled promise that we won't resolve during the test
+    let manualResolve;
+    const neverResolvePromise = new Promise(resolve => {
+      manualResolve = resolve;
+    });
+    
+    // Set up mock to use our manually controlled promise - ensuring requests stay pending
+    mock.onGet(/\/test-queue-limit\/.*/).reply(() => {
+      return new Promise(resolve => {
+        setTimeout(() => {
+          // This timeout will keep the request active during the test
+          // We'll never actually resolve it because we don't call manualResolve
+          console.log("Mock handler running, but not resolving");
+        }, 10000);
+      });
+    });
+    
+    // Import QueueFullError for proper type checking
+    const { QueueFullError } = await import('../src/core/errors/QueueFullError');
+    
+    // Make our requests and track them
+    console.log('Making first request - should be in process');
+    const request1 = retryManager.axiosInstance.get('/test-queue-limit/1').catch(e => e);
+    
+    // Wait long enough for first request to start processing
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    console.log('Making second request - should be queued (position 1)');
+    const request2 = retryManager.axiosInstance.get('/test-queue-limit/2').catch(e => e);
+    
+    // Wait to ensure second request is properly queued
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    console.log('Making third request - should be queued (position 2)');
+    const request3 = retryManager.axiosInstance.get('/test-queue-limit/3').catch(e => e);
+    
+    // Wait to ensure third request is properly queued
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    // Check queue size using RequestQueue's internal method via the private field
+    // Note: In a real application you should avoid accessing private fields
+    const queueSize = retryManager['requestQueue'].getWaitingCount();
+    console.log(`Current queue size: ${queueSize}`);
+    expect(queueSize).toBe(2); // Verify queue actually has 2 items
+    
+    console.log('Making fourth request - should be rejected');
+    // The 4th request should now be rejected with QueueFullError
+    await expect(retryManager.axiosInstance.get('/test-queue-limit/4'))
+      .rejects.toThrow('Request queue is full');
+    
+    // Clean up
+    consoleDebugSpy.mockRestore();
+    retryManager.cancelAllRequests();
+  }, 5000); // Increase timeout for this test
+
+  test('should sanitize sensitive information in requests by default', async () => {
+    // Create a spy on console to capture log output
+    const consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation();
+    
+    // Create manager with debug enabled to ensure logs are produced
+    const options = {
+      mode: 'automatic' as const,
+      debug: true,
+    };
+    retryManager = new RetryManager(options);
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+    
+    // Setup mock response
+    mock.onPost('/api/login').reply(200, { success: true });
+    
+    // Make request with sensitive data
+    await retryManager.axiosInstance.post('/api/login', {
+      username: 'testuser',
+      password: 'secret123',
+    }, {
+      headers: {
+        'Authorization': 'Bearer secret-token',
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    // Verify logs don't contain sensitive information
+    const logCalls = consoleDebugSpy.mock.calls;
+    const sensitiveDataInLogs = logCalls.some(call => 
+      call.some(arg => 
+        typeof arg === 'string' && (
+          arg.includes('secret-token') || 
+          arg.includes('secret123')
+        )
+      )
+    );
+    
+    expect(sensitiveDataInLogs).toBe(false);
+    
+    // Restore console spy
+    consoleDebugSpy.mockRestore();
+  });
+
+  test('should allow disabling sanitization when needed', async () => {
+    // Create a spy on console to capture log output
+    const consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    
+    // Create manager with debug enabled and sanitization disabled
+    const options = {
+      mode: 'automatic' as const,
+      debug: true,
+      enableSanitization: false,
+    };
+    retryManager = new RetryManager(options);
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+    
+    // Setup a mock response that fails first then succeeds
+    mock.onPost('/api/login').replyOnce(500, { error: 'Server error' })
+                             .onPost('/api/login').reply(200, { success: true });
+    
+    // Request with sensitive data
+    const sensitiveData = { 
+      username: 'testuser', 
+      password: 'secret123' 
+    };
+    const sensitiveHeaders = {
+      'Authorization': 'Bearer secret-token',
+      'Content-Type': 'application/json'
+    };
+    
+    try {
+      await retryManager.axiosInstance.post('/api/login', sensitiveData, {
+        headers: sensitiveHeaders
+      });
+    } catch (e) {
+      // Error is expected, we want to trigger error logs
+    }
+    
+    // Allow time for all logs to be captured
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Merge all console output to search through
+    const allLogCalls = [...consoleDebugSpy.mock.calls, ...consoleErrorSpy.mock.calls];
+    
+    // Convert logs to strings
+    const logStrings = allLogCalls.map(call => 
+      call.map(arg => 
+        typeof arg === 'object' && arg !== null 
+          ? JSON.stringify(arg) 
+          : String(arg)
+      ).join(' ')
+    );
+    
+    // With sanitization disabled, sensitive data should appear in the logs
+    // Check for specific sensitive values or keys
+    const containsSensitiveData = logStrings.some(log => {
+      // Look for sensitive values
+      return (
+        log.includes('secret123') || 
+        log.includes('Bearer secret-token') ||
+        // Or check if these keys exist with actual values (not asterisks)
+        (log.includes('password') && !log.includes('********')) ||
+        (log.includes('Authorization') && !log.includes('********'))
+      );
+    });
+    
+    expect(containsSensitiveData).toBe(true);
+    
+    // Restore console spies
+    consoleDebugSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
 });

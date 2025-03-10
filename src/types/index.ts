@@ -1,6 +1,7 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 
 import type { RetryManager } from '../core/RetryManager';
+import type { SanitizeOptions } from '../utils/sanitize';
 
 /**
  *  manual - After each request failure, Axios throws the rejected promise
@@ -295,6 +296,44 @@ export interface RetryManagerOptions {
    * Requests with priority >= 3 (critical) block lower-priority requests until resolved.
    */
   blockingQueueThreshold?: AxiosRetryerRequestPriority;
+
+  /**
+   * The maximum number of requests that can be queued.
+   * When the queue reaches this limit, subsequent requests will be rejected with a QueueFullError.
+   *
+   * @default undefined (No limit)
+   *
+   * @example
+   * maxQueueSize: 100
+   * Limits the request queue to 100 pending requests.
+   */
+  maxQueueSize?: number;
+
+  /**
+   * Options for sanitizing sensitive information in logs and storage.
+   * Controls how tokens, passwords, and other sensitive data are redacted.
+   *
+   * @default undefined (Uses default sanitization settings)
+   *
+   * @example
+   * sanitizeOptions: {
+   *   sensitiveHeaders: ['my-custom-token-header'],
+   *   redactionChar: '#'
+   * }
+   */
+  sanitizeOptions?: SanitizeOptions;
+
+  /**
+   * Whether to enable sanitization of sensitive data in logs and storage.
+   * When enabled, sensitive information like tokens and passwords will be redacted.
+   *
+   * @default true
+   *
+   * @example
+   * enableSanitization: false
+   * Disables all sanitization of sensitive data.
+   */
+  enableSanitization?: boolean;
 }
 
 /**

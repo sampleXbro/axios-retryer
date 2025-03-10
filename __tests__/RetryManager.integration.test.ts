@@ -703,26 +703,37 @@ describe('RetryManager Integration Tests', () => {
 
     describe('Error Handling', () => {
       it('should handle timeout errors with appropriate retries', async () => {
+        // Create a proper timeout error
         const timeoutError = new AxiosError(
-          'Timeout',
+          'timeout of 1000ms exceeded',  // More accurate message
           'ECONNABORTED',
-          { url: '/timeout', method: 'get' } as InternalAxiosRequestConfig,
-          {}
+          {
+            url: '/timeout',
+            method: 'get',
+            headers: {}
+          } as InternalAxiosRequestConfig,
+          null  // Request object
         );
 
+        // Set up the mock to properly simulate timeout behavior
         customMock.onAny('/timeout')
-          .replyOnce(() => Promise.reject(timeoutError))
+          .replyOnce(() => {
+            return Promise.reject(timeoutError);
+          })
           .onAny('/timeout')
           .reply(200, 'success');
 
+        // Perform the request with explicit timeout
         const response = await customProcessRequest({
           url: '/timeout',
+          method: 'get',
           timeout: 1000
         });
 
+        // Verify the response and retry behavior
         expect(response.data).toBe('success');
         expect(customHookSpy.beforeRetry).toHaveBeenCalledTimes(1);
-      });
+      }, 5000); // Add timeout to ensure test has enough time
 
       it('should handle rate limit responses correctly', async () => {
         customMock.onAny('/ratelimited')

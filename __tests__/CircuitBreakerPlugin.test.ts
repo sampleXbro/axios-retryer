@@ -15,6 +15,8 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
   const fakeLogger = {
     error: jest.fn(),
     debug: jest.fn(),
+    warn: jest.fn(),
+    log: jest.fn(),
     info: jest.fn(),
   };
 
@@ -33,10 +35,13 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     } as unknown as RetryManager;
 
     // Create a plugin instance with lower thresholds/timeouts to simplify tests
+    // IMPORTANT: Disable the enhanced features for these basic tests
     plugin = new CircuitBreakerPlugin({
       failureThreshold: 3, // trip after 3 failures
       openTimeout: 10000,  // 10 seconds before transitioning to HALF_OPEN
       halfOpenMax: 1,      // allow only 1 test request in HALF_OPEN
+      useSlidingWindow: false, // disable for these tests
+      adaptiveTimeout: false, // disable for these tests
     });
 
     // Initialize the plugin, which installs request/response interceptors
@@ -59,7 +64,6 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
 
     // In CLOSED state with no failures, the logger should not have error logs
     expect(fakeLogger.error).not.toHaveBeenCalled();
-    expect(fakeLogger.debug).not.toHaveBeenCalled();
   });
 
   test('should trip the circuit after reaching the failure threshold', async () => {
@@ -76,8 +80,9 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
 
     // Check if an error log was made when the circuit tripped
     expect(fakeLogger.error).toHaveBeenCalled();
-    const logMsg = fakeLogger.error.mock.calls[0][0];
-    expect(logMsg).toContain('tripped: entering OPEN state.');
+    const errorCalls = fakeLogger.error.mock.calls.map(call => call[0]);
+    const trippedLog = errorCalls.find(msg => msg.includes('Circuit tripped: entering OPEN state'));
+    expect(trippedLog).toBeDefined();
   });
 
   test('should transition to HALF_OPEN after openTimeout and reset on successful test request', async () => {
@@ -94,12 +99,12 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     mock.onGet('/test').reply(200, { message: 'Recovered' });
     const response = await axiosInstance.get('/test');
     expect(response.status).toBe(200);
-    expect(response.data.message).toBe('Recovered');
+    expect(response.data).toEqual({ message: 'Recovered' });
 
     // The plugin logs a debug message when resetting to CLOSED
     expect(fakeLogger.debug).toHaveBeenCalled();
     const debugCalls = fakeLogger.debug.mock.calls.map((call) => call[0]);
-    const resetLog = debugCalls.find((msg: string) => msg.includes('reset: entering CLOSED state.'));
+    const resetLog = debugCalls.find((msg: string) => msg.includes('Circuit reset: entering CLOSED state'));
     expect(resetLog).toBeDefined();
   });
 
@@ -121,9 +126,8 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     await expect(axiosInstance.get('/anotherReq')).rejects.toThrow(/Circuit is open/);
 
     // Check if the plugin logged an error about re-tripping
-    expect(fakeLogger.error).toHaveBeenCalled();
-    const errorLogs = fakeLogger.error.mock.calls.map((call) => call[0]);
-    expect(errorLogs.some((msg: string) => msg.includes('tripped: entering OPEN state.'))).toBe(true);
+    const errorCalls = fakeLogger.error.mock.calls.map(call => call[0]);
+    expect(errorCalls.some(msg => msg.includes('Circuit tripped: entering OPEN state'))).toBe(true);
   });
 
   test('should respect the halfOpenMax limit', async () => {
