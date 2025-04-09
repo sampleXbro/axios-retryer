@@ -135,6 +135,7 @@ Try it now:
   - [Custom Retry Strategies](#custom-retry-strategies)
   - [Sensitive Data Protection](#sensitive-data-protection)
   - [Handling Queue Overflow](#handling-queue-overflow)
+  - [Plugin Management Best Practices](#plugin-management-best-practices)
 - [Examples](#-examples)
 - [API Reference](#-api-reference)
 - [Troubleshooting](#-troubleshooting)
@@ -352,9 +353,12 @@ retryer.use(
 // Response caching to reduce traffic
 retryer.use(
   createCachePlugin({
-    timeToRevalidate: 60000, // Cache for 1 minute
-    cacheMethods: ['GET'],
-    maxItems: 100
+    timeToRevalidate: 60000,   // Cache lifetime in ms (1 minute)
+    cacheMethods: ['GET'],     // HTTP methods to cache
+    cleanupInterval: 300000,   // Cleanup every 5 minutes
+    maxItems: 100,             // Maximum cache entries
+    compareHeaders: false,     // Whether to include headers in cache key
+    cacheOnlyRetriedRequests: false // Whether to cache only retry attempts
   })
 );
 ```
@@ -416,21 +420,48 @@ retryer.use(
 
 ### CachingPlugin
 
-Caches responses to reduce network traffic:
+Caches responses to reduce network traffic and improve performance:
 
 ```typescript
 import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
 
-retryer.use(
-  createCachePlugin({
-    timeToRevalidate: 60000,   // Cache lifetime in ms (1 minute)
-    cacheMethods: ['GET'],     // HTTP methods to cache
-    cleanupInterval: 300000,   // Cleanup every 5 minutes
-    maxItems: 100,             // Maximum cache entries
-    compareHeaders: false      // Whether to include headers in cache key
-  })
-);
+const cachePlugin = createCachePlugin({
+  timeToRevalidate: 60000,   // Cache lifetime in ms (1 minute)
+  cacheMethods: ['GET'],     // HTTP methods to cache
+  cleanupInterval: 300000,   // Cleanup every 5 minutes
+  maxItems: 100,             // Maximum cache entries
+  compareHeaders: false,     // Whether to include headers in cache key
+  cacheOnlyRetriedRequests: false // Whether to cache only retry attempts
+});
+
+// Register the plugin
+retryer.use(cachePlugin);
+
+// Later, you can:
+
+// 1. Invalidate specific cache entries by key pattern
+cachePlugin.invalidateCache('/api/users');  // Invalidates exact or partial matches
+
+// 2. Clear the entire cache
+cachePlugin.clearCache();
+
+// 3. Get cache statistics
+const stats = cachePlugin.getCacheStats();
+console.log(`Cache size: ${stats.size}, Average age: ${stats.averageAge}ms`);
 ```
+
+The CachingPlugin provides smart cache invalidation:
+
+- **Precise Invalidation**: Invalidate specific cache entries by exact key or pattern
+- **Bulk Invalidation**: Clear multiple related cache entries at once
+- **Cache Statistics**: Monitor cache size and performance
+- **Automatic Integration**: Works seamlessly with the React hooks (see React Integration section)
+
+This plugin is particularly useful for:
+- Caching frequently accessed, rarely changed data
+- Improving perceived performance in user interfaces
+- Reducing server load and network traffic
+- Working offline with previously cached data
 
 ## 📦 Bundle Size Optimization
 
@@ -492,41 +523,172 @@ For applications that run in both Node.js and browser (like SSR frameworks):
 
 Axios-Retryer provides a set of React hooks and components for easy integration with React applications:
 
-```tsx
-import { useAxiosRetryerQuery } from 'axios-retryer/react';
+```typescript
+import { RetryManagerProvider, useAxiosRetryerQuery, useAxiosRetryerMutation } from 'axios-retryer/react';
+import { createReactRetryer } from 'axios-retryer/react';
 
-function UsersList() {
+// Create a RetryManager for React
+const manager = createReactRetryer({ retries: 3 });
+
+function App() {
+  return (
+    <RetryManagerProvider manager={manager}>
+      <MyComponent />
+    </RetryManagerProvider>
+  );
+}
+
+function MyComponent() {
+  // Query hook with caching and auto-refresh
   const { data, loading, error, refetch } = useAxiosRetryerQuery('/api/users', {
-    cacheDuration: 5 * 60 * 1000, // Cache for 5 minutes
-    refetchInterval: 30 * 1000    // Poll every 30 seconds
+    cacheDuration: 60000,  // Cache for 1 minute
+    refetchInterval: 5000  // Refresh every 5 seconds
   });
   
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
+  // Mutation hook with automatic cache invalidation
+  const { mutate, loading: submitting } = useAxiosRetryerMutation('/api/users', {
+    invalidateQueries: ['/api/users']  // Automatically invalidates cached queries
+  });
   
   return (
     <div>
-      <button onClick={refetch}>Refresh</button>
-      <ul>
-        {data?.map(user => (
-          <li key={user.id}>{user.name}</li>
-        ))}
-      </ul>
+      {loading ? <Spinner /> : <UserList users={data} />}
+      <button onClick={() => mutate({ name: 'New User' })}>Add User</button>
     </div>
   );
 }
 ```
 
-**Key React Features:**
+#### Hook and Plugin Integration
 
-- **Provider Component**: Global retry manager configuration
-- **Data Fetching Hooks**: Caching, polling, and window focus refetching
-- **Mutation Hooks**: For POST, PUT, DELETE with loading states
-- **TypeScript Support**: Fully typed API responses and payloads
+The React hooks automatically integrate with plugins, especially the CachingPlugin:
 
-For detailed React documentation, see [React Integration](./src/react/README.md).
+**For Query Hooks:**
+```typescript
+// useAxiosRetryerQuery automatically sets up caching
+const { data, isStale } = useAxiosRetryerQuery('/api/users', {
+  // These options configure the CachingPlugin
+  cacheDuration: 5 * 60 * 1000,  // 5 minutes cache
+  cachingOptions: {              // Optional additional CachingPlugin config
+    compareHeaders: true,        // Include headers in cache key
+    maxItems: 200                // Store up to 200 responses
+  }
+});
+```
+
+**For Mutation Hooks:**
+```typescript
+// useAxiosRetryerMutation automatically integrates with cache invalidation
+const { mutate } = useAxiosRetryerMutation('/api/posts', {
+  // Automatically invalidates these cache entries after mutation success
+  invalidateQueries: [
+    '/api/posts',               // Exact match
+    '/api/users/123/posts',     // Another exact match
+    '/api/dashboard'            // Another cache key to invalidate
+  ],
+  // Other mutation options...
+  method: 'post',
+  onSuccess: (data) => showNotification('Post created!')
+});
+```
+
+**Behind the Scenes:**
+- The hooks check if CachingPlugin is registered with the RetryManager
+- If not registered, they automatically create and register it
+- Query hooks configure it with provided cache duration and options
+- Mutation hooks use it to intelligently invalidate cache after successful mutations
+- For many invalidation keys (>5), the entire cache is cleared for efficiency
+- For fewer keys, each key is precisely invalidated to maintain other cached data
+
+The React integration provides:
+
+- 🔄 **Context provider** for sharing the retry manager
+- 🔍 **Query hooks** with caching, auto-refresh, and stale data handling
+- ✏️ **Mutation hooks** with automatic cache invalidation
+- 📦 **Tree-shakable** imports for optimized bundle size
+- 🧩 **Seamless plugin integration** without manual configuration
+
+[Read more about React integration](src/react/README.md)
 
 ## 🔬 Advanced Topics
+
+### Plugin Management Best Practices
+
+To get the most out of the plugin system and avoid common pitfalls:
+
+```typescript
+import { createRetryer } from 'axios-retryer';
+import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
+import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
+
+// 1. Create a single RetryManager instance for your application
+const retryer = createRetryer({ retries: 3 });
+
+// 2. Register plugins with meaningful variable names
+const cachePlugin = createCachePlugin({ timeToRevalidate: 60000 });
+retryer.use(cachePlugin);
+
+const tokenPlugin = createTokenRefreshPlugin(/* refresh function */);
+retryer.use(tokenPlugin);
+
+// 3. Export both the RetryManager and plugins for use throughout the app
+export { retryer, cachePlugin, tokenPlugin };
+```
+
+#### Avoiding Duplicate Plugins
+
+Multiple instances of the same plugin type can cause unexpected behavior:
+
+```typescript
+// DON'T: Create separate plugin instances across files
+// file1.js
+retryer.use(createCachePlugin({ timeToRevalidate: 60000 }));
+
+// file2.js - This creates a SECOND instance!
+retryer.use(createCachePlugin({ timeToRevalidate: 30000 }));
+
+// DO: Create one instance and share it
+// shared.js
+export const cachePlugin = createCachePlugin({ timeToRevalidate: 60000 });
+export const retryer = createRetryer();
+retryer.use(cachePlugin);
+
+// file1.js and file2.js - Import and use the shared instances
+import { retryer, cachePlugin } from './shared';
+```
+
+#### With React Integration
+
+When using React hooks, follow these guidelines:
+
+```tsx
+// In your app initialization:
+import { createReactRetryer, RetryManagerProvider } from 'axios-retryer/react';
+import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
+
+// 1. Create one RetryManager for your entire app
+const manager = createReactRetryer({ /* options */ });
+
+// 2. Pre-register plugins that should be shared
+const cachePlugin = createCachePlugin({ timeToRevalidate: 60000 });
+manager.use(cachePlugin);
+
+// 3. Provide the manager through context
+function App() {
+  return (
+    <RetryManagerProvider manager={manager}>
+      <YourApp />
+    </RetryManagerProvider>
+  );
+}
+```
+
+The React hooks will:
+- Use your pre-registered plugins when available
+- Avoid creating duplicate plugin instances when properly configured
+- Automatically configure plugins based on hook options
+
+This approach ensures consistent behavior across your application and optimal performance.
 
 ### Concurrency & Priority
 
@@ -912,6 +1074,18 @@ axios-retryer is compatible with:
 - `createTokenRefreshPlugin(refreshFn, options?)`: Creates a token refresh plugin
 - `createCircuitBreaker(options)`: Creates a circuit breaker plugin
 - `createCachePlugin(options?)`: Creates a response caching plugin
+
+### Plugin Methods
+- **CachingPlugin**:
+  - `clearCache()`: Clears all cached responses
+  - `invalidateCache(keyPattern)`: Invalidates specific cache entries by key pattern
+  - `getCacheStats()`: Returns statistics about the cache (size, age, etc.)
+- **CircuitBreakerPlugin**:
+  - `reset()`: Manually resets the circuit breaker to closed state
+  - `getState()`: Returns the current state of the circuit breaker
+- **TokenRefreshPlugin**:
+  - `refreshToken()`: Manually triggers a token refresh
+  - `isRefreshing()`: Checks if a token refresh is in progress
 
 ### Classes
 - `RetryManager`: Main class for managing retries

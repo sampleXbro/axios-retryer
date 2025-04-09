@@ -290,6 +290,43 @@ export class CachingPlugin implements RetryPlugin {
   }
 
   /**
+   * Invalidates a specific cache entry by key pattern.
+   * If the key is a string, it will invalidate exact matches.
+   * If the key is a RegExp, it will invalidate all matching keys.
+   * 
+   * @param keyPattern The key or pattern to match for invalidation
+   * @returns The number of invalidated cache entries
+   */
+  public invalidateCache(keyPattern: string | RegExp): number {
+    let count = 0;
+    const keys = Array.from(this.cache.keys());
+    
+    if (keyPattern instanceof RegExp) {
+      // If pattern is a RegExp, test each key
+      keys.forEach(key => {
+        if (keyPattern.test(key)) {
+          this.cache.delete(key);
+          count++;
+        }
+      });
+    } else {
+      // Otherwise, look for exact matches or keys containing the pattern
+      keys.forEach(key => {
+        if (key === keyPattern || key.includes(keyPattern)) {
+          this.cache.delete(key);
+          count++;
+        }
+      });
+    }
+    
+    if (count > 0) {
+      this.manager.getLogger()?.debug(`[CachingPlugin] Invalidated ${count} cache entries matching pattern: ${keyPattern}`);
+    }
+    
+    return count;
+  }
+
+  /**
    * Returns current cache statistics.
    */
   public getCacheStats(): {

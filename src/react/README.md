@@ -117,7 +117,7 @@ const CreateUserForm = () => {
     data: newUser 
   } = useAxiosRetryerMutation('/api/users', {
     // Invalidate these cache keys after successful mutation
-    invalidateQueries: ['/api/users']
+    invalidateQueries: ['/api/users', '/api/dashboard/stats']
   });
   
   const handleSubmit = async (e) => {
@@ -164,6 +164,38 @@ const CreateUserForm = () => {
   );
 };
 ```
+
+#### Cache Invalidation
+
+The `useAxiosRetryerMutation` hook seamlessly integrates with CachingPlugin to invalidate cached data after mutations:
+
+```tsx
+// Invalidate specific cache keys
+const { mutate } = useAxiosRetryerMutation('/api/posts', {
+  invalidateQueries: ['/api/posts', '/api/user/1/posts']
+});
+```
+
+The cache invalidation system works as follows:
+
+1. After a successful mutation, the hook checks if any cache keys need to be invalidated
+2. If the CachingPlugin is registered with the RetryManager, it uses it to invalidate the specified keys
+3. For a single key, it calls `invalidateCache(key)` on the plugin
+4. For multiple keys (≤ 5), it invalidates each key individually
+5. For many keys (> 5), it clears the entire cache for efficiency using `clearCache()`
+
+This intelligent approach balances performance with precision.
+
+### Plugin Integration Notes
+
+Both `useAxiosRetryerQuery` and `useAxiosRetryerMutation` hooks automatically integrate with the CachingPlugin:
+
+- If CachingPlugin is not registered with RetryManager, the hooks will register it
+- The query hook configures the plugin with the specified `cacheDuration` and `cachingOptions`
+- The mutation hook uses the plugin to invalidate specified cache keys after successful mutations
+- For optimal performance, avoid duplicate plugin registration by using a shared RetryManager with `RetryManagerProvider`
+
+This integration happens behind the scenes, so you don't need to manually register the CachingPlugin when using these hooks.
 
 ## Convenience Hooks
 

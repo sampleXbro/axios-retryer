@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
 import { RetryManager } from '../';
 import { useRetryManager } from './context';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
+import { CachingPlugin } from '../plugins/CachingPlugin';
 
 export interface UseAxiosRetryerMutationOptions<T = any, D = any> {
   /**
@@ -80,10 +81,6 @@ export interface UseAxiosRetryerMutationResult<T = any, D = any> {
   reset: () => void;
 }
 
-// External queryCache from the query hook
-// Used for invalidating queries after mutations
-declare const queryCache: Record<string, any>;
-
 /**
  * Hook for performing mutation operations (POST, PUT, DELETE, etc.)
  * 
@@ -135,7 +132,7 @@ export function useAxiosRetryerMutation<T = any, D = any>(
   } = options;
   
   // Try to get manager from context if not provided externally
-  let contextManager: RetryManager | undefined;
+  let contextManager;
   try {
     contextManager = useRetryManager();
   } catch (e) {
@@ -145,6 +142,28 @@ export function useAxiosRetryerMutation<T = any, D = any>(
   }
   
   const manager = externalManager || contextManager;
+  
+  // Ensure manager exists before proceeding
+  if (!manager) {
+    throw new Error('RetryManager is required for useAxiosRetryerMutation');
+  }
+  
+  // Get or initialize the CachingPlugin
+  const cachingPlugin = useMemo(() => {
+    // Find CachingPlugin if it exists
+    const existingPlugin = manager.listPlugins().find(p => p.name === 'CachingPlugin');
+    
+    if (!existingPlugin) {
+      // Plugin doesn't exist yet, create and register it
+      const plugin = new CachingPlugin();
+      manager.use(plugin);
+      return plugin;
+    } else {
+      // Since we can't directly access the plugin instance through manager.plugins,
+      // we'll create a new plugin just to use its method
+      return new CachingPlugin();
+    }
+  }, [manager]);
   
   // State for mutation
   const [data, setData] = useState<T>();
@@ -182,7 +201,7 @@ export function useAxiosRetryerMutation<T = any, D = any>(
     setError(undefined);
     
     try {
-      const axiosResponse = await manager!.axiosInstance.request<T, AxiosResponse<T, D>, D>({
+      const axiosResponse = await manager.axiosInstance.request<T, AxiosResponse<T, D>, D>({
         url,
         method,
         data: mutationData,
@@ -194,13 +213,29 @@ export function useAxiosRetryerMutation<T = any, D = any>(
       setData(axiosResponse.data);
       setLoading(false);
       
-      // Invalidate cached queries if specified
-      if (invalidateQueries.length > 0 && typeof queryCache !== 'undefined') {
-        invalidateQueries.forEach(key => {
-          if (queryCache[key]) {
-            delete queryCache[key];
+      // Invalidate cached queries if specified using the CachingPlugin
+      if (invalidateQueries.length > 0) {
+        // First make sure the plugin exists in the manager
+        const pluginExists = manager.listPlugins().some(p => p.name === 'CachingPlugin');
+        
+        if (pluginExists) {
+          // If we have specific queries to invalidate
+          if (invalidateQueries.length === 1) {
+            // Just one key to invalidate
+            cachingPlugin.invalidateCache(invalidateQueries[0]);
+          } else if (invalidateQueries.length > 1) {
+            // Multiple keys to invalidate - either invalidate each or just clear everything
+            if (invalidateQueries.length > 5) {
+              // If there are many keys, it might be more efficient to just clear the whole cache
+              cachingPlugin.clearCache();
+            } else {
+              // Invalidate each key individually
+              invalidateQueries.forEach(key => {
+                cachingPlugin.invalidateCache(key);
+              });
+            }
           }
-        });
+        }
       }
       
       if (onSuccess) {
@@ -218,7 +253,7 @@ export function useAxiosRetryerMutation<T = any, D = any>(
       
       throw err;
     }
-  }, [url, method, JSON.stringify(config), priority, manager, onSuccess, onError, invalidateQueries]);
+  }, [url, method, JSON.stringify(config), priority, manager, cachingPlugin, onSuccess, onError, invalidateQueries]);
   
   return {
     mutate,

@@ -1,21 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AxiosRequestConfig } from 'axios';
 import { useAxiosRetryer, UseAxiosRetryerOptions, UseAxiosRetryerResult } from './useAxiosRetryer';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
-
-// Simple in-memory cache for query results
-const queryCache: Record<string, {
-  data: any;
-  timestamp: number;
-  etag?: string;
-}> = {};
+import { useRetryManager } from './context';
+import { CachingPlugin, CachingPluginOptions } from '../plugins/CachingPlugin';
 
 export interface UseAxiosRetryerQueryOptions<T = any, D = any> extends UseAxiosRetryerOptions<T, D> {
-  /**
-   * Unique cache key for this query, defaults to URL
-   */
-  cacheKey?: string;
-  
   /**
    * Time in milliseconds to cache the data (0 = no cache)
    * @default 60000 (1 minute)
@@ -38,6 +28,12 @@ export interface UseAxiosRetryerQueryOptions<T = any, D = any> extends UseAxiosR
    * @default true
    */
   useStaleData?: boolean;
+  
+  /**
+   * Custom caching options to pass to CachingPlugin
+   * If provided, these override the standard options
+   */
+  cachingOptions?: Partial<CachingPluginOptions>;
 }
 
 export interface UseAxiosRetryerQueryResult<T = any, D = any> extends UseAxiosRetryerResult<T, D> {
@@ -82,54 +78,65 @@ export function useAxiosRetryerQuery<T = any, D = any>(
   options: UseAxiosRetryerQueryOptions<T, D> = {}
 ): UseAxiosRetryerQueryResult<T, D> {
   const {
-    cacheKey = url,
     cacheDuration = 60000, // 1 minute default
     refetchInterval,
     refetchOnWindowFocus = true,
     useStaleData = true,
     priority = AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, // Default to lower priority for background fetches
     config = {},
+    cachingOptions,
+    manager: externalManager,
     ...restOptions
   } = options;
   
-  const [isStale, setIsStale] = useState(false);
-  
-  // Build custom config with caching headers
-  const customConfig: AxiosRequestConfig<D> = {
-    ...config
-  };
-  
-  // Add etag/if-none-match for efficient caching
-  if (queryCache[cacheKey]?.etag) {
-    customConfig.headers = {
-      ...customConfig.headers,
-      'If-None-Match': queryCache[cacheKey].etag
-    };
+  // Get manager from props or context
+  let contextManager;
+  try {
+    contextManager = useRetryManager();
+  } catch (e) {
+    if (!externalManager) {
+      throw new Error('useAxiosRetryerQuery requires a RetryManager. Either use RetryManagerProvider or pass a manager in options.');
+    }
   }
   
-  // Check for cached data and use it as initialData if available and not expired
-  const cachedData = queryCache[cacheKey];
-  const isCacheValid = cachedData && (Date.now() - cachedData.timestamp < cacheDuration);
-  const initialData = useStaleData && isCacheValid ? cachedData.data : undefined;
+  const manager = externalManager || contextManager;
   
-  // Set up auto-fetch based on cache state
-  const shouldAutoFetch = !isCacheValid || restOptions.autoFetch !== false;
+  // Ensure manager exists before proceeding
+  if (!manager) {
+    throw new Error('RetryManager is required for useAxiosRetryerQuery');
+  }
+  
+  const [isStale, setIsStale] = useState(false);
+  
+  // Setup CachingPlugin with our options
+  useMemo(() => {
+    // Don't add plugin if caching is disabled
+    if (cacheDuration <= 0) return;
+    
+    // Check if CachingPlugin already exists
+    const existingPlugin = manager.listPlugins().find(p => p.name === 'CachingPlugin');
+    
+    if (!existingPlugin) {
+      // Create cache config based on our options
+      const cacheConfig: Partial<CachingPluginOptions> = {
+        timeToRevalidate: cacheDuration,
+        cacheMethods: ['GET'],
+        ...cachingOptions
+      };
+      
+      // Add the plugin
+      manager.use(new CachingPlugin(cacheConfig));
+    }
+  }, [manager, cacheDuration, JSON.stringify(cachingOptions)]);
   
   // Use the base hook with our customizations
   const result = useAxiosRetryer<T, D>(url, 'get', {
     ...restOptions,
-    initialData,
-    autoFetch: shouldAutoFetch,
+    autoFetch: restOptions.autoFetch !== false,
     priority,
-    config: customConfig,
+    config,
+    manager,
     onSuccess: (data, response) => {
-      // Update cache on successful response
-      queryCache[cacheKey] = {
-        data,
-        timestamp: Date.now(),
-        etag: response.headers.etag
-      };
-      
       setIsStale(false);
       if (options.onSuccess) {
         options.onSuccess(data, response);
@@ -139,7 +146,15 @@ export function useAxiosRetryerQuery<T = any, D = any>(
   
   // Function to invalidate cache and refetch
   const invalidateCache = async (): Promise<T | undefined> => {
-    delete queryCache[cacheKey];
+    // Find CachingPlugin
+    const plugin = manager.listPlugins().find(p => p.name === 'CachingPlugin');
+    
+    // Clear cache if plugin exists
+    if (plugin) {
+      // Cast the plugin to access clearCache method
+      (plugin as unknown as CachingPlugin).clearCache?.();
+    }
+    
     setIsStale(true);
     return result.refetch();
   };
@@ -161,11 +176,8 @@ export function useAxiosRetryerQuery<T = any, D = any>(
     if (!refetchOnWindowFocus) return;
     
     const handleFocus = () => {
-      // Check if cache is stale on window focus
-      if (queryCache[cacheKey] && (Date.now() - queryCache[cacheKey].timestamp > cacheDuration / 2)) {
-        setIsStale(true);
-        result.refetch();
-      }
+      setIsStale(true);
+      result.refetch();
     };
     
     window.addEventListener('focus', handleFocus);
@@ -173,7 +185,7 @@ export function useAxiosRetryerQuery<T = any, D = any>(
     return () => {
       window.removeEventListener('focus', handleFocus);
     };
-  }, [refetchOnWindowFocus, cacheKey, cacheDuration, result.refetch]);
+  }, [refetchOnWindowFocus, result.refetch]);
   
   return {
     ...result,
