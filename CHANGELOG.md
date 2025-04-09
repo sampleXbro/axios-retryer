@@ -2,17 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.4.2 - Unreleased
-- **Enhanced CachingPlugin Integration**: Updated `useAxiosRetryerMutation` to properly integrate with the CachingPlugin for fine-grained cache invalidation.
-- **Improved Cache Invalidation**: Added specific cache key invalidation to CachingPlugin with both exact matching and pattern matching support.
-- **Error Handling Improvements**: Added proper error handling and validation in React hooks for RetryManager dependencies.
-
-## 1.4.1 - --.--.2025
+## 1.4.1 - 09.04.2025
 - **Queue Size Limits**: Added the `maxQueueSize` option to limit the number of requests that can be queued. When the queue is full, new requests will be rejected with `QueueFullError`. Prevents memory issues during high load.
 - **Sensitive Data Protection**: Added automatic redaction of tokens, passwords, and other sensitive information in logs and error reporting. Configurable via `enableSanitization` and `sanitizeOptions`.
 - **Enhanced CircuitBreakerPlugin**: Added advanced features to the CircuitBreaker including sliding window analysis, adaptive timeouts, URL exclusion patterns, configurable success thresholds, and detailed monitoring metrics for more sophisticated failure detection and recovery.
 - **Tree-Shakeable React Hooks**: Made React hooks individually importable via subpaths (e.g., `import { useGet } from 'axios-retryer/react/hooks/useGet'`) to reduce bundle size through tree shaking.
 - **Custom Error Detection for TokenRefreshPlugin**: Added support for detecting auth errors in 200 OK responses through customErrorDetector option, useful for GraphQL and other APIs that return errors in the response body rather than HTTP status codes.
+- **Enhanced CachingPlugin Integration**: Updated `useAxiosRetryerMutation` to properly integrate with the CachingPlugin for fine-grained cache invalidation.
+- **Improved Cache Invalidation**: Added specific cache key invalidation to CachingPlugin with both exact matching and pattern matching support.
+- **Error Handling Improvements**: Added proper error handling and validation in React hooks for RetryManager dependencies.
 
 ## 1.3.3 - 20.02.2025
 - Hooks are deprecated and will be removed in the next major version
