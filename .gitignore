@@ -57,3 +57,5 @@ docs/
 
 # TGZ files
 *.tgz
+
+./stats
