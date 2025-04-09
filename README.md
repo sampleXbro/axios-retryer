@@ -125,6 +125,11 @@ Try it now:
   - [CircuitBreakerPlugin](#circuitbreakerplugin)
   - [CachingPlugin](#cachingplugin)
 - [Bundle Size Optimization](#-bundle-size-optimization)
+- [Environment Support](#-environment-support)
+  - [Node.js Support](#nodejs-support)
+  - [Browser Support](#browser-support)
+  - [Hybrid Applications](#hybrid-applications)
+  - [React Integration](#react-integration)
 - [Advanced Topics](#-advanced-topics)
   - [Concurrency & Priority](#concurrency--priority)
   - [Custom Retry Strategies](#custom-retry-strategies)
@@ -319,6 +324,18 @@ retryer.use(
       const refreshToken = localStorage.getItem('refreshToken');
       const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });
       return { token: data.accessToken };
+    },
+    {
+      authHeaderName: 'Authorization',
+      refreshStatusCodes: [401],
+      tokenPrefix: 'Bearer ',
+      maxRefreshAttempts: 3,
+      customErrorDetector: (response) => {
+        return response?.errors?.some(err => 
+          err.extensions?.code === 'UNAUTHENTICATED' || 
+          err.message?.includes('token expired')
+        );
+      }
     }
   )
 );
@@ -363,11 +380,20 @@ retryer.use(
       authHeaderName: 'Authorization',  // Header name for auth token
       refreshStatusCodes: [401],        // Status codes triggering refresh
       tokenPrefix: 'Bearer ',           // Token prefix in header
-      maxRefreshAttempts: 3             // Max refresh attempts
+      maxRefreshAttempts: 3,            // Max refresh attempts
+      customErrorDetector: (response) => {
+        // For GraphQL and APIs that return errors in success responses
+        return response?.errors?.some(err => 
+          err.extensions?.code === 'UNAUTHENTICATED' || 
+          err.message?.includes('token expired')
+        );
+      }
     }
   )
 );
 ```
+
+The `customErrorDetector` option allows detecting authentication errors in responses with 200 status codes, which is common in GraphQL APIs and some REST APIs that return errors in the response body rather than through HTTP status codes.
 
 ### CircuitBreakerPlugin
 
@@ -434,6 +460,33 @@ import { CachingPlugin } from 'axios-retryer/plugins/CachingPlugin';
   - **UMD Browser Bundle**: Pre-built with all features for direct browser use
   
 When building for production, ensure your bundler (like Webpack or Rollup) is configured to use the ES modules version for optimal tree-shaking.
+
+## 🌐 Environment Support
+
+Axios-retryer works seamlessly in both Node.js and browser environments:
+
+### Node.js Support
+
+- **Full compatibility** with all Node.js versions that support Axios
+- **CommonJS format** for traditional Node.js applications
+- **ESM format** for Node.js with ES modules support
+- **Optimized server handling** of retries, concurrency, and priorities
+- **Seamless integration** with Node.js HTTP clients and server-side rendering frameworks
+
+### Browser Support
+
+- **Modern browsers** fully supported (Chrome, Firefox, Safari, Edge)
+- **UMD bundle** available for direct browser usage via CDN or script tag
+- **ESM bundle** for modern bundlers and browsers with ES module support
+- **Respects browser constraints** like connection limits and concurrent requests
+- **Works with service workers** and offline-first applications
+
+### Hybrid Applications
+
+For applications that run in both Node.js and browser (like SSR frameworks):
+- **Environment detection** to optimize for each platform
+- **Consistent API** across environments
+- **Safe usage** with isomorphic applications
 
 ### React Integration
 

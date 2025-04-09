@@ -201,9 +201,9 @@ describe('TokenRefreshPlugin', () => {
     });
     manager.use(slowPlugin);
 
-    mockAxios.onGet('/slow').reply(401);
+    mockAxios.onGet('/timeout-test').reply(401);
 
-    await expect(axiosInstance.get('/slow')).rejects.toThrow('Token refresh timeout');
+    await expect(axiosInstance.get('/timeout-test')).rejects.toThrow('Token refresh timeout');
     expect(refreshFn).toHaveBeenCalledTimes(1);
   });
 
@@ -426,5 +426,55 @@ describe('TokenRefreshPlugin', () => {
     expect(refreshFn).toHaveBeenCalledTimes(1);
 
     expect(plugin['refreshQueue'].length).toBe(0);
+  });
+
+  it('should detect custom auth errors in 200 OK responses and refresh token', async () => {
+    // Setup a custom error detector for GraphQL-like errors
+    const customErrorDetector = (response: any) => {
+      return response?.errors?.some((error: any) => 
+        error.extensions?.code === 'UNAUTHENTICATED' || 
+        error.message?.includes('token expired')
+      );
+    };
+    
+    // Reinitialize with custom error detector
+    manager.unuse('TokenRefreshPlugin');
+    const graphqlPlugin = new TokenRefreshPlugin(refreshFn, {
+      refreshStatusCodes: [401],
+      refreshTimeout: 3000,
+      maxRefreshAttempts: 2,
+      retryOnRefreshFail: true,
+      authHeaderName: 'Authorization',
+      tokenPrefix: 'Bearer ',
+      customErrorDetector
+    });
+    manager.use(graphqlPlugin);
+    
+    refreshFn.mockResolvedValue({ token: 'NEW_GRAPHQL_TOKEN' });
+    
+    // Mock a GraphQL error response with 200 status
+    mockAxios
+      .onPost('/graphql')
+      .replyOnce(200, { 
+        data: null, 
+        errors: [{ 
+          message: 'User not authenticated, token expired', 
+          extensions: { code: 'UNAUTHENTICATED' } 
+        }] 
+      })
+      .onPost('/graphql')
+      .replyOnce(200, { data: { user: { id: 1, name: 'Test User' } } });
+      
+    const response = await axiosInstance.post('/graphql', { query: 'query { user { id name } }' });
+    
+    // Verify the final response is good
+    expect(response.status).toBe(200);
+    expect(response.data).toEqual({ data: { user: { id: 1, name: 'Test User' } } });
+    
+    // Verify token refresh was triggered
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+    
+    // Check that auth header was updated
+    expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer NEW_GRAPHQL_TOKEN');
   });
 });

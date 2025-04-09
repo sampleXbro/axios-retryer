@@ -6,7 +6,7 @@ import type { RetryLogger } from '../../services/logger.ts';
 import type { RetryPlugin } from '../../types';
 import type { TokenRefreshPluginOptions } from './types';
 
-const PLUGIN_DEFAULTS: Required<TokenRefreshPluginOptions> = {
+const PLUGIN_DEFAULTS: Required<Omit<TokenRefreshPluginOptions, 'customErrorDetector'>> = {
   maxRefreshAttempts: 3,
   authHeaderName: 'Authorization',
   refreshStatusCodes: [401],
@@ -19,6 +19,9 @@ const PLUGIN_DEFAULTS: Required<TokenRefreshPluginOptions> = {
  * A RetryPlugin that manages token refresh on certain status codes (e.g., 401).
  * It intercepts failed requests, attempts to refresh the token,
  * and re-dispatches any queued requests if refresh succeeds.
+ * 
+ * Can also detect custom auth errors in response bodies for APIs that return 200 OK
+ * with error messages in the body (like GraphQL).
  */
 export class TokenRefreshPlugin implements RetryPlugin {
   public name = 'TokenRefreshPlugin';
@@ -26,12 +29,15 @@ export class TokenRefreshPlugin implements RetryPlugin {
 
   private manager!: RetryManager;
   private interceptorId: number | null = null;
+  private responseInterceptorId: number | null = null;
   private refreshAxios!: AxiosInstance;
   private isRefreshing = false;
   private refreshQueue: { resolve: (token: string) => void; reject: (err: Error) => void }[] = [];
 
   private readonly refreshToken: (axiosInst: AxiosInstance) => Promise<{ token: string }>;
-  private readonly options: Required<TokenRefreshPluginOptions>;
+  private readonly options: Required<Omit<TokenRefreshPluginOptions, 'customErrorDetector'>> & {
+    customErrorDetector?: TokenRefreshPluginOptions['customErrorDetector'];
+  };
   private logger: RetryLogger | null = null;
 
   constructor(
@@ -44,7 +50,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
 
   /**
    * Called by RetryManager when we register this plugin via manager.use(plugin).
-   * Attaches a response interceptor to the manager’s axios instance and
+   * Attaches a response interceptor to the manager's axios instance and
    * creates a dedicated axios instance for refresh calls.
    */
   public initialize(manager: RetryManager): void {
@@ -53,10 +59,19 @@ export class TokenRefreshPlugin implements RetryPlugin {
     this.refreshAxios = axios.create(manager.axiosInstance.defaults);
     this.logger = manager.getLogger();
 
+    // Interceptor for handling errors (like 401)
     this.interceptorId = manager.axiosInstance.interceptors.response.use(
       (resp) => resp,
       (error: AxiosError) => this.handleResponseError(error),
     );
+
+    // Add interceptor for successful responses to check for custom errors
+    if (this.options.customErrorDetector) {
+      this.responseInterceptorId = manager.axiosInstance.interceptors.response.use(
+        (response) => this.handleSuccessResponse(response),
+        (error) => Promise.reject(error),
+      );
+    }
 
     this.manager.axiosInstance.interceptors.request.use((config) => {
       const { authHeaderName } = this.options;
@@ -76,6 +91,59 @@ export class TokenRefreshPlugin implements RetryPlugin {
     if (this.interceptorId != null) {
       manager.axiosInstance.interceptors.response.eject(this.interceptorId);
     }
+    // eslint-disable-next-line eqeqeq
+    if (this.responseInterceptorId != null) {
+      manager.axiosInstance.interceptors.response.eject(this.responseInterceptorId);
+    }
+  }
+
+  /**
+   * Checks successful responses for custom auth errors in the response body
+   */
+  private async handleSuccessResponse(response: AxiosResponse): Promise<AxiosResponse> {
+    const { customErrorDetector } = this.options;
+    
+    // Skip if request is a refresh request or if no detector provided
+    if (response.config.__isRetryRefreshRequest || !customErrorDetector) {
+      return response;
+    }
+
+    // Check if response contains auth error that should trigger refresh
+    if (customErrorDetector(response.data)) {
+      this.logger?.debug(`[${this.name}] Custom auth error detected in response body`);
+      
+      if (this.isRefreshing) {
+        // Queue the request and wait for token refresh to complete
+        return new Promise((resolve, reject) => {
+          this.refreshQueue.push({
+            resolve: (token: string) => {
+              // Once we have the token, retry with it
+              this.retryRequest(response.config, token)
+                .then(resolve)
+                .catch(reject);
+            },
+            reject,
+          });
+        });
+      }
+      
+      try {
+        // Start refresh flow
+        const token = await this.executeTokenRefresh();
+        this.updateAuthHeader(token);
+        this.retryQueuedRequests(token);
+        
+        // Retry the current request with new token
+        return this.retryRequest(response.config, token);
+      } catch (err) {
+        this.handleRefreshFailure();
+        throw err;
+      } finally {
+        this.isRefreshing = false;
+      }
+    }
+
+    return response;
   }
 
   /**

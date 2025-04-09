@@ -98,6 +98,42 @@ const reactBundle = {
     }
 };
 
+// Generate individual React hook bundles for tree shaking
+const generateReactHookConfig = (name, path) => ({
+    input: `src/react/${path}`,
+    output: [
+        { 
+            file: `dist/react/hooks/${name}.cjs.js`, 
+            format: 'cjs', 
+            sourcemap: false,
+            exports: 'named'
+        },
+        { 
+            file: `dist/react/hooks/${name}.esm.js`, 
+            format: 'es', 
+            sourcemap: false 
+        }
+    ],
+    plugins: commonPlugins(true, `react-${name}`),
+    external: ['axios', 'react', '../', './context', '../useAxiosRetryer', '../useAxiosRetryerQuery', '../useAxiosRetryerMutation'],
+    treeshake: {
+        moduleSideEffects: false,
+        propertyReadSideEffects: false,
+        tryCatchDeoptimization: false
+    }
+});
+
+// Create individual React hook bundles
+const reactHooksConfigs = [
+    ['useAxiosRetryer', 'useAxiosRetryer.ts'],
+    ['useAxiosRetryerQuery', 'useAxiosRetryerQuery.ts'],
+    ['useAxiosRetryerMutation', 'useAxiosRetryerMutation.ts'],
+    ['useGet', 'convenience/useGet.ts'],
+    ['usePost', 'convenience/usePost.ts'],
+    ['usePut', 'convenience/usePut.ts'],
+    ['useDelete', 'convenience/useDelete.ts']
+].map(([name, path]) => generateReactHookConfig(name, path));
+
 // Generate plugin configurations
 const generatePluginConfig = (pluginName) => ({
     input: `./src/plugins/${pluginName}/index.ts`,
@@ -146,4 +182,4 @@ const browserBundle = {
     external: ['axios']
 };
 
-export default [mainBundle, reactBundle, ...pluginConfigs, browserBundle];
+export default [mainBundle, reactBundle, ...reactHooksConfigs, ...pluginConfigs, browserBundle];

@@ -599,16 +599,10 @@ describe('RetryManager', () => {
     };
     retryManager = new RetryManager(options);
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
-    
-    // Create a manually controlled promise that we won't resolve during the test
-    let manualResolve;
-    const neverResolvePromise = new Promise(resolve => {
-      manualResolve = resolve;
-    });
-    
+
     // Set up mock to use our manually controlled promise - ensuring requests stay pending
     mock.onGet(/\/test-queue-limit\/.*/).reply(() => {
-      return new Promise(resolve => {
+      return new Promise(() => {
         setTimeout(() => {
           // This timeout will keep the request active during the test
           // We'll never actually resolve it because we don't call manualResolve
@@ -616,25 +610,22 @@ describe('RetryManager', () => {
         }, 10000);
       });
     });
-    
-    // Import QueueFullError for proper type checking
-    const { QueueFullError } = await import('../src/core/errors/QueueFullError');
-    
+
     // Make our requests and track them
     console.log('Making first request - should be in process');
-    const request1 = retryManager.axiosInstance.get('/test-queue-limit/1').catch(e => e);
+    retryManager.axiosInstance.get('/test-queue-limit/1').catch(e => e);
     
     // Wait long enough for first request to start processing
     await new Promise(resolve => setTimeout(resolve, 200));
     
     console.log('Making second request - should be queued (position 1)');
-    const request2 = retryManager.axiosInstance.get('/test-queue-limit/2').catch(e => e);
+    retryManager.axiosInstance.get('/test-queue-limit/2').catch(e => e);
     
     // Wait to ensure second request is properly queued
     await new Promise(resolve => setTimeout(resolve, 200));
     
     console.log('Making third request - should be queued (position 2)');
-    const request3 = retryManager.axiosInstance.get('/test-queue-limit/3').catch(e => e);
+    retryManager.axiosInstance.get('/test-queue-limit/3').catch(e => e);
     
     // Wait to ensure third request is properly queued
     await new Promise(resolve => setTimeout(resolve, 200));

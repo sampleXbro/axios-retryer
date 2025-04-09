@@ -14,7 +14,7 @@
     "build": "mkdir -p stats && rollup -c --bundleConfigAsCjs",
     "analyze": "open stats/bundle-stats-*.html",
     "prepare": "npm run build",
-    "test": "jest --coverage"
+    "test": "jest --coverage --silent"
   },
   "keywords": [
     "axios",
@@ -71,6 +71,41 @@
       "import": "./dist/react/index.esm.js",
       "require": "./dist/react/index.cjs.js",
       "default": "./dist/react/index.esm.js"
+    },
+    "./react/hooks/useAxiosRetryer": {
+      "types": "./dist/types/react/useAxiosRetryer.d.ts",
+      "import": "./dist/react/hooks/useAxiosRetryer.esm.js",
+      "require": "./dist/react/hooks/useAxiosRetryer.cjs.js"
+    },
+    "./react/hooks/useAxiosRetryerQuery": {
+      "types": "./dist/types/react/useAxiosRetryerQuery.d.ts",
+      "import": "./dist/react/hooks/useAxiosRetryerQuery.esm.js",
+      "require": "./dist/react/hooks/useAxiosRetryerQuery.cjs.js"
+    },
+    "./react/hooks/useAxiosRetryerMutation": {
+      "types": "./dist/types/react/useAxiosRetryerMutation.d.ts",
+      "import": "./dist/react/hooks/useAxiosRetryerMutation.esm.js",
+      "require": "./dist/react/hooks/useAxiosRetryerMutation.cjs.js"
+    },
+    "./react/hooks/useGet": {
+      "types": "./dist/types/react/convenience/useGet.d.ts",
+      "import": "./dist/react/hooks/useGet.esm.js",
+      "require": "./dist/react/hooks/useGet.cjs.js"
+    },
+    "./react/hooks/usePost": {
+      "types": "./dist/types/react/convenience/usePost.d.ts",
+      "import": "./dist/react/hooks/usePost.esm.js",
+      "require": "./dist/react/hooks/usePost.cjs.js"
+    },
+    "./react/hooks/usePut": {
+      "types": "./dist/types/react/convenience/usePut.d.ts",
+      "import": "./dist/react/hooks/usePut.esm.js",
+      "require": "./dist/react/hooks/usePut.cjs.js"
+    },
+    "./react/hooks/useDelete": {
+      "types": "./dist/types/react/convenience/useDelete.d.ts",
+      "import": "./dist/react/hooks/useDelete.esm.js",
+      "require": "./dist/react/hooks/useDelete.cjs.js"
     },
     "./plugins/CachingPlugin": {
       "types": "./dist/types/plugins/CachingPlugin/index.d.ts",

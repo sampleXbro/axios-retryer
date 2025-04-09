@@ -11,4 +11,9 @@ export interface TokenRefreshPluginOptions {
   tokenPrefix?: string;
   /** HTTP status codes that trigger a token refresh (e.g., [401, 419]). */
   refreshStatusCodes?: number[];
+  /** 
+   * Optional function to detect auth errors in response bodies (for APIs that return 200 with error in body)
+   * Return true if response contains an auth error that should trigger token refresh
+   */
+  customErrorDetector?: (response: any) => boolean;
 }
