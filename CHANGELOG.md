@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.4.2 - 09.04.2025
+- **Tree-Shakeable React Hooks**: Removed temporarily
+
 ## 1.4.1 - 09.04.2025
 - **Queue Size Limits**: Added the `maxQueueSize` option to limit the number of requests that can be queued. When the queue is full, new requests will be rejected with `QueueFullError`. Prevents memory issues during high load.
 - **Sensitive Data Protection**: Added automatic redaction of tokens, passwords, and other sensitive information in logs and error reporting. Configurable via `enableSanitization` and `sanitizeOptions`.

@@ -21,8 +21,7 @@ const commonPlugins = (minify = true, name = 'core') => [
                 // Improve tree-shaking with these options
                 declaration: true,
                 target: 'ES2019',
-                module: 'ESNext',
-                jsx: 'react' // Add JSX support
+                module: 'ESNext'
             }
         }
     }),
@@ -72,68 +71,6 @@ const mainBundle = {
     }
 };
 
-// React integration
-const reactBundle = {
-    input: 'src/react/index.ts',
-    output: [
-        { 
-            file: 'dist/react/index.cjs.js', 
-            format: 'cjs', 
-            sourcemap: false,
-            exports: 'named',
-            name: 'AxiosRetryerReact'
-        },
-        { 
-            file: 'dist/react/index.esm.js', 
-            format: 'es', 
-            sourcemap: false 
-        }
-    ],
-    plugins: commonPlugins(true, 'react'),
-    external: ['axios', 'react', '../'], // Don't bundle axios, react, or core lib
-    treeshake: {
-        moduleSideEffects: false,
-        propertyReadSideEffects: false,
-        tryCatchDeoptimization: false
-    }
-};
-
-// Generate individual React hook bundles for tree shaking
-const generateReactHookConfig = (name, path) => ({
-    input: `src/react/${path}`,
-    output: [
-        { 
-            file: `dist/react/hooks/${name}.cjs.js`, 
-            format: 'cjs', 
-            sourcemap: false,
-            exports: 'named'
-        },
-        { 
-            file: `dist/react/hooks/${name}.esm.js`, 
-            format: 'es', 
-            sourcemap: false 
-        }
-    ],
-    plugins: commonPlugins(true, `react-${name}`),
-    external: ['axios', 'react', '../', './context', '../useAxiosRetryer', '../useAxiosRetryerQuery', '../useAxiosRetryerMutation'],
-    treeshake: {
-        moduleSideEffects: false,
-        propertyReadSideEffects: false,
-        tryCatchDeoptimization: false
-    }
-});
-
-// Create individual React hook bundles
-const reactHooksConfigs = [
-    ['useAxiosRetryer', 'useAxiosRetryer.ts'],
-    ['useAxiosRetryerQuery', 'useAxiosRetryerQuery.ts'],
-    ['useAxiosRetryerMutation', 'useAxiosRetryerMutation.ts'],
-    ['useGet', 'convenience/useGet.ts'],
-    ['usePost', 'convenience/usePost.ts'],
-    ['usePut', 'convenience/usePut.ts'],
-    ['useDelete', 'convenience/useDelete.ts']
-].map(([name, path]) => generateReactHookConfig(name, path));
-
 // Generate plugin configurations
 const generatePluginConfig = (pluginName) => ({
     input: `./src/plugins/${pluginName}/index.ts`,
@@ -182,4 +119,4 @@ const browserBundle = {
     external: ['axios']
 };
 
-export default [mainBundle, reactBundle, ...reactHooksConfigs, ...pluginConfigs, browserBundle];
+export default [mainBundle, ...pluginConfigs, browserBundle];
