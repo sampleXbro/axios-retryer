@@ -129,7 +129,6 @@ Try it now:
   - [Node.js Support](#nodejs-support)
   - [Browser Support](#browser-support)
   - [Hybrid Applications](#hybrid-applications)
-  - [React Integration](#react-integration)
 - [Advanced Topics](#-advanced-topics)
   - [Concurrency & Priority](#concurrency--priority)
   - [Custom Retry Strategies](#custom-retry-strategies)
@@ -276,7 +275,7 @@ retryer.retryFailedRequests()
   .then(responses => console.log('Retried successfully:', responses));
 ```
 
-## 🔔 Events & Hooks
+## 🔔 Events
 
 Subscribe to events to monitor and react to the retry process:
 
@@ -455,7 +454,6 @@ The CachingPlugin provides smart cache invalidation:
 - **Precise Invalidation**: Invalidate specific cache entries by exact key or pattern
 - **Bulk Invalidation**: Clear multiple related cache entries at once
 - **Cache Statistics**: Monitor cache size and performance
-- **Automatic Integration**: Works seamlessly with the React hooks (see React Integration section)
 
 This plugin is particularly useful for:
 - Caching frequently accessed, rarely changed data
@@ -519,97 +517,6 @@ For applications that run in both Node.js and browser (like SSR frameworks):
 - **Consistent API** across environments
 - **Safe usage** with isomorphic applications
 
-### React Integration
-
-Axios-Retryer provides a set of React hooks and components for easy integration with React applications:
-
-```typescript
-import { RetryManagerProvider, useAxiosRetryerQuery, useAxiosRetryerMutation } from 'axios-retryer/react';
-import { createReactRetryer } from 'axios-retryer/react';
-
-// Create a RetryManager for React
-const manager = createReactRetryer({ retries: 3 });
-
-function App() {
-  return (
-    <RetryManagerProvider manager={manager}>
-      <MyComponent />
-    </RetryManagerProvider>
-  );
-}
-
-function MyComponent() {
-  // Query hook with caching and auto-refresh
-  const { data, loading, error, refetch } = useAxiosRetryerQuery('/api/users', {
-    cacheDuration: 60000,  // Cache for 1 minute
-    refetchInterval: 5000  // Refresh every 5 seconds
-  });
-  
-  // Mutation hook with automatic cache invalidation
-  const { mutate, loading: submitting } = useAxiosRetryerMutation('/api/users', {
-    invalidateQueries: ['/api/users']  // Automatically invalidates cached queries
-  });
-  
-  return (
-    <div>
-      {loading ? <Spinner /> : <UserList users={data} />}
-      <button onClick={() => mutate({ name: 'New User' })}>Add User</button>
-    </div>
-  );
-}
-```
-
-#### Hook and Plugin Integration
-
-The React hooks automatically integrate with plugins, especially the CachingPlugin:
-
-**For Query Hooks:**
-```typescript
-// useAxiosRetryerQuery automatically sets up caching
-const { data, isStale } = useAxiosRetryerQuery('/api/users', {
-  // These options configure the CachingPlugin
-  cacheDuration: 5 * 60 * 1000,  // 5 minutes cache
-  cachingOptions: {              // Optional additional CachingPlugin config
-    compareHeaders: true,        // Include headers in cache key
-    maxItems: 200                // Store up to 200 responses
-  }
-});
-```
-
-**For Mutation Hooks:**
-```typescript
-// useAxiosRetryerMutation automatically integrates with cache invalidation
-const { mutate } = useAxiosRetryerMutation('/api/posts', {
-  // Automatically invalidates these cache entries after mutation success
-  invalidateQueries: [
-    '/api/posts',               // Exact match
-    '/api/users/123/posts',     // Another exact match
-    '/api/dashboard'            // Another cache key to invalidate
-  ],
-  // Other mutation options...
-  method: 'post',
-  onSuccess: (data) => showNotification('Post created!')
-});
-```
-
-**Behind the Scenes:**
-- The hooks check if CachingPlugin is registered with the RetryManager
-- If not registered, they automatically create and register it
-- Query hooks configure it with provided cache duration and options
-- Mutation hooks use it to intelligently invalidate cache after successful mutations
-- For many invalidation keys (>5), the entire cache is cleared for efficiency
-- For fewer keys, each key is precisely invalidated to maintain other cached data
-
-The React integration provides:
-
-- 🔄 **Context provider** for sharing the retry manager
-- 🔍 **Query hooks** with caching, auto-refresh, and stale data handling
-- ✏️ **Mutation hooks** with automatic cache invalidation
-- 📦 **Tree-shakable** imports for optimized bundle size
-- 🧩 **Seamless plugin integration** without manual configuration
-
-[Read more about React integration](src/react/README.md)
-
 ## 🔬 Advanced Topics
 
 ### Plugin Management Best Practices
@@ -656,39 +563,6 @@ retryer.use(cachePlugin);
 // file1.js and file2.js - Import and use the shared instances
 import { retryer, cachePlugin } from './shared';
 ```
-
-#### With React Integration
-
-When using React hooks, follow these guidelines:
-
-```tsx
-// In your app initialization:
-import { createReactRetryer, RetryManagerProvider } from 'axios-retryer/react';
-import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
-
-// 1. Create one RetryManager for your entire app
-const manager = createReactRetryer({ /* options */ });
-
-// 2. Pre-register plugins that should be shared
-const cachePlugin = createCachePlugin({ timeToRevalidate: 60000 });
-manager.use(cachePlugin);
-
-// 3. Provide the manager through context
-function App() {
-  return (
-    <RetryManagerProvider manager={manager}>
-      <YourApp />
-    </RetryManagerProvider>
-  );
-}
-```
-
-The React hooks will:
-- Use your pre-registered plugins when available
-- Avoid creating duplicate plugin instances when properly configured
-- Automatically configure plugins based on hook options
-
-This approach ensures consistent behavior across your application and optimal performance.
 
 ### Concurrency & Priority
 
