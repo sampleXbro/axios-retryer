@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.4.4 - 13.04.2025
+- **Fixed CachingPlugin**: Fixed bugs in the CachingPlugin's `runCacheCleanup` method:
+  - Fixed issue with maxItems enforcement where oldest items weren't properly removed
+  - Improved TypeScript compatibility when iterating through cache entries
+  - Fixed edge cases with expired items not being properly cleaned up
+- **Improved Test Suite**: Fixed and improved tests for CachingPlugin to avoid timing issues and race conditions
+
 ## 1.4.2 - 09.04.2025
 - **Tree-Shakeable React Hooks**: Removed temporarily
 

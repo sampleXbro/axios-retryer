@@ -256,22 +256,30 @@ export class CachingPlugin implements RetryPlugin {
 
     // Check for expired items
     if (this.options.maxAge > 0) {
-      // @ts-ignore
-      for (const [key, item] of this.cache.entries()) {
+      // Find all expired items
+      Array.from(this.cache.entries()).forEach(([key, item]) => {
         if (now - item.timestamp > this.options.maxAge) {
           itemsToRemove.push(key);
         }
-      }
+      });
     }
 
     // Check for cache size limits
     if (this.options.maxItems > 0 && this.cache.size > this.options.maxItems) {
       const sortedItems = Array.from(this.cache.entries()).sort(([, a], [, b]) => a.timestamp - b.timestamp);
-
-      const extraItems = sortedItems.slice(0, this.cache.size - this.options.maxItems).map(([key]) => key);
-
-      // @ts-ignore
-      itemsToRemove = [...new Set([...itemsToRemove, ...extraItems])];
+      
+      // Calculate how many items we need to remove to get down to maxItems
+      const excess = this.cache.size - this.options.maxItems;
+      
+      // Get the keys of the oldest items that need to be removed
+      const extraItems = sortedItems.slice(0, excess).map(([key]) => key);
+      
+      // Add these keys to our removal list without using Set
+      extraItems.forEach(key => {
+        if (!itemsToRemove.includes(key)) {
+          itemsToRemove.push(key);
+        }
+      });
     }
 
     // Remove items and log
