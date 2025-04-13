@@ -47,17 +47,23 @@ It's the complete solution for making your API communication robust, efficient, 
 
 ## 📊 Comparison with Other Libraries
 
-| Feature                         | axios-retryer                                                                          | axios-retry                     | retry-axios                    |
-|---------------------------------|----------------------------------------------------------------------------------------|---------------------------------|--------------------------------|
-| Automatic & Manual Modes        | ✅ Either auto-retry or manually queue & retry                                          | ❌ Automatic only               | ❌ Automatic only              |
-| Concurrency Control             | ✅ maxConcurrentRequests + priority queue                                               | ❌ No concurrency management    | ❌ No concurrency management   |
-| Priority-Based Requests         | ✅ CRITICAL → LOW priorities with blocking threshold                                    | ❌ Not supported                | ❌ Not supported               |
-| Customizable Retry Strategy     | ✅ Fully customizable strategy + functional API                                         | ⚠️ Basic configuration only     | ⚠️ Basic configuration only    |
-| Request Store & Manual Retry    | ✅ Store failed requests and retry later                                                | ❌ No                           | ❌ No                          |
-| Events, Hooks & Plugins         | ✅ Rich event system and plugin architecture                                            | ❌ Limited hooks                | ❌ Limited hooks               |
-| Cancellation                    | ✅ Cancel individual or all requests                                                    | ❌ No direct support            | ❌ No direct support           |
-| Detailed Metrics & Debugging    | ✅ Comprehensive metrics and debugging                                                  | ⚠️ Basic logging               | ⚠️ Basic logging              |
-| Bundle Size Control             | ✅ Tree-shakable with optional plugins                                                  | ✅ Small bundle                 | ✅ Small bundle                |
+| Feature                         | axios-retryer                                                  | axios-retry                     | retry-axios                    |
+|---------------------------------|----------------------------------------------------------------|---------------------------------|--------------------------------|
+| Automatic & Manual Modes        | ✅ Either auto-retry or manually queue & retry                 | ❌ Automatic only               | ❌ Automatic only              |
+| Concurrency Control             | ✅ maxConcurrentRequests + priority queue                      | ❌ No concurrency management    | ❌ No concurrency management   |
+| Priority-Based Requests         | ✅ CRITICAL → LOW priorities with blocking threshold           | ❌ Not supported                | ❌ Not supported               |
+| Customizable Retry Strategy     | ✅ Fully customizable strategy + functional API                | ⚠️ Basic configuration only     | ⚠️ Basic configuration only    |
+| Request Store & Manual Retry    | ✅ Store failed requests and retry later                       | ❌ No                           | ❌ No                          |
+| Events, Hooks & Plugins         | ✅ Rich event system and plugin architecture                   | ❌ Limited hooks                | ❌ Limited hooks               |
+| Cancellation                    | ✅ Cancel individual or all requests                           | ❌ No direct support            | ❌ No direct support           |
+| Detailed Metrics & Debugging    | ✅ Comprehensive metrics and debugging                         | ⚠️ Basic logging               | ⚠️ Basic logging              |
+| Bundle Size                     | ✅ 6.4KB minzipped (with all plugins)                          | ✅ ~2KB minzipped               | ✅ ~2KB minzipped              |
+| Token Refresh                   | ✅ Built-in plugin                                             | ❌ Manual implementation        | ❌ Manual implementation       |
+| Circuit Breaking                | ✅ Plugin available                                            | ❌ No                           | ❌ No                          |
+| Request Caching                 | ✅ Plugin available                                            | ❌ No                           | ❌ No                          |
+| TypeScript Support              | ✅ Full types                                                  | ⚠️ Basic                       | ⚠️ Basic                      |
+| Observability                   | ✅ Rich metrics and events                                     | ❌ Minimal                      | ❌ Minimal                     |
+| Multiple Backoff Strategies     | ✅ Linear, exponential, decorrelated jitter, custom            | ⚠️ Limited options             | ⚠️ Limited options            |
 
 ## 📦 Installation
 
@@ -933,10 +939,9 @@ axios-retryer is compatible with:
 
 | Component | Size (minified + gzipped) |
 |-----------|-------------|
-| Core library | ~8KB |
-| TokenRefreshPlugin | +3KB |
-| CircuitBreakerPlugin | +3KB |
-| CachingPlugin | +2KB |
+| Complete library (with all plugins) | 6.4KB |
+| Core library only | ~4KB |
+| Individual plugins | ~0.7-1.2KB each |
 
 ## 📘 API Reference
 
