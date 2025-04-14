@@ -65,6 +65,7 @@ export interface CachingPluginOptions {
 interface CachedItem {
   response: AxiosResponse;
   timestamp: number;
+  ttr?: number; // Custom TTR for this cache entry
 }
 
 export class CachingPlugin implements RetryPlugin {
@@ -130,7 +131,15 @@ export class CachingPlugin implements RetryPlugin {
    */
   private handleRequest(config: AxiosRequestConfig): AxiosRequestConfig {
     const method = (config.method || 'GET').toUpperCase();
-    if (!this.options.cacheMethods.includes(method)) {
+    
+    // Check per-request cache settings first
+    if (config.__cachingOptions?.cache === false) {
+      this.manager.getLogger()?.debug(`[CachingPlugin] Skipping cache for request (explicitly disabled)`);
+      return config;
+    }
+    
+    // If not explicitly enabled, check global method settings
+    if (config.__cachingOptions?.cache !== true && !this.options.cacheMethods.includes(method)) {
       return config;
     }
 
@@ -143,7 +152,11 @@ export class CachingPlugin implements RetryPlugin {
 
     if (cachedItem) {
       const ageMs = Date.now() - cachedItem.timestamp;
-      if (this.options.timeToRevalidate === 0 || ageMs < this.options.timeToRevalidate) {
+      
+      // Use per-request TTR if available, otherwise use global setting
+      const ttr = cachedItem.ttr ?? this.options.timeToRevalidate;
+      
+      if (ttr === 0 || ageMs < ttr) {
         this.manager.getLogger()?.debug(`[CachingPlugin] Cache hit for ${cacheKey} (age: ${ageMs}ms)`);
 
         // Return modified config with cached response
@@ -169,8 +182,21 @@ export class CachingPlugin implements RetryPlugin {
    * Handles successful responses by caching them when appropriate.
    */
   private async handleResponseSuccess(response: AxiosResponse): Promise<AxiosResponse> {
-    if (this.options.cacheOnlyRetriedRequests && response.config && !response.config.__isRetrying) {
+    // Check per-request cache setting first
+    if (response.config?.__cachingOptions?.cache === false) {
       return response;
+    }
+    
+    // If not explicitly enabled via per-request setting, check global settings
+    if (response.config?.__cachingOptions?.cache !== true) {
+      const method = (response.config?.method || 'GET').toUpperCase();
+      if (!this.options.cacheMethods.includes(method)) {
+        return response;
+      }
+      
+      if (this.options.cacheOnlyRetriedRequests && response.config && !response.config.__isRetrying) {
+        return response;
+      }
     }
 
     if (response.status >= 200 && response.status < 300) {
@@ -193,10 +219,17 @@ export class CachingPlugin implements RetryPlugin {
           this.cache.delete(oldestKey);
         }
 
-        this.manager.getLogger()?.debug(`[CachingPlugin] Caching response for ${cacheKey}`);
+        // Get per-request TTR if available
+        const ttr = response.config?.__cachingOptions?.ttr;
+        
+        this.manager.getLogger()?.debug(
+          `[CachingPlugin] Caching response for ${cacheKey}${ttr ? ` with custom TTR: ${ttr}ms` : ''}`
+        );
+        
         this.cache.set(cacheKey, {
           response,
           timestamp: Date.now(),
+          ttr, // Store custom TTR if provided
         });
       } finally {
         this.cacheLock.delete(cacheKey);

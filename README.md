@@ -3,12 +3,12 @@
   <h1>axios-retryer</h1>
   <p><strong>Smart and Reliable Retry Management for Axios</strong></p>
   
-  [![npm version](https://img.shields.io/npm/v/axios-retryer.svg)](https://www.npmjs.com/package/axios-retryer)
-  [![npm downloads](https://img.shields.io/npm/dm/axios-retryer.svg)](https://www.npmjs.com/package/axios-retryer)
-  [![codecov](https://codecov.io/github/sampleXbro/axios-retryer/graph/badge.svg?token=BRQB5DJVLK)](https://codecov.io/github/sampleXbro/axios-retryer)
-  [![Known Vulnerabilities](https://snyk.io/test/github/sampleXbro/axios-retryer/badge.svg)](https://snyk.io/test/github/sampleXbro/axios-retryer)
-  ![Build](https://github.com/sampleXbro/axios-retryer/actions/workflows/publish.yml/badge.svg)
-  [![Gzipped Size](https://img.shields.io/bundlephobia/minzip/axios-retryer)](https://bundlephobia.com/package/axios-retryer)
+  [![npm version](https://img.shields.io/npm/v/axios-retryer.svg)](https://www.npmjs.com/package/axios-retryer?target=_blank)
+  [![npm downloads](https://img.shields.io/npm/dm/axios-retryer.svg)](https://www.npmjs.com/package/axios-retryer?target=_blank)
+  [![codecov](https://codecov.io/github/sampleXbro/axios-retryer/graph/badge.svg?token=BRQB5DJVLK)](https://codecov.io/github/sampleXbro/axios-retryer?target=_blank)
+  [![Known Vulnerabilities](https://snyk.io/test/github/sampleXbro/axios-retryer/badge.svg)](https://snyk.io/test/github/sampleXbro/axios-retryer?target=_blank)
+  ![Build](https://github.com/sampleXbro/axios-retryer/actions/workflows/publish.yml/badge.svg?target=_blank)
+  [![Gzipped Size](https://img.shields.io/bundlephobia/minzip/axios-retryer)](https://bundlephobia.com/package/axios-retryer?target=_blank)
 </div>
 
 <hr />
@@ -97,7 +97,7 @@ retryer.axiosInstance.get('https://api.example.com/data')
 ```
 
 Try it now:
-[![Edit on CodeSandbox](https://img.shields.io/badge/Edit_on-CodeSandbox-blue?logo=codesandbox)](https://codesandbox.io/p/sandbox/axios-retryer-demo-fppdc4)
+[![Edit on CodeSandbox](https://img.shields.io/badge/Edit_on-CodeSandbox-blue?logo=codesandbox)](https://codesandbox.io/p/sandbox/axios-retryer-demo-fppdc4?target=_blank)
 
 ## 🏗️ Architecture
 
@@ -455,11 +455,40 @@ const stats = cachePlugin.getCacheStats();
 console.log(`Cache size: ${stats.size}, Average age: ${stats.averageAge}ms`);
 ```
 
+#### Per-Request Cache Configuration
+
+You can override global caching settings on a per-request basis:
+
+```typescript
+// Force cache a request that would normally not be cached
+axiosInstance.post('/api/items', data, {
+  __cachingOptions: {
+    cache: true, // Override global settings to force caching
+    ttr: 30000   // Custom 30-second TTR for this request
+  }
+});
+
+// Disable caching for a specific request
+axiosInstance.get('/api/time-sensitive-data', {
+  __cachingOptions: {
+    cache: false // Skip caching for this request
+  }
+});
+
+// Set a custom TTR while using default caching rules
+axiosInstance.get('/api/semi-static-data', {
+  __cachingOptions: {
+    ttr: 300000 // This request's cache will live for 5 minutes
+  }
+});
+```
+
 The CachingPlugin provides smart cache invalidation:
 
 - **Precise Invalidation**: Invalidate specific cache entries by exact key or pattern
 - **Bulk Invalidation**: Clear multiple related cache entries at once
 - **Cache Statistics**: Monitor cache size and performance
+- **Per-Request Control**: Override global cache settings for individual requests
 
 This plugin is particularly useful for:
 - Caching frequently accessed, rarely changed data

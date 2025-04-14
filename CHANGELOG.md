@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.4.5 - 14.04.2025
+## 1.4.7 - 14.04.2025
 - **Fixed RequestQueue.isBusy Behavior**: Fixed a logical error in the `isBusy` getter that was returning the opposite of expected behavior. Now correctly returns `true` when there are waiting or in-progress requests.
 - **Enhanced Test Coverage**: Added comprehensive test suites for RequestQueue and RetryManager:
   - Added advanced edge case tests for RequestQueue handling
@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
   - Added tests for cancellation handling in the middle of a queue
   - Added tests for critical request blocking scenarios
   - Added basic and integration tests for RetryManager
+- **Added per-request caching options**: Added per-request caching configuration `__cachingOptions`, allowing users to override global caching settings for specific requests.
 
 ## 1.4.4 - 13.04.2025
 - **Fixed CachingPlugin**: Fixed bugs in the CachingPlugin's `runCacheCleanup` method:
