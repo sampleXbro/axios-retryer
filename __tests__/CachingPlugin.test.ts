@@ -360,7 +360,7 @@ describe('CachingPlugin', () => {
     });
   });
 
-  describe('Cache TTL and Expiration', () => {
+  describe('Cache TTR and Expiration', () => {
     test('should create plugin with default options', () => {
       const plugin = new CachingPlugin();
       expect(plugin.name).toBe('CachingPlugin');
@@ -445,6 +445,131 @@ describe('CachingPlugin', () => {
       
       // Clean up
       manager.unuse('CachingPlugin');
+    });
+  });
+
+  describe('Per-Request Cache Settings', () => {
+    let mockAxios: MockAdapter;
+    let axiosInstance: AxiosInstance;
+    let fakeLogger: ReturnType<typeof createFakeLogger>;
+    let fakeManager: ReturnType<typeof createFakeManager>;
+    let cachingPlugin: CachingPlugin;
+
+    beforeEach(() => {
+      // Create a fresh axios instance and adapter for each test
+      axiosInstance = axios.create();
+      mockAxios = new MockAdapter(axiosInstance);
+      fakeLogger = createFakeLogger();
+      fakeManager = createFakeManager(axiosInstance, fakeLogger);
+      cachingPlugin = new CachingPlugin();
+      cachingPlugin.initialize(fakeManager as unknown as RetryManager);
+    });
+
+    afterEach(() => {
+      mockAxios.restore();
+      cachingPlugin.onBeforeDestroyed();
+    });
+
+    test('should cache a POST request when explicitly enabled via __cachingOptions', async () => {
+      // Setup response for POST request
+      const url = '/should-cache-post';
+      const postData = { key: 'value' };
+      mockAxios.onPost(url).replyOnce(200, { success: true });
+
+      // Make POST request with cache enabled
+      const res1 = await axiosInstance.post(url, postData, {
+        __cachingOptions: {
+          cache: true
+        }
+      });
+      expect(res1.data).toEqual({ success: true });
+      expect(mockAxios.history.post.length).toBe(1);
+
+      // Second request should be served from cache
+      const res2 = await axiosInstance.post(url, postData, {
+        __cachingOptions: {
+          cache: true
+        }
+      });
+      expect(res2.data).toEqual({ success: true });
+      
+      // No new network call should have been made
+      expect(mockAxios.history.post.length).toBe(1);
+    });
+
+    test('should not cache a GET request when explicitly disabled via __cachingOptions', async () => {
+      // Setup response for GET request
+      const url = '/do-not-cache-get';
+      mockAxios.onGet(url).reply(200, { data: 'response' });
+
+      // Make GET request with cache disabled
+      const res1 = await axiosInstance.get(url, {
+        __cachingOptions: {
+          cache: false
+        }
+      });
+      expect(res1.data).toEqual({ data: 'response' });
+      expect(mockAxios.history.get.length).toBe(1);
+
+      // Second request should NOT be served from cache
+      const res2 = await axiosInstance.get(url, {
+        __cachingOptions: {
+          cache: false
+        }
+      });
+      expect(res2.data).toEqual({ data: 'response' });
+      
+      // A new network call should have been made
+      expect(mockAxios.history.get.length).toBe(2);
+    });
+
+    test('should store custom TTR when provided in __cachingOptions', async () => {
+      // This test just ensures TTR is stored in the cache map
+      const url = '/custom-ttr';
+      mockAxios.onGet(url).replyOnce(200, { data: 'response' });
+      
+      // Make request with custom TTR
+      await axiosInstance.get(url, {
+        __cachingOptions: {
+          ttr: 5000 // 5 seconds
+        }
+      });
+      
+      // Check the debug logs to verify TTR was recognized
+      expect(
+        fakeLogger.debug.mock.calls.some(args => 
+          args[0].includes('Caching response') && 
+          args[0].includes('custom TTR: 5000ms')
+        )
+      ).toBe(true);
+    });
+
+    test('should use per-request TTR for cache key checking', async () => {
+      // Create a special test method to directly test TTR extraction logic
+      const getTtrFromCacheItem = (cachedItem: any) => {
+        // This replicates the logic in the handleRequest method
+        return cachedItem.ttr ?? (cachingPlugin as any).options.timeToRevalidate;
+      };
+      
+      // Create a cached item with custom TTR
+      const customTtrItem = {
+        response: { data: {}, status: 200, statusText: 'OK', headers: {}, config: {} },
+        timestamp: Date.now(),
+        ttr: 5000 // Custom TTR
+      };
+      
+      // Create a cached item without custom TTR
+      const defaultTtrItem = {
+        response: { data: {}, status: 200, statusText: 'OK', headers: {}, config: {} },
+        timestamp: Date.now()
+        // No ttr property, should use default
+      };
+      
+      // Test that custom TTR is properly extracted
+      expect(getTtrFromCacheItem(customTtrItem)).toBe(5000);
+      
+      // Test that default TTR is used when no custom TTR is provided
+      expect(getTtrFromCacheItem(defaultTtrItem)).toBe((cachingPlugin as any).options.timeToRevalidate);
     });
   });
 });

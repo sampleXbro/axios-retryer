@@ -78,11 +78,11 @@ describe('RequestQueue', () => {
 
   it('should return busy state correctly', () => {
     // When queue is empty and no in-progress requests, isBusy should be true
-    expect(queue.isBusy).toBe(true);
+    expect(queue.isBusy).toBe(false);
     
     // When queue has items, isBusy should be false
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'req33')).catch(() => {});
-    expect(queue.isBusy).toBe(false);
+    expect(queue.isBusy).toBe(true);
   });
 
   it('should handle canceling non-existent requests', () => {
@@ -403,7 +403,7 @@ describe('RequestQueue', () => {
     // Create and immediately cancel some requests
     for (let i = 0; i < 20; i++) {
       const reqId = `req${i}`;
-      const req = testQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), reqId))
+      testQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), reqId))
         .then(() => {
           processedIds.push(reqId);
           testQueue.markComplete();
