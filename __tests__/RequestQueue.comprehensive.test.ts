@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { RequestQueue } from '../src/core/requestQueue';
-import { AxiosError, AxiosRequestConfig } from 'axios';
+import { AxiosRequestConfig } from 'axios';
 import { QueueFullError } from '../src/core/errors/QueueFullError';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../src/types';
 
@@ -308,13 +308,13 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test isBusy with various queue states
   it('should correctly report busy state', async () => {
     // Empty queue is not busy
-    expect(queue.isBusy).toBe(true);
+    expect(queue.isBusy).toBe(false);
     
     // Add a request to queue
     const promise = queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req'));
     
     // Now it should be busy
-    expect(queue.isBusy).toBe(false);
+    expect(queue.isBusy).toBe(true);
     
     // Clean up
     promise.catch(() => {});

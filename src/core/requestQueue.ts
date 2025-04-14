@@ -88,7 +88,7 @@ export class RequestQueue {
   }
 
   public get isBusy(): boolean {
-    return this.waiting.length === 0 && this.inProgressCount === 0;
+    return this.waiting.length > 0 || this.inProgressCount > 0;
   }
 
   /**

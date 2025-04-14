@@ -136,7 +136,7 @@ describe('RetryManager Integration Tests', () => {
 
       // Get queue metrics for verification
       const queueInstance = testRetryManager['requestQueue'];
-      expect(queueInstance.isBusy).toBe(true);
+      expect(queueInstance.isBusy).toBe(false);
       expect(queueInstance.getWaitingCount()).toBe(0); // All requests should be completed
     });
 

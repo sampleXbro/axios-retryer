@@ -30,7 +30,7 @@ describe('RequestQueue Basic Tests', () => {
     const queue = new RequestQueue(2, 0, () => false, () => false);
     
     // Empty queue is not busy
-    expect(queue.isBusy).toBe(true);
+    expect(queue.isBusy).toBe(false);
   });
   
   test('enqueuing adds items to queue', () => {
