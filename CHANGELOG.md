@@ -2,9 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.4.8 - 19.04.2025
+## 1.4.8 - 19.05.2025
 - **Fixed RequestQueue.getWaiting Method**: Restored backward compatibility by ensuring `getWaiting()` returns a copy of the array, maintaining compatibility with code that modifies the returned array.
 - **Memory Optimizations**: Improved memory efficiency in high-volume request handling with proper cleanup of completed requests and optimized queue operations.
+
+## 1.4.7 - 14.04.2025
 - **Fixed RequestQueue.isBusy Behavior**: Fixed a logical error in the `isBusy` getter that was returning the opposite of expected behavior. Now correctly returns `true` when there are waiting or in-progress requests.
 - **Enhanced Test Coverage**: Added comprehensive test suites for RequestQueue and RetryManager:
   - Added advanced edge case tests for RequestQueue handling
