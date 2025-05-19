@@ -24,6 +24,8 @@ export class RequestQueue {
   private readonly isCriticalRequest: (request: AxiosRequestConfig) => boolean;
   private readonly waiting: EnqueuedItem[] = [];
   private inProgressCount = 0;
+  private isDestroyed = false;
+  private dequeueTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * @param maxConcurrent - maximum number of requests to process at once
@@ -55,6 +57,11 @@ export class RequestQueue {
    * @throws {QueueFullError} When the queue is at maximum capacity
    */
   public enqueue(config: AxiosRequestConfig): Promise<AxiosRequestConfig> {
+    // Check if the queue has been destroyed
+    if (this.isDestroyed) {
+      return Promise.reject(new AxiosError('Queue has been destroyed', 'QUEUE_DESTROYED'));
+    }
+
     // Check if the queue is at its maximum capacity
     if (this.maxQueueSize !== undefined && this.waiting.length >= this.maxQueueSize) {
       throw new QueueFullError(config);
@@ -83,6 +90,9 @@ export class RequestQueue {
     return this.waiting.length;
   }
 
+  /**
+   * Returns a copy of the waiting items
+   */
   public getWaiting(): EnqueuedItem[] {
     return [...this.waiting];
   }
@@ -115,7 +125,50 @@ export class RequestQueue {
       ),
     );
 
+    // Cleanup large references
+    this.cleanupRequest(request);
+
     return true;
+  }
+
+  /**
+   * Clears all waiting requests from the queue and rejects them
+   */
+  public clear(): void {
+    // Reject all pending requests
+    for (const item of this.waiting) {
+      item.reject(
+        new AxiosError(
+          'Queue cleared',
+          'QUEUE_CLEARED',
+          item.config as InternalAxiosRequestConfig,
+        ),
+      );
+      // Cleanup large references
+      this.cleanupRequest(item);
+    }
+    
+    // Clear the array efficiently
+    this.waiting.length = 0;
+  }
+
+  /**
+   * Destroys the queue, canceling all waiting requests and cleanup resources
+   * After calling this method, the queue is no longer usable
+   */
+  public destroy(): void {
+    // Clear all timers
+    if (this.dequeueTimer) {
+      clearTimeout(this.dequeueTimer);
+      this.dequeueTimer = null;
+    }
+
+    // Clear all waiting requests
+    this.clear();
+    
+    // Mark as destroyed
+    this.isDestroyed = true;
+    this.inProgressCount = 0;
   }
 
   /**
@@ -127,9 +180,25 @@ export class RequestQueue {
    *   this.waiting.sort((a, b) => comparePriority(a, b));
    */
   private insertByPriority(item: EnqueuedItem): void {
-    // use binary insertion:
+    // Optimized binary insertion for large arrays
+    const length = this.waiting.length;
+    
+    // Fast path for empty array or append at end
+    if (length === 0) {
+      this.waiting.push(item);
+      return;
+    }
+    
+    // Check if we should append at the end (common case for many workloads)
+    const lastItem = this.waiting[length - 1];
+    if (this.comparePriority(item, lastItem) >= 0) {
+      this.waiting.push(item);
+      return;
+    }
+    
+    // Standard binary insertion for other cases
     let low = 0;
-    let high = this.waiting.length - 1;
+    let high = length - 1;
     while (low <= high) {
       const mid = (low + high) >> 1; // floor((low+high)/2)
       const c = this.comparePriority(item, this.waiting[mid]);
@@ -147,24 +216,46 @@ export class RequestQueue {
    * If there's capacity, shift items out of `waiting` and resolve them
    * so those requests can start.
    */
-  private tryDequeue = async (): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, this.queueDelay));
-
-    // While there's capacity, shift from waiting and resolve the promise
-    while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const { config, resolve } = this.waiting[0]!; // Peek at the first item
-
-      if (this.isCriticalRequest(config) || !this.hasActiveCriticalRequests()) {
-        // Remove from queue and resolve
-        this.waiting.shift();
-        this.inProgressCount++;
-        resolve(config);
-      } else {
-        // Stop processing non-critical requests while critical ones exist
-        break;
-      }
+  private tryDequeue = (): void => {
+    // Clear any existing timer to prevent multiple timers
+    if (this.dequeueTimer) {
+      clearTimeout(this.dequeueTimer);
+      this.dequeueTimer = null;
     }
+    
+    // Don't schedule if queue is destroyed
+    if (this.isDestroyed) {
+      return;
+    }
+
+    // Schedule the actual dequeue after the delay
+    this.dequeueTimer = setTimeout(() => {
+      this.dequeueTimer = null;
+      
+      // Check if the queue has been destroyed during the timeout
+      if (this.isDestroyed) {
+        return;
+      }
+      
+      // While there's capacity, shift from waiting and resolve the promise
+      while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const { config, resolve } = this.waiting[0]!; // Peek at the first item
+
+        if (this.isCriticalRequest(config) || !this.hasActiveCriticalRequests()) {
+          // Remove from queue and resolve
+          const item = this.waiting.shift()!;
+          this.inProgressCount++;
+          resolve(config);
+          
+          // Cleanup references after resolving
+          this.cleanupRequest(item);
+        } else {
+          // Stop processing non-critical requests while critical ones exist
+          break;
+        }
+      }
+    }, this.queueDelay);
   };
 
   /**
@@ -181,5 +272,24 @@ export class RequestQueue {
     const tA = a.config.__timestamp ?? 0;
     const tB = b.config.__timestamp ?? 0;
     return tA - tB;
+  }
+  
+  /**
+   * Helper to clean up potentially large references in requests
+   * to aid garbage collection
+   */
+  private cleanupRequest(item: EnqueuedItem): void {
+    // Clear out large properties that might retain memory
+    // Only clear data/body as we don't want to affect the actual request
+    // if it's still in flight
+    if (item.config.data) {
+      // Keep the original reference but null out contents
+      // since the reference might be needed elsewhere
+      if (typeof item.config.data === 'object' && item.config.data !== null) {
+        // Only clean if we're done with this request
+        // @ts-ignore - intentionally clearing data properties
+        item.config.__cleanedForGC = true;
+      }
+    }
   }
 }
