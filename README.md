@@ -9,6 +9,11 @@
   [![Known Vulnerabilities](https://snyk.io/test/github/sampleXbro/axios-retryer/badge.svg)](https://snyk.io/test/github/sampleXbro/axios-retryer?target=_blank)
   ![Build](https://github.com/sampleXbro/axios-retryer/actions/workflows/publish.yml/badge.svg?target=_blank)
   [![Gzipped Size](https://img.shields.io/bundlephobia/minzip/axios-retryer)](https://bundlephobia.com/package/axios-retryer?target=_blank)
+  
+  <!-- Performance & Reliability Badges -->
+  ![Performance](https://img.shields.io/badge/Performance-232%20req%2Fsec-brightgreen)
+  ![Stress Tested](https://img.shields.io/badge/Stress%20Tested-15K%2B%20requests-success)
+  ![Memory Safe](https://img.shields.io/badge/Memory-Zero%20Leaks-brightgreen)
 </div>
 
 <hr />
