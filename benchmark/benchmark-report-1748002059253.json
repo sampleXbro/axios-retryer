@@ -1,0 +1,150 @@
+{
+  "timestamp": "2025-05-23T12:07:39.253Z",
+  "summary": {
+    "totalTests": 7,
+    "passedTests": 0,
+    "overallScore": 0,
+    "criticalScore": 0,
+    "productionReady": false
+  },
+  "results": [
+    {
+      "name": "Local Mock Server",
+      "success": false,
+      "duration": 73,
+      "category": "performance",
+      "critical": true,
+      "evaluation": {
+        "passed": false,
+        "score": 0,
+        "issues": [
+          "throughput: 0 (expected at least 200)",
+          "Missing metric: memorydelta",
+          "Missing metric: timerhealth"
+        ]
+      },
+      "metrics": {
+        "throughput": 0,
+        "memoryDelta": 999,
+        "timerHealth": 100
+      },
+      "error": "Exit code: 9"
+    },
+    {
+      "name": "Stress Testing",
+      "success": false,
+      "duration": 102,
+      "category": "reliability",
+      "critical": true,
+      "evaluation": {
+        "passed": false,
+        "score": 0,
+        "issues": [
+          "Missing metric: burstthroughput",
+          "Missing metric: sustainedrate",
+          "Missing metric: recoveryrate",
+          "Missing metric: timerhealth"
+        ]
+      },
+      "metrics": {
+        "burstThroughput": 0,
+        "sustainedRate": 0,
+        "recoveryRate": 0,
+        "timerHealth": 100
+      },
+      "error": "Exit code: 9"
+    },
+    {
+      "name": "Plugin Integration",
+      "success": false,
+      "duration": 113,
+      "category": "integration",
+      "critical": true,
+      "evaluation": {
+        "passed": false,
+        "score": 0,
+        "issues": [
+          "Missing metric: cachethroughput",
+          "Missing metric: circuitsuccess",
+          "Missing metric: tokensuccess",
+          "Missing metric: multithroughput",
+          "Missing metric: timerhealth"
+        ]
+      },
+      "metrics": {
+        "cacheThroughput": 0,
+        "circuitSuccess": 0,
+        "tokenSuccess": 0,
+        "multiThroughput": 0,
+        "timerHealth": 100
+      },
+      "error": "Exit code: 9"
+    },
+    {
+      "name": "Priority Queue (Existing)",
+      "success": false,
+      "duration": 91,
+      "category": "performance",
+      "critical": false,
+      "evaluation": {
+        "passed": false,
+        "score": 0,
+        "issues": [
+          "Benchmark failed to complete"
+        ]
+      },
+      "metrics": {
+        "throughput": 0
+      },
+      "error": "Exit code: 9"
+    },
+    {
+      "name": "Caching (Existing)",
+      "success": false,
+      "duration": 89,
+      "category": "plugins",
+      "critical": false,
+      "evaluation": {
+        "passed": false,
+        "score": 0,
+        "issues": [
+          "Benchmark failed to complete"
+        ]
+      },
+      "metrics": {},
+      "error": "Exit code: 9"
+    },
+    {
+      "name": "Circuit Breaker (Existing)",
+      "success": false,
+      "duration": 98,
+      "category": "plugins",
+      "critical": false,
+      "evaluation": {
+        "passed": false,
+        "score": 0,
+        "issues": [
+          "Benchmark failed to complete"
+        ]
+      },
+      "metrics": {},
+      "error": "Exit code: 9"
+    },
+    {
+      "name": "Token Refresh (Existing)",
+      "success": false,
+      "duration": 106,
+      "category": "plugins",
+      "critical": false,
+      "evaluation": {
+        "passed": false,
+        "score": 0,
+        "issues": [
+          "Benchmark failed to complete"
+        ]
+      },
+      "metrics": {},
+      "error": "Exit code: 9"
+    }
+  ]
+}

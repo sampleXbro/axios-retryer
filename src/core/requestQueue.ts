@@ -13,8 +13,144 @@ interface EnqueuedItem {
 }
 
 /**
+ * A binary heap-based priority queue for better performance with large numbers of requests.
+ * Provides O(log n) insertions and extractions instead of O(n) array splice operations.
+ */
+class PriorityHeap {
+  private heap: EnqueuedItem[] = [];
+  private compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number;
+  private insertionCounter = 0; // To ensure stable ordering
+
+  constructor(compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number) {
+    this.compareFn = compareFn;
+  }
+
+  get length(): number {
+    return this.heap.length;
+  }
+
+  /**
+   * Add an item to the heap in O(log n) time
+   */
+  push(item: EnqueuedItem): void {
+    // Add insertion order to ensure stability
+    (item as any).__insertionOrder = this.insertionCounter++;
+    this.heap.push(item);
+    this.heapifyUp(this.heap.length - 1);
+  }
+
+  /**
+   * Remove and return the highest priority item in O(log n) time
+   */
+  shift(): EnqueuedItem | undefined {
+    if (this.heap.length === 0) return undefined;
+    if (this.heap.length === 1) return this.heap.pop();
+
+    const root = this.heap[0];
+    this.heap[0] = this.heap.pop()!;
+    this.heapifyDown(0);
+    return root;
+  }
+
+  /**
+   * Peek at the highest priority item without removing it
+   */
+  peek(): EnqueuedItem | undefined {
+    return this.heap[0];
+  }
+
+  /**
+   * Remove a specific item by request ID in O(n) time
+   * This is still O(n) but only called during cancellations
+   */
+  removeByRequestId(requestId: string): EnqueuedItem | undefined {
+    const index = this.heap.findIndex(item => item.config.__requestId === requestId);
+    if (index === -1) return undefined;
+
+    const item = this.heap[index];
+    
+    // Replace with last element and restore heap property
+    if (index === this.heap.length - 1) {
+      return this.heap.pop();
+    }
+    
+    this.heap[index] = this.heap.pop()!;
+    
+    // Restore heap property - might need to go up or down
+    this.heapifyUp(index);
+    this.heapifyDown(index);
+    
+    return item;
+  }
+
+  /**
+   * Clear all items
+   */
+  clear(): EnqueuedItem[] {
+    const items = [...this.heap];
+    this.heap.length = 0;
+    this.insertionCounter = 0;
+    return items;
+  }
+
+  /**
+   * Get a copy of all items (for debugging/testing)
+   * Returns items in priority order (not heap order)
+   */
+  getAll(): EnqueuedItem[] {
+    // Return items sorted by priority for testing
+    return [...this.heap].sort(this.compareFn);
+  }
+
+  private heapifyUp(index: number): void {
+    while (index > 0) {
+      const parentIndex = Math.floor((index - 1) / 2);
+      
+      // If parent has higher or equal priority, we're done
+      if (this.compareFn(this.heap[parentIndex], this.heap[index]) <= 0) {
+        break;
+      }
+      
+      // Swap with parent
+      [this.heap[parentIndex], this.heap[index]] = [this.heap[index], this.heap[parentIndex]];
+      index = parentIndex;
+    }
+  }
+
+  private heapifyDown(index: number): void {
+    while (true) {
+      const leftChild = 2 * index + 1;
+      const rightChild = 2 * index + 2;
+      let smallest = index;
+
+      // Find the highest priority among node and its children
+      if (leftChild < this.heap.length && 
+          this.compareFn(this.heap[leftChild], this.heap[smallest]) < 0) {
+        smallest = leftChild;
+      }
+      
+      if (rightChild < this.heap.length && 
+          this.compareFn(this.heap[rightChild], this.heap[smallest]) < 0) {
+        smallest = rightChild;
+      }
+
+      // If current node has highest priority, we're done
+      if (smallest === index) {
+        break;
+      }
+
+      // Swap with highest priority child
+      [this.heap[index], this.heap[smallest]] = [this.heap[smallest], this.heap[index]];
+      index = smallest;
+    }
+  }
+}
+
+/**
  * A queue that holds AxiosRequestConfig objects and resolves them
  * once concurrency is available, prioritizing higher priorities first.
+ * 
+ * Now uses a binary heap for O(log n) insertions instead of O(n) array operations.
  */
 export class RequestQueue {
   private readonly maxConcurrent: number;
@@ -22,7 +158,7 @@ export class RequestQueue {
   private readonly maxQueueSize?: number;
   private readonly hasActiveCriticalRequests: () => boolean;
   private readonly isCriticalRequest: (request: AxiosRequestConfig) => boolean;
-  private readonly waiting: EnqueuedItem[] = [];
+  private readonly waiting: PriorityHeap;
   private inProgressCount = 0;
   private isDestroyed = false;
   private dequeueTimer: ReturnType<typeof setTimeout> | null = null;
@@ -49,6 +185,7 @@ export class RequestQueue {
     this.maxQueueSize = maxQueueSize;
     this.hasActiveCriticalRequests = hasActiveCriticalRequests;
     this.isCriticalRequest = isCriticalRequest;
+    this.waiting = new PriorityHeap(this.comparePriority.bind(this));
   }
 
   /**
@@ -69,7 +206,7 @@ export class RequestQueue {
 
     return new Promise<AxiosRequestConfig>((resolve, reject) => {
       const item: EnqueuedItem = { config, resolve, reject };
-      this.insertByPriority(item);
+      this.waiting.push(item); // Now O(log n) instead of O(n)
       this.tryDequeue();
     });
   }
@@ -94,7 +231,7 @@ export class RequestQueue {
    * Returns a copy of the waiting items
    */
   public getWaiting(): EnqueuedItem[] {
-    return [...this.waiting];
+    return this.waiting.getAll();
   }
 
   public get isBusy(): boolean {
@@ -107,15 +244,11 @@ export class RequestQueue {
    * @returns true if successfully canceled, false if not found (or already dequeued).
    */
   public cancelQueuedRequest(requestId: string): boolean {
-    // Find the index of the matching EnqueuedItem
-    const index = this.waiting.findIndex((item) => item.config.__requestId === requestId);
-
-    if (index === -1) {
+    const request = this.waiting.removeByRequestId(requestId);
+    
+    if (!request) {
       return false; // Not found, possibly already dequeued or wrong ID
     }
-
-    // Remove the item from the queue
-    const [request] = this.waiting.splice(index, 1);
 
     request.reject(
       new AxiosError(
@@ -135,8 +268,11 @@ export class RequestQueue {
    * Clears all waiting requests from the queue and rejects them
    */
   public clear(): void {
+    // Get all items and clear the heap
+    const items = this.waiting.clear();
+    
     // Reject all pending requests
-    for (const item of this.waiting) {
+    for (const item of items) {
       item.reject(
         new AxiosError(
           'Queue cleared',
@@ -147,9 +283,6 @@ export class RequestQueue {
       // Cleanup large references
       this.cleanupRequest(item);
     }
-    
-    // Clear the array efficiently
-    this.waiting.length = 0;
   }
 
   /**
@@ -157,7 +290,7 @@ export class RequestQueue {
    * After calling this method, the queue is no longer usable
    */
   public destroy(): void {
-    // Clear all timers
+    // Clear any existing timer
     if (this.dequeueTimer) {
       clearTimeout(this.dequeueTimer);
       this.dequeueTimer = null;
@@ -169,47 +302,6 @@ export class RequestQueue {
     // Mark as destroyed
     this.isDestroyed = true;
     this.inProgressCount = 0;
-  }
-
-  /**
-   * Insert the request into `waiting` in the correct position based on priority,
-   * then timestamp (FIFO for same priority).
-   *
-   * If performance is not an issue for your queue size, you can just do:
-   *   this.waiting.push(item);
-   *   this.waiting.sort((a, b) => comparePriority(a, b));
-   */
-  private insertByPriority(item: EnqueuedItem): void {
-    // Optimized binary insertion for large arrays
-    const length = this.waiting.length;
-    
-    // Fast path for empty array or append at end
-    if (length === 0) {
-      this.waiting.push(item);
-      return;
-    }
-    
-    // Check if we should append at the end (common case for many workloads)
-    const lastItem = this.waiting[length - 1];
-    if (this.comparePriority(item, lastItem) >= 0) {
-      this.waiting.push(item);
-      return;
-    }
-    
-    // Standard binary insertion for other cases
-    let low = 0;
-    let high = length - 1;
-    while (low <= high) {
-      const mid = (low + high) >> 1; // floor((low+high)/2)
-      const c = this.comparePriority(item, this.waiting[mid]);
-      if (c < 0) {
-        // item should come before mid element
-        high = mid - 1;
-      } else {
-        low = mid + 1;
-      }
-    }
-    this.waiting.splice(low, 0, item);
   }
 
   /**
@@ -239,14 +331,14 @@ export class RequestQueue {
       
       // While there's capacity, shift from waiting and resolve the promise
       while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const { config, resolve } = this.waiting[0]!; // Peek at the first item
+        const topItem = this.waiting.peek(); // Peek at the first item
+        if (!topItem) break;
 
-        if (this.isCriticalRequest(config) || !this.hasActiveCriticalRequests()) {
-          // Remove from queue and resolve
+        if (this.isCriticalRequest(topItem.config) || !this.hasActiveCriticalRequests()) {
+          // Remove from queue and resolve - now O(log n) instead of O(n)
           const item = this.waiting.shift()!;
           this.inProgressCount++;
-          resolve(config);
+          item.resolve(item.config);
           
           // Cleanup references after resolving
           this.cleanupRequest(item);
@@ -259,7 +351,7 @@ export class RequestQueue {
   };
 
   /**
-   * Compare by priority desc, then timestamp asc.
+   * Compare by priority desc, then timestamp asc, then insertion order for stability.
    */
   private comparePriority(a: EnqueuedItem, b: EnqueuedItem): number {
     const pA = a.config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
@@ -271,7 +363,13 @@ export class RequestQueue {
     // tie-break by earliest timestamp first
     const tA = a.config.__timestamp ?? 0;
     const tB = b.config.__timestamp ?? 0;
-    return tA - tB;
+    if (tA !== tB) {
+      return tA - tB;
+    }
+    // final tie-break by insertion order for stability
+    const iA = (a as any).__insertionOrder ?? 0;
+    const iB = (b as any).__insertionOrder ?? 0;
+    return iA - iB;
   }
   
   /**
