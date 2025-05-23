@@ -59,6 +59,79 @@ const initialPriorityMetrics = {
   failures: 0,
 };
 
+/**
+ * Manages timers to prevent accumulation and event loop congestion
+ */
+class TimerManager {
+  private activeTimers = new Set<ReturnType<typeof setTimeout>>();
+  private isDestroyed = false;
+
+  /**
+   * Creates a cancellable timeout with automatic cleanup
+   */
+  public createTimeout(callback: () => void, delay: number): { timerId: ReturnType<typeof setTimeout>; cancel: () => void } {
+    if (this.isDestroyed) {
+      // If destroyed, execute immediately to prevent hanging promises
+      callback();
+      return { timerId: null as any, cancel: () => {} };
+    }
+
+    const timerId = setTimeout(() => {
+      this.activeTimers.delete(timerId);
+      if (!this.isDestroyed) {
+        callback();
+      }
+    }, delay);
+
+    this.activeTimers.add(timerId);
+
+    return {
+      timerId,
+      cancel: () => {
+        if (this.activeTimers.has(timerId)) {
+          clearTimeout(timerId);
+          this.activeTimers.delete(timerId);
+        }
+      }
+    };
+  }
+
+  /**
+   * Creates a cancellable sleep promise
+   */
+  public createSleep(ms: number): { promise: Promise<void>; cancel: () => void } {
+    let cancelFn: () => void = () => {};
+    
+    const promise = new Promise<void>((resolve, reject) => {
+      const { cancel } = this.createTimeout(resolve, ms);
+      cancelFn = () => {
+        cancel();
+        reject(new Error('Sleep cancelled'));
+      };
+    });
+
+    return { promise, cancel: cancelFn };
+  }
+
+  /**
+   * Get count of active timers for monitoring
+   */
+  public getActiveTimerCount(): number {
+    return this.activeTimers.size;
+  }
+
+  /**
+   * Clear all active timers and mark as destroyed
+   */
+  public destroy(): void {
+    this.isDestroyed = true;
+    this.activeTimers.forEach(timerId => {
+      clearTimeout(timerId);
+    });
+    this.activeTimers.clear();
+  }
+}
+
 interface ExtendedAbortController extends AbortController {
   __priority: number;
 }
@@ -87,6 +160,8 @@ export class RetryManager {
   private requestIndex = 0;
   private plugins: Map<string, RetryPlugin>;
   private listeners: HookListeners = {};
+  private timerManager: TimerManager;
+  private activeRetryTimers = new Map<string, () => void>(); // Map of requestId to cancel function
 
   private requestQueue: RequestQueue;
   private requestInterceptorId: number | null = null;
@@ -141,6 +216,8 @@ export class RetryManager {
     this.blockingQueueThreshold = options.blockingQueueThreshold;
     this._axiosInstance = options.axiosInstance || this.createAxiosInstance();
     this.metrics = { ...initialMetrics };
+
+    this.timerManager = new TimerManager();
 
     this.setupInterceptors();
 
@@ -310,7 +387,32 @@ export class RetryManager {
       backoffType: config.__backoffType || 'default',
     });
 
-    await this.sleep(delay);
+    // Use cancellable sleep from timer manager
+    const { promise: sleepPromise, cancel } = this.timerManager.createSleep(delay);
+    
+    // Store cancel function for this request  
+    if (config.__requestId) {
+      this.activeRetryTimers.set(config.__requestId, cancel);
+    }
+
+    try {
+      await sleepPromise;
+    } catch (error) {
+      // Sleep was cancelled
+      if (config.__requestId) {
+        this.activeRetryTimers.delete(config.__requestId);
+      }
+      this.logger.warn('Retry sleep cancelled', { requestId: config.__requestId });
+      this.metrics.canceledRequests++;
+      this.metrics.errorTypes.cancelled++;
+      return this.handleCancelAction(config);
+    }
+
+    // Clean up the timer reference
+    if (config.__requestId) {
+      this.activeRetryTimers.delete(config.__requestId);
+    }
+
     this.metrics.retryDelayDuration += delay;
 
     this.logger.debug('Executing retry attempt', {
@@ -346,13 +448,6 @@ export class RetryManager {
     }
 
     return this._axiosInstance.request(config);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      this.logger.debug('Sleeping between retries', { durationMs: ms });
-      setTimeout(resolve, ms);
-    });
   }
 
   private handleCancelAction(config: AxiosRequestConfig): Promise<never> {
@@ -651,13 +746,23 @@ export class RetryManager {
       this.metrics.canceledRequests++;
       this.triggerAndEmit('onRequestCancelled', requestId);
     }
+    
+    // Cancel any active retry timer for this request
+    const cancelRetryTimer = this.activeRetryTimers.get(requestId);
+    if (cancelRetryTimer) {
+      cancelRetryTimer();
+      this.activeRetryTimers.delete(requestId);
+      this.logger.debug('Cancelled retry timer', { requestId });
+    }
   };
 
   public cancelAllRequests = (): void => {
     this.logger.warn('Cancelling all requests', {
       activeCount: this.activeRequests.size,
       queuedCount: this.requestQueue.getWaitingCount(),
+      activeRetryTimers: this.activeRetryTimers.size,
     });
+    
     this.activeRequests.forEach((controller, requestId) => {
       controller.abort();
       this.metrics.canceledRequests++;
@@ -665,11 +770,73 @@ export class RetryManager {
       this.triggerAndEmit('onRequestCancelled', requestId);
     });
     this.activeRequests.clear();
+    
+    // Cancel all active retry timers
+    this.activeRetryTimers.forEach((cancelFn, requestId) => {
+      cancelFn();
+      this.logger.debug('Cancelled retry timer', { requestId });
+    });
+    this.activeRetryTimers.clear();
+  };
+
+  /**
+   * Destroy the RetryManager and clean up all resources
+   * This will cancel all requests, clear timers, and make the instance unusable
+   */
+  public destroy = (): void => {
+    this.logger.warn('Destroying RetryManager', {
+      activeRequests: this.activeRequests.size,
+      activeRetryTimers: this.activeRetryTimers.size,
+      activeTimers: this.timerManager.getActiveTimerCount(),
+    });
+
+    // Cancel all requests and retry timers
+    this.cancelAllRequests();
+    
+    // Destroy the request queue
+    this.requestQueue.destroy();
+    
+    // Destroy the timer manager
+    this.timerManager.destroy();
+    
+    // Clear interceptors
+    if (this.requestInterceptorId !== null) {
+      this._axiosInstance.interceptors.request.eject(this.requestInterceptorId);
+      this.requestInterceptorId = null;
+    }
+    if (this.responseInterceptorId !== null) {
+      this._axiosInstance.interceptors.response.eject(this.responseInterceptorId);
+      this.responseInterceptorId = null;
+    }
+    
+    // Clean up plugins
+    this.plugins.forEach((plugin, name) => {
+      if (typeof plugin.onBeforeDestroyed === 'function') {
+        plugin.onBeforeDestroyed(this);
+      }
+    });
+    this.plugins.clear();
+    
+    // Clear all listeners
+    this.listeners = {};
+    
+    this.logger.log('RetryManager destroyed successfully');
+  };
+
+  /**
+   * Get timer statistics for monitoring
+   */
+  public getTimerStats = (): { activeTimers: number; activeRetryTimers: number } => {
+    return {
+      activeTimers: this.timerManager.getActiveTimerCount(),
+      activeRetryTimers: this.activeRetryTimers.size,
+    };
   };
 
   public getMetrics = (): AxiosRetryerDetailedMetrics => {
     this.logger.debug('Generating metrics snapshot');
     const totalRetries = this.metrics.failedRetries + this.metrics.successfulRetries;
+    const timerStats = this.getTimerStats();
     return {
       totalRequests: this.metrics.totalRequests,
       successfulRetries: this.metrics.successfulRetries,
@@ -688,6 +855,12 @@ export class RetryManager {
         successRate: data.total > 0 ? (data.successes / data.total) * 100 : 0,
         failureRate: data.total > 0 ? (data.failures / data.total) * 100 : 0,
       })),
+      timerHealth: {
+        activeTimers: timerStats.activeTimers,
+        activeRetryTimers: timerStats.activeRetryTimers,
+        // Health score: 0 = excellent, 100+ = potential issues
+        healthScore: timerStats.activeTimers + (timerStats.activeRetryTimers * 2),
+      },
     };
   };
 

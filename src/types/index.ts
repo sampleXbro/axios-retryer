@@ -419,6 +419,15 @@ export interface AxiosRetryerDetailedMetrics {
   avgRetryDelay: number;
   /** Detailed metrics grouped by request priority */
   priorityMetrics: PriorityMetrics[];
+  /** Timer health and accumulation metrics */
+  timerHealth: {
+    /** Number of active internal timers */
+    activeTimers: number;
+    /** Number of active retry timers */
+    activeRetryTimers: number;
+    /** Health score (0 = excellent, 100+ = potential issues) */
+    healthScore: number;
+  };
 }
 
 /**
