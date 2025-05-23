@@ -14,7 +14,13 @@
     "build": "mkdir -p stats && rollup -c --bundleConfigAsCjs",
     "analyze": "open stats/bundle-stats-*.html",
     "prepare": "npm run build",
-    "test": "jest --coverage --silent"
+    "test": "jest --coverage --silent",
+    "benchmark": "npm run build && cd benchmark && node run-all-benchmarks.js",
+    "benchmark:local": "npm run build && cd benchmark && node local-mock-server.js",
+    "benchmark:stress": "npm run build && cd benchmark && node stress-testing.js",
+    "benchmark:plugins": "npm run build && cd benchmark && node plugin-integration.js",
+    "benchmark:existing": "npm run build && cd benchmark && node priority-queue.js && node caching.js && node circuit-braker.js && node token-refresh.js",
+    "benchmark:quick": "npm run build && cd benchmark && node local-mock-server.js && node plugin-integration.js"
   },
   "keywords": [
     "axios",
