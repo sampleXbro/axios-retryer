@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## 1.5.0 - 23.05.2025
 - **Performance Improvements**:
   - 🚀 **MAJOR**: Replaced O(n²) priority queue with O(log n) binary heap implementation - **100x better scaling**
   - ⚡ **MAJOR**: Fixed timer accumulation and event loop congestion with comprehensive TimerManager
