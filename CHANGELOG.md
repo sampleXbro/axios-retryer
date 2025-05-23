@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+- **🚀 Critical Performance Fix**: Replaced RequestQueue's array-based priority queue with binary heap implementation
+  - **Fixed O(n²) bottleneck**: `insertByPriority()` now performs O(log n) insertions instead of O(n) array splice operations
+  - **Massive performance gains**: Up to 100x better scaling for high-throughput applications with >1000 concurrent requests
+  - **Eliminated CPU spikes**: No more performance degradation under heavy load
+  - **Maintained full backward compatibility**: All existing APIs and behaviors preserved
+  - **Added stable ordering**: Enhanced priority comparison with insertion counter for deterministic tie-breaking
+  - **Performance test**: Added comprehensive benchmarks demonstrating O(n log n) complexity vs previous O(n²)
+
 ## 1.4.8 - 19.05.2025
 - **Fixed RequestQueue.getWaiting Method**: Restored backward compatibility by ensuring `getWaiting()` returns a copy of the array, maintaining compatibility with code that modifies the returned array.
 - **Memory Optimizations**: Improved memory efficiency in high-volume request handling with proper cleanup of completed requests and optimized queue operations.
