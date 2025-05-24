@@ -6,7 +6,7 @@ describe('CircuitBreakerPlugin Factory Function', () => {
   test('createCircuitBreaker creates an instance of CircuitBreakerPlugin', () => {
     const plugin = createCircuitBreaker({
       failureThreshold: 5,
-      resetTimeout: 1000
+      openTimeout: 1000
     });
     
     expect(plugin).toBeInstanceOf(CircuitBreakerPlugin);
@@ -23,8 +23,8 @@ describe('CircuitBreakerPlugin Factory Function', () => {
   test('createCircuitBreaker passes options to plugin', () => {
     const customOptions = {
       failureThreshold: 10,
-      resetTimeout: 5000,
-      excludeStatusCodes: [404, 403]
+      openTimeout: 5000,
+      halfOpenMax: 2
     };
     
     const plugin = createCircuitBreaker(customOptions);

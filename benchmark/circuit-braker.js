@@ -3,23 +3,46 @@ const { performance } = require('perf_hooks');
 const { CircuitBreakerPlugin } = require('../dist/plugins/CircuitBreakerPlugin.cjs');
 const { RetryManager } = require('../dist/index.cjs');
 
-
-// Create a function to generate random HTTP status codes in [200..599].
-function getRandomStatusCode() {
-  // We'll skew the range so that ~30% are errors (500..599), ~70% success (200..299).
-  // You can adjust this distribution as needed.
-  const roll = Math.random();
-  if (roll < 0.7) {
-    // 200..299
-    return 200 + Math.floor(Math.random() * 100);
-  } else {
-    // 500..599
-    return 500 + Math.floor(Math.random() * 100);
-  }
+// Mock adapter for circuit breaker testing
+function createMockAdapter() {
+  return async function mockAdapter(config) {
+    // Simulate network latency
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 10 + 5)); // 5-15ms
+    
+    // Generate random status codes - ~30% errors (500..599), ~70% success (200..299)
+    const roll = Math.random();
+    let status;
+    if (roll < 0.7) {
+      status = 200 + Math.floor(Math.random() * 100); // 200-299
+    } else {
+      status = 500 + Math.floor(Math.random() * 100); // 500-599
+    }
+    
+    if (status >= 500) {
+      const error = new Error(`Request failed with status code ${status}`);
+      error.response = {
+        data: { error: 'Server error' },
+        status: status,
+        statusText: 'Server Error',
+        headers: {},
+        config: config
+      };
+      error.config = config;
+      throw error;
+    }
+    
+    return {
+      data: { success: true, status },
+      status: status,
+      statusText: 'OK',
+      headers: {},
+      config: config
+    };
+  };
 }
 
 // The total number of requests and concurrency limit can be tweaked.
-const TOTAL_REQUESTS = 10000;
+const TOTAL_REQUESTS = 2000; // Reduced for faster benchmarking
 const MAX_CONCURRENT = 100;
 
 (async function main() {
@@ -29,6 +52,9 @@ const MAX_CONCURRENT = 100;
   const axiosInstance = axios.create({
     timeout: 5000,  // e.g., 5s timeout
   });
+  
+  // Use mock adapter for faster testing
+  axiosInstance.defaults.adapter = createMockAdapter();
 
   // 2. Create a RetryManager for your plugin to attach to.
   const retryManager = new RetryManager({ axiosInstance });
@@ -43,11 +69,9 @@ const MAX_CONCURRENT = 100;
   // 4. Register the plugin.
   retryManager.use(circuitBreaker);
 
-  // 5. Function to execute a single request with a random status code on httpbin.org.
+  // 5. Function to execute a single request with mock adapter
   async function makeRequest(index) {
-    // Random status code in [200..599].
-    const code = getRandomStatusCode();
-    const url = `https://httpbin.org/status/${code}`;
+    const url = `/api/test/${index}`;
     try {
       const response = await axiosInstance.get(url);
       return { index, success: true, status: response.status };

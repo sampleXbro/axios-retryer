@@ -149,6 +149,7 @@ Try it now:
 - [Examples](#-examples)
 - [API Reference](#-api-reference)
 - [Troubleshooting](#-troubleshooting)
+- [Known Issues](./KNOWN_ISSUES.md)
 - [Migration Guide](#-migration-guide)
 - [Compatibility](#-compatibility)
 - [Contributing](#-contributing)
@@ -885,6 +886,10 @@ export const apiService = {
 ```
 
 ## 🔍 Troubleshooting
+
+### 📋 Known Issues
+
+For a comprehensive list of known issues, unexpected behaviors, and workarounds, see **[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)**.
 
 ### Common Issues
 

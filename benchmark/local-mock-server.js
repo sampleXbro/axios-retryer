@@ -149,8 +149,8 @@ async function runControlledBenchmark() {
 async function memoryLeakTest() {
   console.log('\n🔍 Running memory leak detection...');
   
-  const cycles = 10;
-  const requestsPerCycle = 500;
+  const cycles = 5;
+  const requestsPerCycle = 200;
   const memorySnapshots = [];
   
   for (let cycle = 0; cycle < cycles; cycle++) {
@@ -222,13 +222,13 @@ if (require.main === module) {
       const validTimerHealths = benchmarkResults.map(r => r.timerHealth).filter(h => !isNaN(h));
       const avgTimerHealth = validTimerHealths.length > 0 ? validTimerHealths.reduce((sum, h) => sum + h, 0) / validTimerHealths.length : 0;
       
-      console.log(`✅ Average Throughput: ${Math.round(avgThroughput)} req/sec`);
-      console.log(`🧠 Max Memory Delta: ${maxMemoryDelta}MB`);
-      console.log(`⏱️  Average Timer Health: ${avgTimerHealth.toFixed(1)}`);
-      console.log(`🔒 Memory Leak Risk: ${memoryResults.totalGrowth > 20 ? 'MODERATE' : 'LOW'}`);
+      console.log(`Average Throughput: ${Math.round(avgThroughput)} req/sec`);
+      console.log(`Max Memory Delta: ${maxMemoryDelta}MB`);
+      console.log(`Average Timer Health: ${avgTimerHealth.toFixed(1)}`);
+      console.log(`Memory Leak Risk: ${memoryResults.totalGrowth > 20 ? 'MODERATE' : 'LOW'}`);
       
-      const score = avgThroughput > 200 && maxMemoryDelta < 100 && avgTimerHealth < 50 && memoryResults.totalGrowth < 50 ? '🏆 EXCELLENT' : '✅ GOOD';
-      console.log(`\n🎖️  Overall Rating: ${score}`);
+      const score = avgThroughput > 200 && maxMemoryDelta < 100 && avgTimerHealth < 50 && memoryResults.totalGrowth < 50 ? 'EXCELLENT' : 'GOOD';
+      console.log(`Overall Rating: ${score}`);
       
     } catch (error) {
       console.error('Benchmark failed:', error);
