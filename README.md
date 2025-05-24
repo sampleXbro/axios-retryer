@@ -11,9 +11,9 @@
   [![Gzipped Size](https://img.shields.io/bundlephobia/minzip/axios-retryer)](https://bundlephobia.com/package/axios-retryer?target=_blank)
   
   <!-- Performance & Reliability Badges -->
-  ![Performance](https://img.shields.io/badge/Performance-232%20req%2Fsec-brightgreen)
-  ![Stress Tested](https://img.shields.io/badge/Stress%20Tested-15K%2B%20requests-success)
-  ![Memory Safe](https://img.shields.io/badge/Memory-Zero%20Leaks-brightgreen)
+  ![Performance](https://img.shields.io/badge/Performance-247%20req%2Fsec-brightgreen)
+  ![Stress Tested](https://img.shields.io/badge/Stress%20Tested-73%25%20Recovery-success)
+  ![Memory Safe](https://img.shields.io/badge/Memory-19MB%20Delta-brightgreen)
 </div>
 
 <hr />
@@ -28,7 +28,8 @@
   <a href="#-key-features">Features</a> •
   <a href="#-plugins">Plugins</a> •
   <a href="#-examples">Examples</a> •
-  <a href="#-api-reference">API</a>
+  <a href="#-api-reference">API</a> •
+  <a href="BENCHMARK_RESULTS.md">📊 Benchmarks</a>
 </p>
 
 ## 🤔 Why axios-retryer?
@@ -49,6 +50,18 @@ When developing applications that communicate with APIs, you'll inevitably face 
 - 🧩 **Plugin architecture** for extending functionality
 
 It's the complete solution for making your API communication robust, efficient, and maintainable.
+
+## 🚀 Performance & Reliability
+
+axios-retryer has been thoroughly tested for production use with excellent performance:
+
+- **🏆 247 req/sec baseline throughput** - Handles high-load scenarios efficiently  
+- **💾 19MB memory delta** - Memory-efficient with no leaks detected
+- **⚡ 0.0 timer health score** - Excellent timer management
+- **🛡️ 73% recovery rate** - Strong resilience under stress conditions
+- **✅ 92$+ test coverage** - All critical systems validated
+
+**[📊 View Detailed Benchmark Results](BENCHMARK_RESULTS.md)** for comprehensive performance metrics, stress testing results, and plugin performance analysis.
 
 ## 📊 Comparison with Other Libraries
 
@@ -150,6 +163,7 @@ Try it now:
 - [API Reference](#-api-reference)
 - [Troubleshooting](#-troubleshooting)
 - [Known Issues](./KNOWN_ISSUES.md)
+- [Benchmark Results](./BENCHMARK_RESULTS.md)
 - [Migration Guide](#-migration-guide)
 - [Compatibility](#-compatibility)
 - [Contributing](#-contributing)

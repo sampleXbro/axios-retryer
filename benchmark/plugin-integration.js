@@ -1,7 +1,7 @@
-const { RetryManager } = require('../dist/index.cjs');
-const { createCircuitBreaker } = require('../dist/plugins/CircuitBreakerPlugin.cjs');
-const { createCachePlugin } = require('../dist/plugins/CachingPlugin.cjs');
-const { createTokenRefreshPlugin } = require('../dist/plugins/TokenRefreshPlugin.cjs');
+const { RetryManager } = require('../dist/index.cjs.js');
+const { CircuitBreakerPlugin } = require('../dist/plugins/CircuitBreakerPlugin.cjs.js');
+const { CachingPlugin } = require('../dist/plugins/CachingPlugin.cjs.js');
+const { TokenRefreshPlugin } = require('../dist/plugins/TokenRefreshPlugin.cjs.js');
 const { performance } = require('perf_hooks');
 
 // Mock token refresh function
@@ -152,7 +152,7 @@ function createPluginTestAdapter() {
 async function cachePluginTest() {
   console.log('\n💾 CACHE PLUGIN TEST - Performance and behavior');
   
-  const cachePlugin = createCachePlugin({
+  const cachePlugin = new CachingPlugin({
     timeToRevalidate: 1000, // 1 second
     maxItems: 1000
   });
@@ -224,7 +224,7 @@ async function cachePluginTest() {
 async function circuitBreakerTest() {
   console.log('\n🔌 CIRCUIT BREAKER TEST - Failure detection and recovery');
   
-  const circuitBreaker = createCircuitBreaker({
+  const circuitBreaker = new CircuitBreakerPlugin({
     failureThreshold: 10,
     openTimeout: 2000,
     monitoringPeriod: 1000
@@ -295,7 +295,7 @@ async function tokenRefreshTest() {
   let currentToken = 'valid_token_12345';
   let refreshCount = 0;
   
-  const tokenRefreshPlugin = createTokenRefreshPlugin(async () => {
+  const tokenRefreshPlugin = new TokenRefreshPlugin(async () => {
     console.log('🔄 Token refresh triggered');
     refreshCount++;
     await new Promise(resolve => setTimeout(resolve, 100)); // Faster refresh for testing
@@ -435,17 +435,17 @@ async function tokenRefreshTest() {
 async function multiPluginIntegrationTest() {
   console.log('\n🔗 MULTI-PLUGIN INTEGRATION TEST - All plugins working together');
   
-  const cachePlugin = createCachePlugin({
+  const cachePlugin = new CachingPlugin({
     timeToRevalidate: 2000,
     maxItems: 500
   });
   
-  const circuitBreaker = createCircuitBreaker({
+  const circuitBreaker = new CircuitBreakerPlugin({
     failureThreshold: 15,
     openTimeout: 3000
   });
   
-  const tokenRefreshPlugin = createTokenRefreshPlugin(mockTokenRefresh);
+  const tokenRefreshPlugin = new TokenRefreshPlugin(mockTokenRefresh);
   
   const manager = new RetryManager({
     retries: 2, // Reduced from 4 to prevent cascade failures

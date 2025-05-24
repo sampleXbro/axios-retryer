@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { performance } = require('perf_hooks');
-const { CircuitBreakerPlugin } = require('../dist/plugins/CircuitBreakerPlugin.cjs');
-const { RetryManager } = require('../dist/index.cjs');
+const { CircuitBreakerPlugin } = require('../dist/plugins/CircuitBreakerPlugin.cjs.js');
+const { RetryManager } = require('../dist/index.cjs.js');
 
 // Mock adapter for circuit breaker testing
 function createMockAdapter() {

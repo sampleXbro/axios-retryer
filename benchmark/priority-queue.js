@@ -1,4 +1,4 @@
-const { RetryManager } = require('../dist/index.cjs');
+const { RetryManager } = require('../dist/index.cjs.js');
 const { performance } = require('perf_hooks');
 
 // Mock adapter for faster testing

@@ -1,6 +1,6 @@
-const { RetryManager } = require('../dist/index.cjs');
-const { createCircuitBreaker } = require('../dist/plugins/CircuitBreakerPlugin.cjs');
-const { createCachePlugin } = require('../dist/plugins/CachingPlugin.cjs');
+const { RetryManager } = require('../dist/index.cjs.js');
+const { CircuitBreakerPlugin } = require('../dist/plugins/CircuitBreakerPlugin.cjs.js');
+const { CachingPlugin } = require('../dist/plugins/CachingPlugin.cjs.js');
 const { performance } = require('perf_hooks');
 
 // Adaptive mock adapter that simulates degrading services

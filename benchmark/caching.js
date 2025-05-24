@@ -2,8 +2,8 @@
 
 const axios = require('axios');
 const { performance } = require('perf_hooks');
-const { CachingPlugin } = require('../dist/plugins/CachingPlugin.cjs');
-const { RetryManager } = require('../dist/index.cjs');
+const { CachingPlugin } = require('../dist/plugins/CachingPlugin.cjs.js');
+const { RetryManager } = require('../dist/index.cjs.js');
 
 // Total number of requests and concurrency limit.
 const TOTAL_REQUESTS = 2000; // Reduced for faster benchmarking

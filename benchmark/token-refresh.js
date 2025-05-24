@@ -9,8 +9,8 @@
  */
 
 const axios = require('axios');
-const { RetryManager } = require('../dist/index.cjs');
-const { TokenRefreshPlugin } = require('../dist/plugins/TokenRefreshPlugin.cjs');
+const { RetryManager } = require('../dist/index.cjs.js');
+const { TokenRefreshPlugin } = require('../dist/plugins/TokenRefreshPlugin.cjs.js');
 
 // Custom adapter to simulate server responses.
 // - Requests to '/auth/refresh' simulate the token refresh endpoint.
