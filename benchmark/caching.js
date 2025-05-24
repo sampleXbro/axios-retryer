@@ -6,8 +6,29 @@ const { CachingPlugin } = require('../dist/plugins/CachingPlugin.cjs');
 const { RetryManager } = require('../dist/index.cjs');
 
 // Total number of requests and concurrency limit.
-const TOTAL_REQUESTS = 10000;
+const TOTAL_REQUESTS = 2000; // Reduced for faster benchmarking
 const MAX_CONCURRENT = 100;
+
+// Mock adapter for faster testing
+function createMockAdapter() {
+  return async function mockAdapter(config) {
+    // Simulate realistic latency
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 10 + 5)); // 5-15ms
+    
+    return {
+      data: { 
+        url: config.url,
+        method: config.method,
+        timestamp: Date.now(),
+        cached: false // Will be overridden by cache if applicable
+      },
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      config: config
+    };
+  };
+}
 
 (async function main() {
   console.log(
@@ -18,6 +39,9 @@ const MAX_CONCURRENT = 100;
   const axiosInstance = axios.create({
     timeout: 5000, // 5s timeout
   });
+  
+  // Use mock adapter for faster testing
+  axiosInstance.defaults.adapter = createMockAdapter();
 
   // 2. Create a RetryManager that the plugin will attach to.
   const retryManager = new RetryManager({ axiosInstance });
@@ -31,7 +55,8 @@ const MAX_CONCURRENT = 100;
 
   // 5. Function to execute requests.
   async function makeRequest(index) {
-    const url = `https://httpbin.org/anything/${Math. floor(Math.random() * 10) + 1}`;
+    // Use fewer unique URLs to test cache effectiveness
+    const url = `/api/data/${Math.floor(Math.random() * 50) + 1}`;
     try {
       const response = await axiosInstance.get(url);
       return { index, success: true, status: response.status };

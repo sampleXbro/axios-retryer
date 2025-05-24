@@ -154,7 +154,7 @@ async function cachePluginTest() {
   
   const cachePlugin = createCachePlugin({
     timeToRevalidate: 1000, // 1 second
-    maxCacheSize: 1000
+    maxItems: 1000
   });
   
   const manager = new RetryManager({
@@ -226,7 +226,7 @@ async function circuitBreakerTest() {
   
   const circuitBreaker = createCircuitBreaker({
     failureThreshold: 10,
-    resetTimeout: 2000,
+    openTimeout: 2000,
     monitoringPeriod: 1000
   });
   
@@ -437,12 +437,12 @@ async function multiPluginIntegrationTest() {
   
   const cachePlugin = createCachePlugin({
     timeToRevalidate: 2000,
-    maxCacheSize: 500
+    maxItems: 500
   });
   
   const circuitBreaker = createCircuitBreaker({
     failureThreshold: 15,
-    resetTimeout: 3000
+    openTimeout: 3000
   });
   
   const tokenRefreshPlugin = createTokenRefreshPlugin(mockTokenRefresh);
@@ -564,25 +564,27 @@ if (require.main === module) {
       console.log('\n🏆 PLUGIN INTEGRATION SUMMARY');
       console.log('='.repeat(50));
       
-      console.log('\n💾 Cache Plugin Performance:');
+      console.log('Cache Plugin Performance:');
       cacheResults.forEach(r => {
-        console.log(`  ${r.scenario}: ${r.throughput} req/sec, ${r.avgLatency}ms avg`);
+        console.log(`Cache ${r.scenario}: ${r.throughput} req/sec, ${r.avgLatency}ms avg`);
       });
       
-      console.log('\n🔌 Circuit Breaker Effectiveness:');
+      console.log('Circuit Breaker Effectiveness:');
       circuitResults.forEach(r => {
-        console.log(`  ${r.phase}: ${r.successRate}% success, ${r.throughput} req/sec`);
+        console.log(`Circuit ${r.phase}: ${r.successRate}% success, ${r.throughput} req/sec`);
       });
       
-      console.log('\n🔑 Token Refresh Reliability:');
+      console.log('Token Refresh Reliability:');
       tokenResults.forEach(r => {
-        console.log(`  ${r.scenario}: ${r.successRate}% success, ${r.throughput} req/sec`);
+        console.log(`Token ${r.scenario}: ${r.successRate}% success, ${r.throughput} req/sec`);
       });
       
-      console.log('\n🔗 Multi-Plugin Integration:');
+      console.log('Multi-Plugin Integration:');
       multiResults.forEach(r => {
-        console.log(`  ${r.scenario}: ${r.successRate}% success, ${r.throughput} req/sec, ${r.memoryDelta}MB delta`);
+        console.log(`Multi ${r.scenario}: ${r.successRate}% success, ${r.throughput} req/sec, ${r.memoryDelta}MB delta`);
       });
+      
+      console.log(`Timer Health: ${multiResults.reduce((sum, r) => sum + r.timerHealth, 0) / multiResults.length}`);
       
       // Overall assessment
       const avgCacheThroughput = cacheResults.reduce((sum, r) => sum + r.throughput, 0) / cacheResults.length;

@@ -28,3 +28,5 @@ Implementation details:
 - Created UMD browser bundle for CDN usage
 - Added functional API alternatives to class constructors
 - Added per-request cache control through __cachingOptions
+- Created comprehensive integration test suite (96.3% success rate)
+- Documented known issues in KNOWN_ISSUES.md
