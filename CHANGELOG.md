@@ -2,9 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - Post 1.5.0
+## 1.5.2 - 27.05.2025
 
 **🎯 MAJOR MILESTONE**: Comprehensive integration test suite added with 90%+ edge case and error scenario coverage
+### Added benchmark results
 
 ### 🧪 **Testing & Quality Improvements**
 - **MAJOR**: Added comprehensive integration test suite covering edge cases and error scenarios

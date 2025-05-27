@@ -11,9 +11,9 @@
   [![Gzipped Size](https://img.shields.io/bundlephobia/minzip/axios-retryer)](https://bundlephobia.com/package/axios-retryer?target=_blank)
   
   <!-- Performance & Reliability Badges -->
-  ![Performance](https://img.shields.io/badge/Performance-247%20req%2Fsec-brightgreen)
-  ![Stress Tested](https://img.shields.io/badge/Stress%20Tested-73%25%20Recovery-success)
-  ![Memory Safe](https://img.shields.io/badge/Memory-19MB%20Delta-brightgreen)
+  [![Performance](https://img.shields.io/badge/Performance-247%20req%2Fsec-brightgreen)](BENCHMARK_RESULTS.md)
+  [![Stress Tested](https://img.shields.io/badge/Stress%20Tested-73%25%20Recovery-success)](BENCHMARK_RESULTS.md)
+  [![Memory Safe](https://img.shields.io/badge/Memory-19MB%20Delta-brightgreen)](BENCHMARK_RESULTS.md)
 </div>
 
 <hr />
