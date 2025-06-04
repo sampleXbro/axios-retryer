@@ -129,6 +129,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
       
       try {
         // Start refresh flow
+        this.isRefreshing = true;
         const token = await this.executeTokenRefresh();
         this.updateAuthHeader(token);
         this.retryQueuedRequests(token);

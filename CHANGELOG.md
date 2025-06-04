@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.5.3 - 04.05.2025
+
+### 🐛 **Bug Fixes**
+- **CRITICAL**: Fixed TokenRefreshPlugin concurrent request handling for `customErrorDetector`
+  - 🔧 **Issue**: When 4-5 requests simultaneously triggered custom auth errors (200 OK responses with auth errors in body), the plugin was calling token refresh for each request instead of queueing them
+  - ✅ **Fix**: Added missing `this.isRefreshing = true` in `handleSuccessResponse` method to properly queue concurrent requests during token refresh
+  - 🎯 **Impact**: Prevents multiple unnecessary token refresh calls, improves performance, and avoids potential rate limiting issues
+
+### 🧪 **Testing Improvements**
+- **Added comprehensive concurrent request tests** for TokenRefreshPlugin:
+  - ✅ Test for 4-5 concurrent 401 status code requests (already existing, verified)
+  - ✅ **NEW**: Test for 4-5 concurrent requests with custom auth errors in 200 OK responses  
+  - 📊 Both scenarios now properly verify only 1 token refresh call occurs regardless of concurrent request count
+  - 🔍 Tests validate proper queuing behavior and successful retry of all requests with refreshed token
+
 ## 1.5.2 - 27.05.2025
 
 **🎯 MAJOR MILESTONE**: Comprehensive integration test suite added with 90%+ edge case and error scenario coverage

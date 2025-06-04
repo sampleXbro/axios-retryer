@@ -139,6 +139,36 @@ describe('TokenRefreshPlugin', () => {
     expect(refreshFn).toHaveBeenCalledTimes(1);
   });
 
+  it('should queue 4-5 concurrent requests when all hit 401 simultaneously and only refresh token once', async () => {
+    refreshFn.mockResolvedValue({ token: 'BATCH_REFRESHED_TOKEN' });
+
+    // Mock each endpoint to return 401 first, then 200 with success data
+    const endpoints = ['/batch1', '/batch2', '/batch3', '/batch4', '/batch5'];
+    endpoints.forEach((endpoint, index) => {
+      mockAxios
+        .onGet(endpoint)
+        .replyOnce(401, { error: 'Unauthorized' })
+        .onGet(endpoint)
+        .replyOnce(200, { batchResult: `success-${index + 1}` });
+    });
+
+    // Send all 5 requests simultaneously
+    const promises = endpoints.map(endpoint => axiosInstance.get(endpoint));
+    const responses = await Promise.all(promises);
+
+    // Verify all requests succeeded with refreshed token
+    responses.forEach((response, index) => {
+      expect(response.status).toBe(200);
+      expect(response.data).toEqual({ batchResult: `success-${index + 1}` });
+    });
+
+    // Critical: Token refresh should only be called ONCE despite 5 concurrent 401s
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+
+    // Verify the auth header was updated globally
+    expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer BATCH_REFRESHED_TOKEN');
+  });
+
   it('should respect maxRefreshAttempts and retryOnRefreshFail, failing if refresh keeps failing', async () => {
     // With maxRefreshAttempts=2 and retryOnRefreshFail=true,
     // total attempts should be 3.
@@ -476,5 +506,71 @@ describe('TokenRefreshPlugin', () => {
     
     // Check that auth header was updated
     expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer NEW_GRAPHQL_TOKEN');
+  });
+
+  it('should queue 4-5 concurrent requests with custom auth errors in 200 OK responses and only refresh token once', async () => {
+    // Setup a custom error detector for GraphQL-like errors
+    const customErrorDetector = (response: any) => {
+      return response?.errors?.some((error: any) => 
+        error.extensions?.code === 'UNAUTHENTICATED' || 
+        error.message?.includes('token expired')
+      );
+    };
+    
+    // Reinitialize with custom error detector
+    manager.unuse('TokenRefreshPlugin');
+    const concurrentGraphqlPlugin = new TokenRefreshPlugin(refreshFn, {
+      refreshStatusCodes: [401],
+      refreshTimeout: 3000,
+      maxRefreshAttempts: 2,
+      retryOnRefreshFail: true,
+      authHeaderName: 'Authorization',
+      tokenPrefix: 'Bearer ',
+      customErrorDetector
+    });
+    manager.use(concurrentGraphqlPlugin);
+    
+    refreshFn.mockResolvedValue({ token: 'CONCURRENT_GRAPHQL_TOKEN' });
+    
+    // Mock 5 different GraphQL queries that all return 200 with auth errors first, then success
+    const queries = [
+      { endpoint: '/graphql/user', query: 'query { user { id name } }', successData: { user: { id: 1, name: 'User1' } } },
+      { endpoint: '/graphql/posts', query: 'query { posts { title } }', successData: { posts: [{ title: 'Post1' }] } },
+      { endpoint: '/graphql/profile', query: 'query { profile { email } }', successData: { profile: { email: 'test@example.com' } } },
+      { endpoint: '/graphql/settings', query: 'query { settings { theme } }', successData: { settings: { theme: 'dark' } } },
+      { endpoint: '/graphql/notifications', query: 'query { notifications { count } }', successData: { notifications: { count: 5 } } }
+    ];
+
+    queries.forEach(({ endpoint, successData }) => {
+      mockAxios
+        .onPost(endpoint)
+        .replyOnce(200, { 
+          data: null, 
+          errors: [{ 
+            message: 'User not authenticated, token expired', 
+            extensions: { code: 'UNAUTHENTICATED' } 
+          }] 
+        })
+        .onPost(endpoint)
+        .replyOnce(200, { data: successData });
+    });
+
+    // Send all 5 GraphQL requests simultaneously 
+    const promises = queries.map(({ endpoint, query }) => 
+      axiosInstance.post(endpoint, { query })
+    );
+    const responses = await Promise.all(promises);
+
+    // Verify all requests succeeded with refreshed token
+    responses.forEach((response, index) => {
+      expect(response.status).toBe(200);
+      expect(response.data).toEqual({ data: queries[index].successData });
+    });
+
+    // Critical: Token refresh should only be called ONCE despite 5 concurrent auth errors in 200 responses
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+
+    // Verify the auth header was updated globally
+    expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer CONCURRENT_GRAPHQL_TOKEN');
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "axios-retryer is an advanced Axios request manager offering intelligent retry logic with token refresh, concurrency control, priority queuing, and a flexible plugin architecture, all built with TypeScript for robust HTTP client integrations.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
