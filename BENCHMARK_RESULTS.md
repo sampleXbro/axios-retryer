@@ -1,119 +1,133 @@
-# 📊 Axios-Retryer Benchmark Results
+# 📊 Benchmark Results
 
-> **Production Readiness Status**: 🏆 **EXCELLENT - READY FOR IMMEDIATE PRODUCTION DEPLOYMENT**
+This document summarizes the current `axios-retryer` benchmark suite and the latest generated report in [benchmark/latest-benchmark-report.json](./benchmark/latest-benchmark-report.json).
 
-## 🎯 Overall Assessment
+The suite is scenario-based on purpose. It tries to answer questions real users care about:
 
-- **Total Tests**: 7/7 ✅
-- **Critical Tests**: 3/3 ✅  
-- **Overall Score**: 100.0%
-- **Critical Score**: 100.0%
-- **Total Duration**: ~11 minutes
-- **Environment**: Node.js, macOS darwin 24.4.0
+- How much overhead does the retry manager add when everything is healthy?
+- How well does it recover from transient `5xx` and `429` responses?
+- What happens under queue contention, sustained load, and partial outages?
+- Do caching, circuit breaking, and token refresh still behave correctly under concurrency?
 
-## 📈 Performance Benchmarks
+## Current Run
 
-### 🚀 Local Mock Server
-- **Throughput**: 247 req/sec
-- **Memory Delta**: 19MB (max)
-- **Timer Health**: 0.0 (excellent)
-- **Duration**: 70.8 seconds
-- **Status**: ✅ **PASS** - Exceeds production requirements
+- **Profile:** `standard`
+- **Generated:** `2026-04-01T18:37:40.009Z`
+- **Benchmarks passed:** `7/7`
+- **Average benchmark duration:** `7463.41ms`
+- **Average scenario success rate:** `88.36%`
+- **Peak throughput observed:** `4300.7 req/sec`
+- **Slowest p95 latency:** `652.75ms`
 
-### ⚡ Priority Queue
-- **Duration**: 22.2 seconds
-- **Status**: ✅ **PASS** - Efficient request prioritization
+The aggregate success rate is not expected to be `100%` because some scenarios intentionally model outages or fail-fast protection behavior.
 
-## 🛡️ Reliability Tests
+## Core RetryManager
 
-### 💪 Stress Testing
-- **Peak Throughput**: 70 req/sec
-- **Sustained Throughput**: 50 req/sec  
-- **Recovery Success Rate**: 73%
-- **Duration**: 440.9 seconds (~7.3 minutes)
-- **Assessment**:
-  - Peak Performance: ⚠️ MODERATE
-  - Sustained Performance: 🏆 EXCELLENT
-  - Recovery Capability: ✅ GOOD
-  - Timer Management: ⚠️ MODERATE
-- **Status**: ✅ **PASS** - Production ready with monitoring
+These scenarios measure the core library without relying on external services.
 
-## 🔧 Plugin Integration Tests
+| Scenario | Result |
+|----------|--------|
+| Healthy API Overhead | `2712.55 req/sec`, `p95 14.22ms`, `100%` success |
+| Transient 5xx Recovery | `1023.22 req/sec`, `p95 57.15ms`, `100%` success |
+| Rate Limit Recovery | `745.42 req/sec`, `p95 24.67ms`, `100%` success |
+| Priority Queue Under Contention | `261.96 req/sec`, `p95 652.75ms`, `100%` success |
 
-### 🧩 Comprehensive Plugin Integration
-- **Duration**: 28.3 seconds
-- **Cache Plugin**: Working correctly
-- **Circuit Breaker Plugin**: Proper failure detection and circuit opening
-- **Token Refresh Plugin**: Seamless token management
-- **Multi-plugin coordination**: Excellent
-- **Status**: ✅ **PASS** - All plugins validated
+Highlights:
 
-## 🔌 Individual Plugin Performance
+- Healthy-path overhead is effectively negligible in this run. The manager measured slightly faster than the plain Axios baseline in the same harness (`-1.14%` overhead in the report, which should be treated as benchmark noise rather than a guaranteed speedup).
+- Transient failures recovered cleanly. The `5xx` scenario replayed `97` requests successfully with retry amplification of `1.19x`.
+- Short `429` bursts recovered without destabilizing latency tails.
+- Priority separation is visible under contention:
+  - High-priority `p95`: `110.41ms`
+  - Medium-priority `p95`: `270.57ms`
+  - Low-priority `p95`: `668.36ms`
 
-### 📦 Caching Plugin
-- **Requests Processed**: 2,000
-- **Duration**: 41.5 seconds
-- **Throughput**: ~48 req/sec
-- **Success Rate**: 100% (2000/2000)
-- **Cache Stats**: 50 items cached, efficient age management
-- **Status**: ✅ **PASS** - Excellent caching performance
+Memory summary from the core suite:
 
-### ⚡ Circuit Breaker Plugin
-- **Duration**: 5.2 seconds
-- **Circuit State Management**: Working correctly
-- **Failure Detection**: Proper threshold detection
-- **Fast Failure**: Circuit opens when threshold exceeded
-- **Status**: ✅ **PASS** - Reliable protection mechanism
+- Start heap: `6.41MB`
+- End heap: `6.47MB`
+- Growth across the memory cycle: `0.06MB`
 
-### 🔐 Token Refresh Plugin
-- **Requests Processed**: 1,000
-- **Duration**: 27.4 seconds
-- **Throughput**: ~36 req/sec
-- **Success Rate**: 100% (1000/1000)
-- **Token Management**: Seamless refresh handling
-- **Status**: ✅ **PASS** - Robust authentication handling
+## Stress Scenarios
 
-## 🎖️ Production Readiness Criteria
+These scenarios model burst traffic, sustained traffic, and partial upstream failure.
 
-| Component | Requirement | Actual | Status |
-|-----------|-------------|---------|---------|
-| **Throughput** | ≥200 req/sec | 247 req/sec | ✅ EXCELLENT |
-| **Memory Usage** | ≤50MB delta | 19MB delta | ✅ EXCELLENT |
-| **Timer Health** | ≤10 | 0.0 | ✅ EXCELLENT |
-| **Sustained Load** | ≥30 req/sec | 50 req/sec | ✅ EXCELLENT |
-| **Recovery Rate** | ≥60% | 73% | ✅ GOOD |
-| **Plugin Integration** | All working | 100% success | ✅ EXCELLENT |
+| Scenario | Result |
+|----------|--------|
+| Burst Capacity | `4300.7 req/sec`, `p95 13.71ms`, `100%` success |
+| Sustained Load | `39.99 req/sec` for `45s`, `p95 48.71ms`, `100%` success |
+| Outage And Recovery | `636.3 req/sec`, `p95 77.37ms`, `67.04%` success |
 
-## 🚀 Key Strengths
+How to read the outage result:
 
-1. **High Throughput**: 247 req/sec baseline performance
-2. **Memory Efficient**: Only 19MB memory delta under load
-3. **Excellent Timer Management**: 0.0 health score (no timer leaks)
-4. **Robust Plugin System**: All plugins working seamlessly together
-5. **Strong Recovery**: 73% success rate under stress conditions
-6. **Production Ready**: All critical benchmarks passed
+- The outage scenario intentionally includes a period where the upstream is down.
+- A `67.04%` success rate here does not mean the retry logic is randomly failing.
+- It means the benchmark is measuring how the manager behaves when some requests are fundamentally unrecoverable during the outage window.
 
-## ⚠️ Areas for Monitoring
+## Plugin Integration
 
-1. **Peak Performance**: Monitor under extreme burst conditions
-2. **Timer Management**: Continue monitoring in production stress scenarios
-3. **Circuit Breaker Tuning**: Fine-tune thresholds based on production patterns
+These scenarios validate correctness and overhead when plugins are enabled together.
 
-## 🛠️ Test Configuration
+| Scenario | Result |
+|----------|--------|
+| Caching Plugin Effectiveness | `1578.93 req/sec`, `p95 14.26ms`, `100%` success |
+| Circuit Breaker Protection | `60.78 req/sec`, `p95 10.87ms`, `35%` success |
+| Token Refresh Storm | `1057.73 req/sec`, `p95 44.11ms`, `100%` success |
+| Cache After Token Refresh | `2242.49 req/sec`, `p95 37.82ms`, `100%` success |
 
-- **Max Concurrent Requests**: 100
-- **Retry Strategy**: Exponential backoff
-- **Circuit Breaker**: 10 failures threshold, 2s timeout
-- **Cache**: 1000 items max, 1s revalidation
-- **Token Refresh**: Automatic refresh on 401 responses
+Important interpretation notes:
 
-## 📊 Benchmark Reports
+- The circuit-breaker scenario is supposed to fail fast once the upstream is known-bad. A `35%` success rate there reflects protective blocking, not a broken benchmark.
+- The token refresh scenario triggered exactly `1` refresh call for a concurrent burst, which is the desired behavior.
+- The cache-after-refresh scenario hit `100%` success with `1` refresh call and `100%` cache hit rate after warm auth.
 
-Full detailed reports are generated automatically and saved as JSON files in the `benchmark/` directory with timestamp.
+## Standalone Plugin Checks
 
----
+The benchmark suite also emits focused plugin runs:
 
-**Last Updated**: 2025-01-24  
-**Benchmark Version**: v1.0.0  
-**Test Environment**: Node.js on macOS  
-**Status**: 🏆 **PRODUCTION READY** 
+- **Caching:** `1568.09 req/sec`, `p95 13.93ms`, `100%` success, `100%` hot-read hit rate
+- **Circuit Breaker:** `60.49 req/sec`, `p95 11.47ms`, `35%` success, `20` requests blocked by circuit, `22` upstream calls avoided
+- **Token Refresh:** `950.66 req/sec`, `p95 48.79ms`, `100%` success, `1` refresh call, replay amplification `1.35x`
+
+## What These Results Suggest
+
+`axios-retryer` is performing well on the workloads it is meant to help with:
+
+- healthy-path overhead is low
+- retry recovery for transient failures is strong
+- priority queueing meaningfully separates urgent traffic from background work
+- plugin coordination remains correct under concurrency
+- timer and memory behavior are stable in this run
+
+The biggest caveats are the ones already visible in the report:
+
+- low-priority traffic can still see a large tail under queue contention
+- outage success rates are bounded by the benchmarked outage window
+- circuit-breaker scenarios should be interpreted as protection behavior, not raw availability
+
+## Running The Benchmarks
+
+```bash
+npm run benchmark
+npm run benchmark:quick
+npm run benchmark:full
+```
+
+Other useful commands:
+
+```bash
+npm run benchmark:local
+npm run benchmark:stress
+npm run benchmark:plugins
+npm run benchmark:existing
+```
+
+All aggregate runs write the latest machine-readable report to:
+
+- [benchmark/latest-benchmark-report.json](./benchmark/latest-benchmark-report.json)
+
+## Notes
+
+- Results are local and comparative, not universal guarantees.
+- Throughput and latency will vary with CPU, Node.js version, Axios version, concurrency settings, and the shape of your upstream.
+- If you care about production sizing, treat these numbers as a starting point and run the suite with your own workload assumptions.
