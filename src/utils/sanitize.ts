@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Default sensitive headers that should be redacted in logs and storage
+ * Default sensitive headers that should be redacted in built-in logs and diagnostics
  */
 export const DEFAULT_SENSITIVE_HEADERS = [
   'authorization',

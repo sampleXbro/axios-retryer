@@ -19,6 +19,41 @@ expect(metrics.successfulRetries).toBe(2); // May fail intermittently
 
 **Impact:** Affects monitoring and debugging capabilities but not core retry functionality.
 
+### 2. Sensitive Data Can Remain In Memory
+**Severity:** High  
+**Component:** Manual Retry Store / Caching  
+**Description:** Failed requests stored for manual retry and responses stored by the caching plugin can retain raw headers, tokens, payloads, and response bodies in process memory.
+
+**Impact:** Secrets are not written to disk by the library, but they may still be exposed through memory inspection, crash dumps, or accidental userland logging.
+
+**Workaround:**
+- Prefer automatic mode for high-sensitivity traffic
+- Keep `maxRequestsToStore` low
+- Avoid caching auth-scoped or personalized endpoints on shared instances
+- Use separate retry managers per user, tenant, or request boundary
+
+### 3. Shared Cache Instances Can Mix User-Specific Data
+**Severity:** High  
+**Component:** CachingPlugin  
+**Description:** The cache key does not isolate users by default. If one retry manager instance is shared across multiple principals, a cached response for one user can be reused for another user requesting the same resource shape.
+
+**Impact:** Possible cross-user or cross-tenant data exposure in SSR, backend, or worker environments.
+
+**Workaround:**
+- Do not share caching-enabled retryer instances across users or tenants
+- Disable caching for personalized endpoints
+- Only use shared caching for public or tenant-agnostic resources
+
+### 4. Cache Keys and Debug Output May Include Sensitive Values
+**Severity:** Medium  
+**Component:** CachingPlugin / Debug Logging  
+**Description:** Cache keys are derived from URL, params, body, and optionally headers. Sensitive values in those fields may therefore remain in memory and may appear in debug output.
+
+**Workaround:**
+- Keep secrets out of query params when possible
+- Avoid `compareHeaders: true` for auth-bearing requests
+- Disable debug mode in production unless logs are tightly controlled
+
 ---
 
 ## ⚠️ Unexpected Behaviors

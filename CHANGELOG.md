@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.5.4 - 01.04.2026
+
+### 🐛 Bug Fixes
+- Fixed `TokenRefreshPlugin` replay flow so refreshed business requests go back through `RetryManager` instead of bypassing queueing, metrics, cancellation handling, and other plugins
+- Fixed `TokenRefreshPlugin` teardown so request interceptors are ejected correctly and repeated `use/unuse` cycles do not leak behavior
+- Fixed invalid `RetryManager` option handling so bad config now throws the intended validation error instead of failing during logger setup
+- Fixed retry metrics initialization and empty-metrics snapshots so instances no longer share nested metric state and averages no longer return `NaN`
+- Fixed failure accounting for `retries: 0` and terminal failure paths so production metrics are now internally consistent
+- Fixed failed-request store eviction to remove the oldest stored request instead of the newest one
+
+### ⚡ Performance & Benchmarking
+- Reworked the benchmark suite around deterministic, user-facing scenarios instead of noisy random demos
+- Added structured benchmark reporting with `quick`, `standard`, and `full` profiles plus machine-readable rollup output
+- Benchmarks now cover healthy-path overhead, transient failure recovery, rate limiting, queue contention, sustained load, outage recovery, caching effectiveness, circuit-breaker protection, and token-refresh storms
+- Preserved runtime defaults for end users while explicitly benchmarking the low-latency queue configuration
+
+### 🧪 Testing
+- Added regression coverage for token refresh replay, interceptor cleanup, queue wait metrics, retry-disabled terminal failures, request store eviction, and benchmark helper utilities
+- Full suite validated at `43/43` test suites and `439/439` tests passing
+- Release benchmark suite validated at `7/7` benchmarks passing
+
 ## 1.5.3 - 04.05.2025
 
 ### 🐛 **Bug Fixes**

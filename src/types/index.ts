@@ -274,7 +274,7 @@ export interface RetryManagerOptions {
 
   /**
    * The delay (in milliseconds) before processing each request in the queue.
-   * This delay applies to all enqueued requests.
+   * This delay applies to queued requests.
    *
    * @default 100
    *
@@ -310,8 +310,8 @@ export interface RetryManagerOptions {
   maxQueueSize?: number;
 
   /**
-   * Options for sanitizing sensitive information in logs and storage.
-   * Controls how tokens, passwords, and other sensitive data are redacted.
+   * Options for sanitizing sensitive information in built-in logs and diagnostics.
+   * Controls how tokens, passwords, and other sensitive data are redacted when the library logs request details.
    *
    * @default undefined (Uses default sanitization settings)
    *
@@ -324,8 +324,8 @@ export interface RetryManagerOptions {
   sanitizeOptions?: SanitizeOptions;
 
   /**
-   * Whether to enable sanitization of sensitive data in logs and storage.
-   * When enabled, sensitive information like tokens and passwords will be redacted.
+   * Whether to enable sanitization of sensitive data in built-in logs and diagnostics.
+   * When enabled, sensitive information like tokens and passwords will be redacted in the library's own logging paths.
    *
    * @default true
    *

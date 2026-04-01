@@ -38,17 +38,38 @@ While we aim to make this library as secure as possible, there are specific nuan
    - Sensitive information, such as request headers or payloads, may be temporarily stored in memory.
    - **Mitigation**: Avoid including credentials or sensitive data in request payloads when possible, or use encryption for sensitive data.
 
-2. **Request Retry Behavior**
+2. **Manual Retry Storage Keeps Replayable Request Data**
+   - Failed requests stored for later replay may retain raw headers, request bodies, auth data, and custom config fields in process memory.
+   - This is necessary for reliable replay, but it means memory inspection, crash dumps, or accidental application-level logging can expose secrets.
+   - **Mitigation**: Prefer automatic mode for sensitive traffic, keep `maxRequestsToStore` low, avoid storing long-lived secrets in request bodies, and clear pending retries when they are no longer needed.
+
+3. **Request Retry Behavior**
    - Retried requests might unintentionally duplicate actions (e.g., creating resources) if the server does not support idempotency.
    - **Mitigation**: Use the `Idempotency-Key` header for POST, PUT, and DELETE requests, especially when working with critical resources.
 
-3. **No Built-In Encryption**
+4. **Caching Can Retain Sensitive or User-Specific Responses**
+   - The caching plugin stores full responses in memory. If a single `RetryManager` instance is shared across users, tenants, or requests, cached responses for one principal can be served to another unless you isolate instances or carefully scope cache usage.
+   - **Mitigation**: Do not cache auth-scoped or personalized endpoints on shared instances. Use separate retry managers per user, tenant, or request boundary when caching sensitive data.
+
+5. **Cache Keys and Debug Output Can Contain Sensitive Values**
+   - Cache keys are derived from request URL, params, body, and optionally headers. Sensitive values included in those fields may therefore remain in memory and may appear in debug output.
+   - **Mitigation**: Keep secrets out of query params when possible, avoid enabling `compareHeaders` for auth-bearing traffic, and disable debug mode in production unless logs are tightly controlled.
+
+6. **Token Refresh Client Inherits Axios Defaults**
+   - The token refresh plugin creates a dedicated Axios client by cloning the manager's defaults. This can include inherited auth headers or other default headers, which may be undesirable if the refresh call targets a different host or trust boundary.
+   - **Mitigation**: Keep refresh calls within the same trust boundary when possible, and explicitly override or remove inherited headers inside the refresh function when calling a different endpoint or host.
+
+7. **No Built-In Encryption**
    - The library does not encrypt stored data or requests by default.
    - **Mitigation**: Users can implement custom encryption for sensitive data before sending or storing it.
 
-4. **Third-Party Dependencies**
+8. **Third-Party Dependencies**
    - This library relies on third-party dependencies, such as Axios, which may introduce vulnerabilities.
    - **Mitigation**: Regularly check for vulnerabilities using tools like `npm audit` and update dependencies promptly.
+
+9. **User Hooks and Event Listeners Receive Raw Objects**
+   - Library events and hooks expose live request and response-adjacent objects to userland code. If your application logs those objects directly, secrets can bypass the library's built-in redaction paths.
+   - **Mitigation**: Sanitize data again inside your own listeners, telemetry pipelines, and error-reporting hooks.
 
 ---
 
@@ -57,6 +78,11 @@ While we aim to make this library as secure as possible, there are specific nuan
 - **Request Data**:
    - Temporarily stored in memory for retries and may include sensitive information (headers, payloads).
    - Not written to disk or persisted outside runtime memory.
+- **Built-in Logging**:
+   - Internal debug and error logging attempts to sanitize configured sensitive headers, body fields, and URL parameters.
+   - This protection is primarily for built-in logging paths and should not be treated as full in-memory data sanitization.
+- **Caching**:
+   - Cached responses are kept in memory and may include sensitive response data depending on the endpoints you cache.
 - **User Responsibility**:
    - Ensure that sensitive data (e.g., API keys, tokens) is secured when included in requests.
    - Use HTTPS to encrypt data in transit.
@@ -76,6 +102,10 @@ To maintain secure usage of this library:
    - Use `Idempotency-Key` headers for POST, PUT, and DELETE requests to ensure safe retries.
 5. **Encryption**:
    - Encrypt sensitive data in request payloads, especially when using retryable storage.
+6. **Isolate Security Boundaries**:
+   - Do not share one retry manager with caching enabled across multiple users, tenants, or request contexts when responses may differ by identity.
+7. **Disable or Limit Debugging in Production**:
+   - Use debug logging only in controlled environments, especially if requests or responses can contain secrets.
 
 ---
 
