@@ -1,465 +1,253 @@
 const { spawn } = require('child_process');
-const { performance } = require('perf_hooks');
 const fs = require('fs').promises;
 const path = require('path');
+const { performance } = require('perf_hooks');
 
-// Benchmark suite configuration
+const { PROFILE_SETTINGS, RESULT_PREFIX, getProfile, parseArgs, round } = require('./_utils');
+
 const BENCHMARKS = [
   {
-    name: 'Local Mock Server',
+    name: 'Core RetryManager',
     file: 'local-mock-server.js',
-    timeout: 180000, // 3 minutes
-    category: 'performance',
-    critical: true
+    timeoutByProfile: {
+      quick: 120000,
+      standard: 180000,
+      full: 300000,
+    },
   },
   {
-    name: 'Stress Testing',
+    name: 'Stress',
     file: 'stress-testing.js',
-    timeout: 600000, // 10 minutes
-    category: 'reliability',
-    critical: true
+    timeoutByProfile: {
+      quick: 120000,
+      standard: 240000,
+      full: 420000,
+    },
   },
   {
     name: 'Plugin Integration',
     file: 'plugin-integration.js',
-    timeout: 180000, // 3 minutes (reduced from 5 minutes)
-    category: 'integration',
-    critical: true
+    timeoutByProfile: {
+      quick: 120000,
+      standard: 180000,
+      full: 300000,
+    },
   },
   {
-    name: 'Priority Queue (Existing)',
+    name: 'Priority Queue',
     file: 'priority-queue.js',
-    timeout: 120000, // 2 minutes
-    category: 'performance',
-    critical: false
+    timeoutByProfile: {
+      quick: 60000,
+      standard: 90000,
+      full: 150000,
+    },
   },
   {
-    name: 'Caching (Existing)',
+    name: 'Caching',
     file: 'caching.js',
-    timeout: 120000, // 2 minutes
-    category: 'plugins',
-    critical: false
+    timeoutByProfile: {
+      quick: 60000,
+      standard: 90000,
+      full: 150000,
+    },
   },
   {
-    name: 'Circuit Breaker (Existing)',
+    name: 'Circuit Breaker',
     file: 'circuit-braker.js',
-    timeout: 60000, // 1 minute (reduced from 2 minutes)
-    category: 'plugins',
-    critical: false
+    timeoutByProfile: {
+      quick: 60000,
+      standard: 90000,
+      full: 150000,
+    },
   },
   {
-    name: 'Token Refresh (Existing)',
+    name: 'Token Refresh',
     file: 'token-refresh.js',
-    timeout: 120000, // 2 minutes
-    category: 'plugins',
-    critical: false
-  }
+    timeoutByProfile: {
+      quick: 60000,
+      standard: 90000,
+      full: 150000,
+    },
+  },
 ];
 
-// Production readiness criteria
-const PASS_CRITERIA = {
-  'Local Mock Server': {
-    minThroughput: 200, // req/sec
-    maxMemoryDelta: 50, // MB (was 100, but actual is around 19MB)
-    maxTimerHealth: 10 // was 50, but actual is 0.0
-  },
-  'Stress Testing': {
-    minBurstThroughput: 50, // req/sec (actual ~70)
-    minSustainedRate: 30, // req/sec (actual ~50) 
-    minRecoveryRate: 0.6, // 60% success rate (actual ~73%)
-    maxTimerHealth: 120 // Handle undefined case
-  },
-  'Plugin Integration': {
-    minCacheThroughput: 100, // req/sec (reduced from 200)
-    minCircuitSuccess: 60, // %
-    minTokenSuccess: 85, // %
-    minMultiThroughput: 50, // req/sec (reduced from 150)
-    maxTimerHealth: 100
+function resolveBenchmarks(profileName, args) {
+  if (!args.include) {
+    return BENCHMARKS;
   }
-};
 
-// Color codes for output
-const colors = {
-  reset: '\x1b[0m',
-  bright: '\x1b[1m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan: '\x1b[36m'
-};
+  const requested = String(args.include)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 
-function colorize(text, color) {
-  return `${colors[color]}${text}${colors.reset}`;
+  return BENCHMARKS.filter((benchmark) => requested.includes(benchmark.file) || requested.includes(benchmark.name));
 }
 
-function log(message, color = 'reset') {
-  console.log(colorize(message, color));
+function collectStructuredResult(stdout) {
+  const line = stdout
+    .split('\n')
+    .reverse()
+    .find((entry) => entry.startsWith(RESULT_PREFIX));
+
+  if (!line) {
+    return null;
+  }
+
+  return JSON.parse(line.slice(RESULT_PREFIX.length));
 }
 
-async function runBenchmark(benchmark) {
-  log(`\n${colorize('='.repeat(60), 'cyan')}`);
-  log(`🚀 Running: ${benchmark.name}`, 'bright');
-  log(`📁 File: ${benchmark.file}`, 'blue');
-  log(`⏱️  Timeout: ${Math.round(benchmark.timeout / 1000)}s`, 'blue');
-  log(colorize('='.repeat(60), 'cyan'));
-  
-  const startTime = performance.now();
-  
+async function runBenchmark(benchmark, profileName) {
+  const timeoutMs = benchmark.timeoutByProfile[profileName] || benchmark.timeoutByProfile.standard;
+  const startedAt = performance.now();
+
   return new Promise((resolve) => {
-    const child = spawn('node', ['--expose-gc', benchmark.file], {
+    const child = spawn('node', ['--expose-gc', benchmark.file, `--profile=${profileName}`], {
       cwd: __dirname,
       stdio: ['inherit', 'pipe', 'pipe'],
       env: {
-        ...process.env
-      }
+        ...process.env,
+        BENCHMARK_PROFILE: profileName,
+      },
     });
-    
+
     let stdout = '';
     let stderr = '';
-    
+
     child.stdout.on('data', (data) => {
-      const output = data.toString();
-      stdout += output;
-      process.stdout.write(output);
+      const chunk = data.toString();
+      stdout += chunk;
+      process.stdout.write(chunk);
     });
-    
+
     child.stderr.on('data', (data) => {
-      const output = data.toString();
-      stderr += output;
-      process.stderr.write(colorize(output, 'red'));
+      const chunk = data.toString();
+      stderr += chunk;
+      process.stderr.write(chunk);
     });
-    
+
     const timeoutId = setTimeout(() => {
       child.kill('SIGKILL');
       resolve({
         name: benchmark.name,
+        file: benchmark.file,
         success: false,
-        error: 'TIMEOUT',
-        duration: performance.now() - startTime,
-        stdout: stdout,
-        stderr: stderr + '\nBenchmark timed out'
+        durationMs: performance.now() - startedAt,
+        error: `Timed out after ${timeoutMs}ms`,
+        stdout,
+        stderr,
+        result: null,
       });
-    }, benchmark.timeout);
-    
+    }, timeoutMs);
+
     child.on('close', (code) => {
       clearTimeout(timeoutId);
-      const duration = performance.now() - startTime;
-      
+      const result = collectStructuredResult(stdout);
+
       resolve({
         name: benchmark.name,
-        success: code === 0,
-        error: code !== 0 ? `Exit code: ${code}` : null,
-        duration: duration,
-        stdout: stdout,
-        stderr: stderr,
-        category: benchmark.category,
-        critical: benchmark.critical
+        file: benchmark.file,
+        success: code === 0 && Boolean(result),
+        durationMs: performance.now() - startedAt,
+        error: code === 0 ? (result ? null : 'Benchmark did not emit structured output') : `Exit code ${code}`,
+        stdout,
+        stderr,
+        result,
       });
     });
   });
 }
 
-function parseBenchmarkResults(result) {
-  const { name, stdout } = result;
-  const lines = stdout.split('\n');
-  
-  if (name === 'Local Mock Server') {
-    const throughputMatch = lines.find(l => l.includes('Average Throughput:'))?.match(/(\d+)\s*req\/sec/);
-    const memoryMatch = lines.find(l => l.includes('Max Memory Delta:'))?.match(/(\d+)MB/);
-    const timerMatch = lines.find(l => l.includes('Average Timer Health:'))?.match(/([\d.]+)/);
-    
-    return {
-      throughput: throughputMatch ? parseInt(throughputMatch[1]) : 0,
-      memorydelta: memoryMatch ? parseInt(memoryMatch[1]) : 999,
-      timerhealth: timerMatch ? parseFloat(timerMatch[1]) : 100
-    };
-  }
-  
-  if (name === 'Stress Testing') {
-    const burstMatch = lines.find(l => l.includes('Peak throughput:'))?.match(/(\d+)\s*req\/sec/);
-    const sustainedMatch = lines.find(l => l.includes('Average rate:'))?.match(/(\d+)\s*req\/sec/);
-    const recoveryMatch = lines.find(l => l.includes('Success rate:'))?.match(/(\d+)%/);
-    const timerMatch = lines.find(l => l.includes('Final timer health:'))?.match(/Final timer health:\s*([\d.]+|undefined)/);
-    
-    return {
-      burstthroughput: burstMatch ? parseInt(burstMatch[1]) : 0,
-      sustainedrate: sustainedMatch ? parseInt(sustainedMatch[1]) : 0,
-      recoveryrate: recoveryMatch ? parseInt(recoveryMatch[1]) / 100 : 0,
-      timerhealth: timerMatch && timerMatch[1] !== 'undefined' ? parseFloat(timerMatch[1]) : 100
-    };
-  }
-  
-  if (name === 'Plugin Integration') {
-    // Parse Cache throughput from lines like "Cache Cache Miss & Populate: 321 req/sec, 3ms avg"
-    const cacheLines = lines.filter(l => l.includes('req/sec') && l.includes('Cache '));
-    const cacheThroughput = cacheLines.length > 0 ? 
-      Math.max(...cacheLines.map(l => parseInt(l.match(/(\d+)\s*req\/sec/)?.[1] || '0'))) : 0;
-    
-    // Parse Circuit success from lines like "Circuit Normal Operation: 98% success, 15 req/sec"  
-    const circuitLines = lines.filter(l => l.includes('% success') && l.includes('Circuit '));
-    const circuitSuccess = circuitLines.length > 0 ?
-      Math.min(...circuitLines.map(l => parseInt(l.match(/(\d+)%\s*success/)?.[1] || '0'))) : 0;
-    
-    // Parse Token success from lines like "Token Normal Requests: 100% success, 167 req/sec"
-    const tokenLines = lines.filter(l => l.includes('% success') && l.includes('Token '));
-    const tokenSuccess = tokenLines.length > 0 ?
-      Math.min(...tokenLines.map(l => parseInt(l.match(/(\d+)%\s*success/)?.[1] || '0'))) : 0;
-    
-    // Parse Multi throughput from lines like "Multi Cache + Auth Requests: 100% success, 45 req/sec"
-    const multiLines = lines.filter(l => l.includes('req/sec') && l.includes('Multi '));
-    const multiThroughput = multiLines.length > 0 ?
-      Math.max(...multiLines.map(l => parseInt(l.match(/(\d+)\s*req\/sec/)?.[1] || '0'))) : 0;
-    
-    // Parse Timer Health from line like "Timer Health: 0"
-    const timerMatch = lines.find(l => l.includes('Timer Health:'))?.match(/Timer Health:\s*([\d.]+)/);
-    const timerHealth = timerMatch ? parseFloat(timerMatch[1]) : 100;
-    
-    return {
-      cachethroughput: cacheThroughput,
-      circuitsuccess: circuitSuccess,
-      tokensuccess: tokenSuccess,
-      multithroughput: multiThroughput,
-      timerhealth: timerHealth
-    };
-  }
-  
-  // For existing benchmarks, just check if they completed successfully
-  if (name.includes('Priority Queue')) {
-    const throughputMatch = stdout.match(/(\d+)\s*req\/sec/);
-    return { throughput: throughputMatch ? parseInt(throughputMatch[1]) : 0 };
-  }
-  
-  return {};
-}
+function summarizeRollup(executions) {
+  const successful = executions.filter((execution) => execution.success && execution.result);
+  const failed = executions.filter((execution) => !execution.success);
+  const scenarioSummaries = successful.flatMap((execution) => {
+    if (Array.isArray(execution.result.scenarios)) {
+      return execution.result.scenarios;
+    }
 
-function evaluateBenchmark(result, metrics) {
-  const { name } = result;
-  const criteria = PASS_CRITERIA[name];
-  
-  if (!criteria) {
-    // For existing benchmarks without specific criteria
-    return {
-      passed: result.success,
-      score: result.success ? 1 : 0,
-      issues: result.success ? [] : ['Benchmark failed to complete']
-    };
-  }
-  
-  const issues = [];
-  let score = 0;
-  let totalCriteria = 0;
-  
-  Object.entries(criteria).forEach(([key, threshold]) => {
-    totalCriteria++;
-    const metricKey = key.replace('min', '').replace('max', '').toLowerCase();
-    const value = metrics[metricKey];
-    
-    if (value === undefined) {
-      issues.push(`Missing metric: ${metricKey}`);
-      return;
+    if (execution.result.scenario) {
+      return [execution.result.scenario];
     }
-    
-    const isMin = key.startsWith('min');
-    const passed = isMin ? value >= threshold : value <= threshold;
-    
-    if (passed) {
-      score++;
-    } else {
-      const operator = isMin ? 'at least' : 'at most';
-      issues.push(`${metricKey}: ${value} (expected ${operator} ${threshold})`);
-    }
+
+    return [];
   });
-  
+
   return {
-    passed: issues.length === 0,
-    score: score / totalCriteria,
-    issues
+    benchmarkCount: executions.length,
+    successfulCount: successful.length,
+    failedCount: failed.length,
+    avgDurationMs: successful.length ? round(successful.reduce((sum, execution) => sum + execution.durationMs, 0) / successful.length) : 0,
+    avgScenarioSuccessRate: scenarioSummaries.length
+      ? round(scenarioSummaries.reduce((sum, scenario) => sum + scenario.successRate, 0) / scenarioSummaries.length)
+      : 0,
+    peakThroughputPerSec: scenarioSummaries.length
+      ? Math.max(...scenarioSummaries.map((scenario) => scenario.throughputPerSec || 0))
+      : 0,
+    slowestP95Ms: scenarioSummaries.length
+      ? Math.max(...scenarioSummaries.map((scenario) => (scenario.latencyMs ? scenario.latencyMs.p95Ms : 0)))
+      : 0,
+    failures: failed.map((execution) => ({
+      name: execution.name,
+      error: execution.error,
+    })),
   };
 }
 
-function generateReport(results) {
-  log(`\n${'='.repeat(80)}`, 'cyan');
-  log('📊 COMPREHENSIVE BENCHMARK REPORT', 'bright');
-  log(`${'='.repeat(80)}`, 'cyan');
-  
-  const categories = {};
-  let totalTests = 0;
-  let passedTests = 0;
-  let criticalPassed = 0;
-  let totalCritical = 0;
-  
-  results.forEach(result => {
-    totalTests++;
-    if (result.critical) totalCritical++;
-    
-    if (!categories[result.category]) {
-      categories[result.category] = [];
-    }
-    categories[result.category].push(result);
-    
-    const metrics = parseBenchmarkResults(result);
-    const evaluation = evaluateBenchmark(result, metrics);
-    
-    result.evaluation = evaluation;
-    result.metrics = metrics;
-    
-    if (evaluation.passed) {
-      passedTests++;
-      if (result.critical) criticalPassed++;
-    }
-  });
-  
-  // Category breakdown
-  Object.entries(categories).forEach(([category, categoryResults]) => {
-    log(`\n📁 ${category.toUpperCase()} TESTS:`, 'magenta');
-    
-    categoryResults.forEach(result => {
-      const icon = result.evaluation.passed ? '✅' : '❌';
-      const status = result.evaluation.passed ? 'PASS' : 'FAIL';
-      const color = result.evaluation.passed ? 'green' : 'red';
-      
-      log(`  ${icon} ${result.name}: ${colorize(status, color)} (${Math.round(result.duration)}ms)`);
-      
-      if (result.critical && !result.evaluation.passed) {
-        log(`    ⚠️  CRITICAL FAILURE`, 'red');
-      }
-      
-      if (result.evaluation.issues.length > 0) {
-        result.evaluation.issues.forEach(issue => {
-          log(`    • ${issue}`, 'yellow');
-        });
-      }
-      
-      if (result.error) {
-        log(`    💥 Error: ${result.error}`, 'red');
-      }
-    });
-  });
-  
-  // Overall assessment
-  log(`\n📈 OVERALL ASSESSMENT:`, 'bright');
-  log(`  Total Tests: ${totalTests}`);
-  log(`  Passed: ${colorize(passedTests, passedTests === totalTests ? 'green' : 'yellow')}/${totalTests}`);
-  log(`  Critical Tests: ${colorize(criticalPassed, criticalPassed === totalCritical ? 'green' : 'red')}/${totalCritical}`);
-  
-  const overallScore = passedTests / totalTests;
-  const criticalScore = totalCritical > 0 ? criticalPassed / totalCritical : 1;
-  
-  log(`  Overall Score: ${colorize((overallScore * 100).toFixed(1) + '%', overallScore > 0.8 ? 'green' : 'yellow')}`);
-  log(`  Critical Score: ${colorize((criticalScore * 100).toFixed(1) + '%', criticalScore === 1 ? 'green' : 'red')}`);
-  
-  // Production readiness verdict
-  log(`\n🎯 PRODUCTION READINESS VERDICT:`, 'bright');
-  
-  if (criticalScore === 1 && overallScore >= 0.8) {
-    log(`  🏆 EXCELLENT - READY FOR IMMEDIATE PRODUCTION DEPLOYMENT`, 'green');
-    log(`  All critical benchmarks passed, high overall performance`, 'green');
-  } else if (criticalScore === 1 && overallScore >= 0.6) {
-    log(`  ✅ GOOD - PRODUCTION READY WITH MONITORING`, 'green');
-    log(`  All critical benchmarks passed, some minor optimizations possible`, 'yellow');
-  } else if (criticalScore >= 0.5) {
-    log(`  ⚠️  CAUTION - REQUIRES FIXES BEFORE PRODUCTION`, 'yellow');
-    log(`  Some critical benchmarks failed, review required`, 'yellow');
-  } else {
-    log(`  ❌ NOT READY - SIGNIFICANT ISSUES DETECTED`, 'red');
-    log(`  Multiple critical failures, extensive work needed`, 'red');
-  }
-  
-  return {
-    totalTests,
-    passedTests,
-    overallScore,
-    criticalScore,
-    productionReady: criticalScore === 1 && overallScore >= 0.6
+async function writeReport(profileName, executions, rollup) {
+  const report = {
+    generatedAt: new Date().toISOString(),
+    profile: profileName,
+    executions: executions.map((execution) => ({
+      name: execution.name,
+      file: execution.file,
+      success: execution.success,
+      durationMs: round(execution.durationMs),
+      error: execution.error,
+      result: execution.result,
+    })),
+    rollup,
   };
+
+  const outputPath = path.join(__dirname, 'latest-benchmark-report.json');
+  await fs.writeFile(outputPath, JSON.stringify(report, null, 2));
+  return outputPath;
 }
 
-async function saveReport(results, summary) {
-  const reportData = {
-    timestamp: new Date().toISOString(),
-    summary,
-    results: results.map(r => ({
-      name: r.name,
-      success: r.success,
-      duration: Math.round(r.duration),
-      category: r.category,
-      critical: r.critical,
-      evaluation: r.evaluation,
-      metrics: r.metrics,
-      error: r.error
-    }))
-  };
-  
-  const reportPath = path.join(__dirname, `benchmark-report-${Date.now()}.json`);
-  await fs.writeFile(reportPath, JSON.stringify(reportData, null, 2));
-  
-  log(`\n💾 Report saved to: ${reportPath}`, 'cyan');
-  return reportPath;
-}
-
-// Main execution
 async function main() {
-  log(colorize('🎯 AXIOS-RETRYER COMPREHENSIVE BENCHMARK SUITE', 'bright'));
-  log(colorize('================================================', 'cyan'));
-  log(`📅 Started: ${new Date().toISOString()}`);
-  log(`🔧 Node.js: ${process.version}`);
-  log(`💻 Platform: ${process.platform} ${process.arch}`);
-  
-  const suiteStartTime = performance.now();
-  const results = [];
-  
-  // Run benchmarks sequentially to avoid interference
-  for (const benchmark of BENCHMARKS) {
-    try {
-      const result = await runBenchmark(benchmark);
-      results.push(result);
-      
-      // Brief pause between benchmarks
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    } catch (error) {
-      log(`💥 Benchmark ${benchmark.name} crashed: ${error.message}`, 'red');
-      results.push({
-        name: benchmark.name,
-        success: false,
-        error: error.message,
-        duration: 0,
-        stdout: '',
-        stderr: error.stack || error.message,
-        category: benchmark.category,
-        critical: benchmark.critical
-      });
-    }
+  const args = parseArgs(process.argv.slice(2));
+  const profile = getProfile(process.argv.slice(2));
+  const benchmarks = resolveBenchmarks(profile.name, args);
+
+  console.log(`Running ${benchmarks.length} benchmark(s) with profile "${profile.name}"`);
+
+  const executions = [];
+  for (const benchmark of benchmarks) {
+    console.log(`\n>>> ${benchmark.name}`);
+    executions.push(await runBenchmark(benchmark, profile.name));
   }
-  
-  const suiteDuration = performance.now() - suiteStartTime;
-  
-  log(`\n⏱️  Total suite duration: ${Math.round(suiteDuration / 1000)}s`, 'cyan');
-  
-  // Generate and save report
-  const summary = generateReport(results);
-  const reportPath = await saveReport(results, summary);
-  
-  // Exit with appropriate code
-  const exitCode = summary.productionReady ? 0 : 1;
-  log(`\n🏁 Benchmark suite completed with exit code: ${exitCode}`, exitCode === 0 ? 'green' : 'red');
-  
-  process.exit(exitCode);
+
+  const rollup = summarizeRollup(executions);
+  const reportPath = await writeReport(profile.name, executions, rollup);
+
+  console.log('\nRollup');
+  console.log('------');
+  console.log(`Successful benchmarks: ${rollup.successfulCount}/${rollup.benchmarkCount}`);
+  console.log(`Average benchmark duration: ${rollup.avgDurationMs}ms`);
+  console.log(`Average scenario success rate: ${rollup.avgScenarioSuccessRate}%`);
+  console.log(`Peak throughput observed: ${rollup.peakThroughputPerSec} req/sec`);
+  console.log(`Slowest p95 latency: ${rollup.slowestP95Ms}ms`);
+  console.log(`Report written to: ${reportPath}`);
+
+  if (rollup.failedCount > 0) {
+    rollup.failures.forEach((failure) => {
+      console.log(`Failure: ${failure.name} -> ${failure.error}`);
+    });
+    process.exit(1);
+  }
 }
 
-// Handle unhandled errors
-process.on('unhandledRejection', (error) => {
-  console.error(colorize('💥 Unhandled rejection:', 'red'), error);
+main().catch((error) => {
+  console.error('Benchmark runner failed:', error);
   process.exit(1);
 });
-
-process.on('uncaughtException', (error) => {
-  console.error(colorize('💥 Uncaught exception:', 'red'), error);
-  process.exit(1);
-});
-
-// Run the benchmark suite
-if (require.main === module) {
-  main();
-} 

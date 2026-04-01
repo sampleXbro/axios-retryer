@@ -55,6 +55,9 @@ describe('TokenRefreshPlugin', () => {
   });
 
   afterEach(() => {
+    if (manager) {
+      manager.destroy();
+    }
     mockAxios.reset();
     jest.clearAllMocks();
   });
@@ -112,6 +115,23 @@ describe('TokenRefreshPlugin', () => {
 
     // Check that the manager's default header has been updated.
     expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer REFRESHED_TOKEN');
+  });
+
+  it('should replay the protected request through the retry manager pipeline', async () => {
+    refreshFn.mockResolvedValue({ token: 'REFRESHED_TOKEN' });
+
+    mockAxios
+      .onGet('/pipeline-check')
+      .replyOnce(401)
+      .onGet('/pipeline-check')
+      .replyOnce(200, { data: 'OK after refresh' });
+
+    const response = await manager.axiosInstance.get('/pipeline-check');
+
+    expect(response.status).toBe(200);
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+    expect(manager.getMetrics().totalRequests).toBe(2);
+    expect(manager.getMetrics().requestCountsByPriority[1]).toBe(2);
   });
 
   it('should queue multiple requests while refreshing token, then retry all once refresh completes', async () => {
@@ -456,6 +476,24 @@ describe('TokenRefreshPlugin', () => {
     expect(refreshFn).toHaveBeenCalledTimes(1);
 
     expect(plugin['refreshQueue'].length).toBe(0);
+  });
+
+  it('should eject request and response interceptors on teardown', () => {
+    manager.unuse('TokenRefreshPlugin');
+    const detectorPlugin = new TokenRefreshPlugin(refreshFn, {
+      refreshStatusCodes: [401],
+      customErrorDetector: () => false,
+    });
+    manager.use(detectorPlugin);
+
+    const requestEjectSpy = jest.spyOn(manager.axiosInstance.interceptors.request, 'eject');
+    const responseEjectSpy = jest.spyOn(manager.axiosInstance.interceptors.response, 'eject');
+
+    detectorPlugin.onBeforeDestroyed(manager);
+
+    expect(requestEjectSpy).toHaveBeenCalledWith((detectorPlugin as any).requestInterceptorId);
+    expect(responseEjectSpy).toHaveBeenCalledWith((detectorPlugin as any).interceptorId);
+    expect(responseEjectSpy).toHaveBeenCalledWith((detectorPlugin as any).responseInterceptorId);
   });
 
   it('should detect custom auth errors in 200 OK responses and refresh token', async () => {

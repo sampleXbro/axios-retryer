@@ -1,463 +1,358 @@
-const { RetryManager } = require('../dist/index.cjs.js');
-const { CircuitBreakerPlugin } = require('../dist/plugins/CircuitBreakerPlugin.cjs.js');
-const { CachingPlugin } = require('../dist/plugins/CachingPlugin.cjs.js');
 const { performance } = require('perf_hooks');
 
-// Adaptive mock adapter that simulates degrading services
-function createStressTestAdapter() {
-  let requestCount = 0;
-  let errorBurst = false;
-  let burstStartTime = 0;
-  
-  return async function stressAdapter(config) {
-    requestCount++;
-    const now = Date.now();
-    
-    // Simulate error bursts every 30 seconds for 5 seconds
-    if (now % 30000 < 5000) {
-      if (!errorBurst) {
-        errorBurst = true;
-        burstStartTime = now;
-        console.log('💥 Error burst started');
-      }
-    } else if (errorBurst) {
-      errorBurst = false;
-      console.log('✅ Error burst ended');
-    }
-    
-    // Simulate variable latency under load (optimized for burst performance)
-    const loadFactor = Math.min(requestCount / 1000, 5); // Increase latency with load
-    const baseLatency = 2 + (loadFactor * 5); // 2ms to 27ms (much faster)
-    const latencyVariation = Math.random() * 5; // ±2.5ms variation (much less)
-    const latency = baseLatency + latencyVariation;
-    
-    await new Promise(resolve => setTimeout(resolve, latency));
-    
-    // Determine success rate based on conditions
-    let successRate = 0.85; // Base 85% success rate
-    
-    if (errorBurst) {
-      successRate = 0.1; // 10% during error bursts
-    } else if (loadFactor > 3) {
-      successRate = 0.6; // 60% under heavy load
-    } else if (loadFactor > 1.5) {
-      successRate = 0.75; // 75% under moderate load
-    }
-    
-    if (Math.random() < successRate) {
-      return {
-        data: { 
-          success: true, 
-          requestId: requestCount,
-          latency: Math.round(latency),
-          loadFactor: loadFactor.toFixed(2)
-        },
-        status: 200,
-        statusText: 'OK',
-        headers: { 'x-request-id': requestCount.toString() },
-        config: config
-      };
-    } else {
-      // Realistic error distribution
-      const errorTypes = [
-        { status: 500, weight: 30 }, // Server errors
-        { status: 502, weight: 20 }, // Bad gateway
-        { status: 503, weight: 25 }, // Service unavailable
-        { status: 504, weight: 15 }, // Gateway timeout
-        { status: 429, weight: 10 }  // Rate limiting
-      ];
-      
-      const totalWeight = errorTypes.reduce((sum, e) => sum + e.weight, 0);
-      const random = Math.random() * totalWeight;
-      let cumulative = 0;
-      
-      for (const errorType of errorTypes) {
-        cumulative += errorType.weight;
-        if (random <= cumulative) {
-          const error = new Error(`Stress test error: ${errorType.status}`);
-          error.response = {
-            data: { 
-              error: 'Simulated stress error',
-              errorBurst,
-              loadFactor: loadFactor.toFixed(2)
-            },
-            status: errorType.status,
-            statusText: 'Stress Error',
-            headers: {},
-            config: config
-          };
-          error.config = config;
-          throw error;
-        }
-      }
-    }
-  };
+const { RetryManager, createRetryStrategy } = require('../dist/index.cjs.js');
+const {
+  createAdapter,
+  createScenarioSummary,
+  deterministicUnit,
+  emitResult,
+  getProfile,
+  measureRequests,
+  nowIso,
+  printHeader,
+  printScenario,
+  round,
+  scaleCount,
+  silenceManager,
+  sleep,
+  summarizeLatency,
+} = require('./_utils');
+
+const BENCHMARK_NAME = 'stress-testing';
+const SEED = 3301;
+
+function latency(seed, key, attempt, baseMs, spreadMs) {
+  return Math.max(1, Math.round(baseMs + (deterministicUnit(seed, key, attempt) * spreadMs)));
 }
 
-// High concurrency burst test
-async function burstTest() {
-  console.log('\n🔥 BURST TEST - High Concurrency Spikes');
-  
+function createManager({ adapter, retries = 2, maxConcurrentRequests = 32 }) {
   const manager = new RetryManager({
-    retries: 5,
-    maxConcurrentRequests: 500, // High concurrency
-    queueDelay: 5 // Fast queue processing
+    retries,
+    maxConcurrentRequests,
+    queueDelay: 0,
+    debug: false,
+    retryStrategy: createRetryStrategy({
+      getDelay: () => 20,
+    }),
   });
-  
-  manager.axiosInstance.defaults.adapter = createStressTestAdapter();
-  
+
+  silenceManager(manager);
+  manager.axiosInstance.defaults.adapter = adapter;
+  return manager;
+}
+
+async function burstScenario(profile) {
   const bursts = [
-    { name: 'Small Burst', requests: 100, delay: 0 },
-    { name: 'Medium Burst', requests: 500, delay: 1000 },
-    { name: 'Large Burst', requests: 1000, delay: 2000 },
-    { name: 'Mega Burst', requests: 2000, delay: 3000 }
+    scaleCount(profile, 120),
+    scaleCount(profile, 300),
+    scaleCount(profile, 600),
   ];
-  
-  const results = [];
-  let totalRequests = 0;
-  
-  const startTime = performance.now();
-  
-  for (const burst of bursts) {
-    console.log(`\n🚀 ${burst.name}: ${burst.requests} requests`);
-    
-    await new Promise(resolve => setTimeout(resolve, burst.delay));
-    
+  const concurrency = scaleCount(profile, 48);
+  const harness = createAdapter(({ key, attempt }) => {
+    const requestId = Number(key.split('/').pop());
+    const transientFailure = requestId % 9 === 0;
+
+    if (transientFailure && attempt === 1) {
+      return {
+        latencyMs: latency(SEED, key, attempt, 7, 5),
+        errorStatus: 503,
+        errorMessage: 'Burst saturation',
+      };
+    }
+
+    return {
+      latencyMs: latency(SEED, key, attempt, 7, 5),
+      data: { ok: true, requestId, attempt },
+    };
+  });
+  const manager = createManager({
+    adapter: harness.adapter,
+    retries: 2,
+    maxConcurrentRequests: concurrency,
+  });
+
+  const batches = [];
+  const phases = [];
+  const startedAt = performance.now();
+
+  for (let burstIndex = 0; burstIndex < bursts.length; burstIndex += 1) {
+    const requestCount = bursts[burstIndex];
+    const items = Array.from({ length: requestCount }, (_, index) => ({
+      url: `/burst/${burstIndex}-${index}`,
+      priority: index % 4,
+    }));
     const burstStart = performance.now();
-    const requests = Array.from({ length: burst.requests }, (_, i) => {
-      totalRequests++;
-      return manager.axiosInstance.get(`/burst/${totalRequests}`, {
-        __priority: Math.floor(Math.random() * 5)
-      }).catch(err => err);
+    const batch = await measureRequests({
+      items,
+      concurrency,
+      execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
     });
-    
-    const responses = await Promise.all(requests);
-    const burstEnd = performance.now();
-    
-    const successful = responses.filter(r => r.status === 200).length;
-    const burstDuration = burstEnd - burstStart;
-    const burstThroughput = (burst.requests / burstDuration) * 1000;
-    
-    results.push({
-      burst: burst.name,
-      requests: burst.requests,
-      successful,
-      failed: burst.requests - successful,
-      duration: Math.round(burstDuration),
-      throughput: Math.round(burstThroughput),
-      successRate: Math.round((successful / burst.requests) * 100)
+    const burstDuration = performance.now() - burstStart;
+
+    batches.push(batch);
+    phases.push({
+      burst: burstIndex + 1,
+      requestCount,
+      throughputPerSec: round((requestCount / burstDuration) * 1000),
+      successRate: batch.totals.successRate,
+      p95Ms: batch.totals.latency.p95Ms,
     });
-    
-    console.log(`  ✅ ${successful}/${burst.requests} successful (${Math.round((successful/burst.requests)*100)}%)`);
-    console.log(`  ⚡ ${Math.round(burstThroughput)} req/sec`);
-    
-    const currentMetrics = manager.getMetrics();
-    console.log(`  📊 Total requests: ${currentMetrics.totalRequests}`);
-    console.log(`  ⏱️  Timer health: ${manager.getTimerStats().healthScore}`);
   }
-  
-  const totalDuration = performance.now() - startTime;
-  const overallThroughput = (totalRequests / totalDuration) * 1000;
-  
-  console.log(`\n📊 BURST TEST SUMMARY:`);
-  console.log(`  Total requests: ${totalRequests}`);
-  console.log(`  Total duration: ${Math.round(totalDuration)}ms`);
-  console.log(`  Overall throughput: ${Math.round(overallThroughput)} req/sec`);
-  
+
+  const finishedAt = performance.now();
+  const merged = {
+    samples: batches.flatMap((batch) => batch.samples),
+    totals: {
+      requestCount: phases.reduce((sum, phase) => sum + phase.requestCount, 0),
+      successCount: batches.reduce((sum, batch) => sum + batch.totals.successCount, 0),
+      failureCount: batches.reduce((sum, batch) => sum + batch.totals.failureCount, 0),
+      successRate: round(
+        (batches.reduce((sum, batch) => sum + batch.totals.successCount, 0) /
+          phases.reduce((sum, phase) => sum + phase.requestCount, 0)) *
+          100
+      ),
+      latency: summarizeLatency(batches.flatMap((batch) => batch.samples.map((sample) => sample.durationMs))),
+    },
+  };
+
+  const scenario = createScenarioSummary({
+    name: 'Burst Capacity',
+    description: 'Measures how the manager behaves when concurrency ramps up in larger spikes with transient 503s.',
+    requestCount: merged.totals.requestCount,
+    concurrency,
+    startedAt,
+    finishedAt,
+    result: merged,
+    manager,
+    upstreamCalls: harness.stats.upstreamCalls,
+    extras: {
+      phases,
+    },
+  });
+
   manager.destroy();
-  return { results, totalRequests, totalDuration, overallThroughput };
+  return scenario;
 }
 
-// Sustained load test
-async function sustainedLoadTest() {
-  console.log('\n⏳ SUSTAINED LOAD TEST - 5 minute continuous load');
-  
-  const testDuration = 5 * 60 * 1000; // 5 minutes
-  const requestRate = 50; // 50 req/sec target
-  const batchSize = 10; // Send 10 requests every 200ms
-  const batchInterval = 200; // 200ms between batches
-  
-  const manager = new RetryManager({
-    retries: 3,
-    maxConcurrentRequests: 200,
-    queueDelay: 10
-  });
-  
-  manager.axiosInstance.defaults.adapter = createStressTestAdapter();
-  
-  const startTime = Date.now();
-  let requestCount = 0;
-  let batchCount = 0;
-  const snapshots = [];
-  
-  const intervalId = setInterval(() => {
-    const currentTime = Date.now();
-    const elapsed = currentTime - startTime;
-    
-    if (elapsed >= testDuration) {
-      clearInterval(intervalId);
-      return;
+async function sustainedScenario(profile) {
+  const durationMs = profile.sustainedDurationMs;
+  const batchSize = scaleCount(profile, 8);
+  const intervalMs = 200;
+  const concurrency = scaleCount(profile, 32);
+  const harness = createAdapter(({ key, attempt }) => {
+    const requestId = Number(key.split('/').pop());
+    const shouldRetry = requestId % 11 === 0;
+
+    if (shouldRetry && attempt === 1) {
+      return {
+        latencyMs: latency(SEED, key, attempt, 10, 7),
+        errorStatus: 500,
+        errorMessage: 'Transient sustained-load fault',
+      };
     }
-    
-    batchCount++;
-    
-    // Send batch of requests
-    const batchRequests = Array.from({ length: batchSize }, (_, i) => {
-      requestCount++;
-      return manager.axiosInstance.get(`/sustained/${requestCount}`, {
-        __priority: requestCount % 3 // Mixed priorities 0-2
-      }).catch(err => err);
-    });
-    
-    // Track metrics every 30 seconds
-    if (batchCount % 150 === 0) { // Every 30 seconds (150 * 200ms)
-      Promise.all(batchRequests).then(() => {
-        const metrics = manager.getMetrics();
-        const timerStats = manager.getTimerStats();
-        const memoryUsage = process.memoryUsage();
-        
-        snapshots.push({
-          elapsed: Math.round(elapsed / 1000),
-          requestCount,
-          totalRequests: metrics.totalRequests,
-          successfulRetries: metrics.successfulRetries,
-          failedRetries: metrics.failedRetries,
-          timerHealth: timerStats.healthScore,
-          activeTimers: timerStats.activeTimers,
-          memoryMB: Math.round(memoryUsage.heapUsed / 1024 / 1024)
+
+    return {
+      latencyMs: latency(SEED, key, attempt, 10, 7),
+      data: { ok: true, requestId, attempt },
+    };
+  });
+  const manager = createManager({
+    adapter: harness.adapter,
+    retries: 2,
+    maxConcurrentRequests: concurrency,
+  });
+
+  const samples = [];
+  const snapshots = [];
+  const inFlight = new Set();
+  const startedAt = performance.now();
+  const deadline = startedAt + durationMs;
+  let requestId = 0;
+
+  while (performance.now() < deadline) {
+    const loopStartedAt = performance.now();
+
+    for (let index = 0; index < batchSize; index += 1) {
+      requestId += 1;
+      const promise = (async () => {
+        const requestStartedAt = performance.now();
+
+        try {
+          await manager.axiosInstance.get(`/sustained/${requestId}`, {
+            __priority: requestId % 3,
+          });
+          samples.push({
+            ok: true,
+            durationMs: performance.now() - requestStartedAt,
+          });
+        } catch (error) {
+          samples.push({
+            ok: false,
+            durationMs: performance.now() - requestStartedAt,
+            error,
+          });
+        }
+      })()
+        .finally(() => {
+          inFlight.delete(promise);
         });
-        
-        console.log(`⏱️  ${Math.round(elapsed/1000)}s: ${requestCount} requests, Total: ${metrics.totalRequests}, Timers: ${timerStats.activeTimers}, Memory: ${Math.round(memoryUsage.heapUsed/1024/1024)}MB`);
+
+      inFlight.add(promise);
+    }
+
+    if (snapshots.length === 0 || performance.now() - startedAt > snapshots.length * 10000) {
+      const metrics = manager.getMetrics();
+      snapshots.push({
+        elapsedMs: round(performance.now() - startedAt),
+        totalRequests: metrics.totalRequests,
+        avgQueueWaitMs: round(metrics.avgQueueWait),
+        activeTimers: metrics.timerHealth.activeTimers,
+        activeRetryTimers: metrics.timerHealth.activeRetryTimers,
+        memoryMb: round(process.memoryUsage().heapUsed / 1024 / 1024),
       });
     }
-  }, batchInterval);
-  
-  // Wait for test completion
-  await new Promise(resolve => {
-    const checkInterval = setInterval(() => {
-      if (Date.now() - startTime >= testDuration) {
-        clearInterval(checkInterval);
-        resolve();
-      }
-    }, 1000);
-  });
-  
-  // Wait for any remaining requests
-  await new Promise(resolve => setTimeout(resolve, 5000));
-  
-  const finalMetrics = manager.getMetrics();
-  const finalTimerStats = manager.getTimerStats();
-  const finalMemory = process.memoryUsage();
-  
-  console.log(`\n📊 SUSTAINED LOAD RESULTS:`);
-  console.log(`  Duration: ${Math.round(testDuration/1000)}s`);
-  console.log(`  Total requests: ${requestCount}`);
-  console.log(`  Average rate: ${Math.round(requestCount / (testDuration/1000))} req/sec`);
-  console.log(`  Successful retries: ${finalMetrics.successfulRetries}`);
-  console.log(`  Failed retries: ${finalMetrics.failedRetries}`);
-  console.log(`  Final timer health: ${finalTimerStats && !isNaN(finalTimerStats.healthScore) ? finalTimerStats.healthScore : 0}`);
-  console.log(`  Final memory: ${Math.round(finalMemory.heapUsed/1024/1024)}MB`);
-  
-  manager.destroy();
-  
-  return {
-    duration: testDuration,
-    requestCount,
-    averageRate: requestCount / (testDuration/1000),
-    finalMetrics,
-    finalTimerStats,
-    snapshots
+
+    const elapsedThisLoop = performance.now() - loopStartedAt;
+    if (elapsedThisLoop < intervalMs) {
+      await sleep(intervalMs - elapsedThisLoop);
+    }
+  }
+
+  await Promise.allSettled([...inFlight]);
+  const finishedAt = performance.now();
+
+  const result = {
+    samples,
+    totals: {
+      requestCount: samples.length,
+      successCount: samples.filter((sample) => sample.ok).length,
+      failureCount: samples.filter((sample) => !sample.ok).length,
+      successRate: samples.length ? round((samples.filter((sample) => sample.ok).length / samples.length) * 100) : 0,
+      latency: summarizeLatency(samples.map((sample) => sample.durationMs)),
+    },
   };
+
+  const scenario = createScenarioSummary({
+    name: 'Sustained Load',
+    description: 'Sends a paced stream for a fixed duration to surface queue growth, timer pressure, and long-run throughput.',
+    requestCount: result.totals.requestCount,
+    concurrency,
+    startedAt,
+    finishedAt,
+    result,
+    manager,
+    upstreamCalls: harness.stats.upstreamCalls,
+    extras: {
+      durationMs,
+      snapshots,
+    },
+  });
+
+  manager.destroy();
+  return scenario;
 }
 
-// Recovery test - test recovery from failure scenarios
-async function recoveryTest() {
-  console.log('\n🔄 RECOVERY TEST - Failure and recovery patterns');
-  
-  const manager = new RetryManager({
-    retries: 5,
-    maxConcurrentRequests: 100,
-    queueDelay: 50
-  });
-  
-  // Adapter that simulates service outages and recovery
-  let serviceDown = false;
-  let recoveryPhase = false;
-  
-  manager.axiosInstance.defaults.adapter = async function recoveryAdapter(config) {
-    const requestId = config.url.split('/').pop();
-    
-    // Simulate service outage for requests 500-999
-    if (requestId >= 500 && requestId < 1000) {
-      if (!serviceDown) {
-        serviceDown = true;
-        console.log('💔 Service outage started (requests 500-999)');
-      }
-      
-      const error = new Error('Service temporarily unavailable');
-      error.response = {
-        data: { error: 'Service outage' },
-        status: 503,
-        statusText: 'Service Unavailable',
-        headers: {},
-        config: config
-      };
-      error.config = config;
-      throw error;
-    }
-    
-    // Simulate gradual recovery for requests 1000-1499
-    if (requestId >= 1000 && requestId < 1500) {
-      if (serviceDown) {
-        serviceDown = false;
-        recoveryPhase = true;
-        console.log('🔄 Service recovery started (requests 1000-1499)');
-      }
-      
-      // Gradual success rate improvement during recovery
-      const recoveryProgress = (requestId - 1000) / 500; // 0 to 1
-      const successRate = 0.1 + (recoveryProgress * 0.8); // 10% to 90%
-      
-      if (Math.random() < successRate) {
-        return {
-          data: { success: true, requestId, recoveryProgress: recoveryProgress.toFixed(2) },
-          status: 200,
-          statusText: 'OK',
-          headers: {},
-          config: config
-        };
-      } else {
-        const error = new Error('Recovery in progress');
-        error.response = {
-          data: { error: 'Partial recovery' },
-          status: 502,
-          statusText: 'Bad Gateway',
-          headers: {},
-          config: config
-        };
-        error.config = config;
-        throw error;
-      }
-    }
-    
-    // Full recovery for requests 1500+
-    if (requestId >= 1500) {
-      if (recoveryPhase) {
-        recoveryPhase = false;
-        console.log('✅ Service fully recovered (requests 1500+)');
-      }
-    }
-    
-    // Normal operation (95% success rate)
-    await new Promise(resolve => setTimeout(resolve, 5));
-    
-    if (Math.random() < 0.95) {
+async function outageRecoveryScenario(profile) {
+  const requestCount = scaleCount(profile, 540);
+  const concurrency = scaleCount(profile, 24);
+  const harness = createAdapter(({ key, attempt }) => {
+    const requestId = Number(key.split('/').pop());
+
+    if (requestId >= Math.floor(requestCount * 0.33) && requestId < Math.floor(requestCount * 0.66)) {
       return {
-        data: { success: true, requestId },
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: config
+        latencyMs: latency(SEED, key, attempt, 8, 5),
+        errorStatus: 503,
+        errorMessage: 'Full outage',
       };
-    } else {
-      const error = new Error('Random error');
-      error.response = {
-        data: { error: 'Random failure' },
-        status: 500,
-        statusText: 'Internal Server Error',
-        headers: {},
-        config: config
-      };
-      error.config = config;
-      throw error;
     }
-  };
-  
-  const startTime = performance.now();
-  
-  // Send 2000 requests to test full cycle
-  const requests = Array.from({ length: 2000 }, (_, i) => 
-    manager.axiosInstance.get(`/recovery/${i}`, {
-      __priority: i % 3
-    }).catch(err => err)
-  );
-  
-  const responses = await Promise.all(requests);
-  const endTime = performance.now();
-  
-  const successful = responses.filter(r => r.status === 200).length;
-  const failed = responses.length - successful;
-  const duration = endTime - startTime;
-  
-  const metrics = manager.getMetrics();
-  
-  console.log(`\n📊 RECOVERY TEST RESULTS:`);
-  console.log(`  Total requests: ${responses.length}`);
-  console.log(`  Successful: ${successful} (${Math.round(successful/responses.length*100)}%)`);
-  console.log(`  Failed: ${failed} (${Math.round(failed/responses.length*100)}%)`);
-  console.log(`  Duration: ${Math.round(duration)}ms`);
-  console.log(`  Throughput: ${Math.round(responses.length/duration*1000)} req/sec`);
-  console.log(`  Total retries: ${metrics.successfulRetries + metrics.failedRetries}`);
-  
+
+    if (requestId >= Math.floor(requestCount * 0.66) && attempt === 1 && requestId % 2 === 0) {
+      return {
+        latencyMs: latency(SEED, key, attempt, 8, 5),
+        errorStatus: 502,
+        errorMessage: 'Partial recovery',
+      };
+    }
+
+    return {
+      latencyMs: latency(SEED, key, attempt, 8, 5),
+      data: { ok: true, requestId, attempt },
+    };
+  });
+  const manager = createManager({
+    adapter: harness.adapter,
+    retries: 2,
+    maxConcurrentRequests: concurrency,
+  });
+  const items = Array.from({ length: requestCount }, (_, index) => ({
+    url: `/recovery/${index}`,
+    priority: index % 3,
+  }));
+
+  const startedAt = performance.now();
+  const result = await measureRequests({
+    items,
+    concurrency,
+    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+  });
+  const finishedAt = performance.now();
+
+  const scenario = createScenarioSummary({
+    name: 'Outage And Recovery',
+    description: 'Runs healthy traffic into a hard outage and then a partial recovery window to show recovery cost and residual failures.',
+    requestCount,
+    concurrency,
+    startedAt,
+    finishedAt,
+    result,
+    manager,
+    upstreamCalls: harness.stats.upstreamCalls,
+    extras: {
+      terminalFailureRate: requestCount ? round((manager.getMetrics().completelyFailedRequests / requestCount) * 100) : 0,
+    },
+  });
+
   manager.destroy();
-  
-  return {
-    requests: responses.length,
-    successful,
-    failed,
-    duration,
-    throughput: responses.length/duration*1000,
-    retries: metrics.successfulRetries + metrics.failedRetries
-  };
+  return scenario;
 }
 
-// Run all stress tests
-if (require.main === module) {
-  (async () => {
-    try {
-      console.log('🎯 COMPREHENSIVE STRESS TESTING SUITE');
-      console.log('=====================================');
-      
-      const burstResults = await burstTest();
-      const sustainedResults = await sustainedLoadTest();
-      const recoveryResults = await recoveryTest();
-      
-      console.log('\n🏆 STRESS TESTING SUMMARY');
-      console.log('='.repeat(50));
-      
-      console.log(`Burst Test:`);
-      console.log(`Peak throughput: ${Math.max(...burstResults.results.map(r => r.throughput))} req/sec`);
-      console.log(`Overall average: ${Math.round(burstResults.overallThroughput)} req/sec`);
-      
-      console.log(`Sustained Load:`);
-      console.log(`Duration: ${Math.round(sustainedResults.duration/1000)}s`);
-      console.log(`Average rate: ${Math.round(sustainedResults.averageRate)} req/sec`);
-      console.log(`Final timer health: ${sustainedResults.finalTimerStats.healthScore}`);
-      
-      console.log(`Recovery Test:`);
-      console.log(`Success rate: ${Math.round(recoveryResults.successful/recoveryResults.requests*100)}%`);
-      console.log(`Recovery throughput: ${Math.round(recoveryResults.throughput)} req/sec`);
-      
-      // Overall assessment
-      const peakThroughput = Math.max(...burstResults.results.map(r => r.throughput));
-      const sustainedRate = sustainedResults.averageRate;
-      const recoveryRate = recoveryResults.successful / recoveryResults.requests;
-      const timerHealth = sustainedResults.finalTimerStats.healthScore;
-      
-      console.log('\n🎖️  PRODUCTION STRESS ASSESSMENT:');
-      console.log(`  Peak Performance: ${peakThroughput > 1000 ? '🏆 EXCELLENT' : peakThroughput > 500 ? '✅ GOOD' : '⚠️  MODERATE'}`);
-      console.log(`  Sustained Performance: ${sustainedRate > 40 ? '🏆 EXCELLENT' : sustainedRate > 20 ? '✅ GOOD' : '⚠️  MODERATE'}`);
-      console.log(`  Recovery Capability: ${recoveryRate > 0.8 ? '🏆 EXCELLENT' : recoveryRate > 0.6 ? '✅ GOOD' : '⚠️  MODERATE'}`);
-      console.log(`  Timer Management: ${timerHealth < 50 ? '🏆 EXCELLENT' : timerHealth < 100 ? '✅ GOOD' : '⚠️  MODERATE'}`);
-      
-      const overallScore = (peakThroughput > 500 && sustainedRate > 20 && recoveryRate > 0.6 && timerHealth < 100) ? 
-        '🏆 PRODUCTION READY - STRESS TESTED' : '✅ PRODUCTION READY WITH MONITORING';
-      
-      console.log(`\n🎯 FINAL VERDICT: ${overallScore}`);
-      
-    } catch (error) {
-      console.error('Stress testing failed:', error);
-      process.exit(1);
-    }
-  })();
-} 
+async function main() {
+  const profile = getProfile();
+
+  printHeader('Stress Benchmarks', `Profile: ${profile.name}`);
+
+  const scenarios = [
+    await burstScenario(profile),
+    await sustainedScenario(profile),
+    await outageRecoveryScenario(profile),
+  ];
+
+  scenarios.forEach(printScenario);
+
+  const summary = {
+    profile: profile.name,
+    peakThroughputPerSec: Math.max(...scenarios.map((scenario) => scenario.throughputPerSec)),
+    slowestP95Ms: Math.max(...scenarios.map((scenario) => scenario.latencyMs.p95Ms)),
+    avgSuccessRate: round(scenarios.reduce((sum, scenario) => sum + scenario.successRate, 0) / scenarios.length),
+  };
+
+  console.log('\nSummary');
+  console.log('-------');
+  console.log(`Peak throughput: ${summary.peakThroughputPerSec} req/sec`);
+  console.log(`Slowest p95 latency: ${summary.slowestP95Ms}ms`);
+  console.log(`Average success rate: ${summary.avgSuccessRate}%`);
+
+  emitResult({
+    benchmark: BENCHMARK_NAME,
+    title: 'Stress Benchmarks',
+    generatedAt: nowIso(),
+    profile: profile.name,
+    scenarios,
+    summary,
+  });
+}
+
+main().catch((error) => {
+  console.error('Benchmark failed:', error);
+  process.exit(1);
+});

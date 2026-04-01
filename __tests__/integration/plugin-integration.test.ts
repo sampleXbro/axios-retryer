@@ -236,7 +236,7 @@ describe('Plugin Integration Tests', () => {
       // Second request - with fresh token, no refresh needed
       const response2 = await retryer.axiosInstance.get('/api/user-data');
       expect(response2.status).toBe(200);
-      expect(apiCalls).toBe(3); // Third call: first (401) + retry (200) + second request (200)
+      expect(apiCalls).toBe(2); // Replay is now managed, so the caching plugin serves the second request
       expect(refreshCalls).toBe(1); // Still should be 1 - no additional refresh
     });
   });

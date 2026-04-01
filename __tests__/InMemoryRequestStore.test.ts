@@ -25,6 +25,23 @@ describe('InMemoryRequestStore', () => {
             expect(store.getAll()).toContain(mockRequest1);
             expect(store.getAll()).toContain(mockRequest2);
         });
+
+        it('should evict the oldest request when the store exceeds max size', () => {
+            const emit = jest.fn();
+            store = new InMemoryRequestStore(2, emit);
+            const mockRequest3 = {
+                url: 'http://example.com/request3',
+                method: 'PUT',
+                __requestId: 'ID3'
+            } as AxiosRequestConfig;
+
+            store.add(mockRequest1);
+            store.add(mockRequest2);
+            store.add(mockRequest3);
+
+            expect(store.getAll()).toEqual([mockRequest2, mockRequest3]);
+            expect(emit).toHaveBeenCalledWith('onRequestRemovedFromStore', mockRequest1);
+        });
     });
 
     describe('remove', () => {

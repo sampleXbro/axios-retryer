@@ -28,6 +28,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
   public version = '1.0.0';
 
   private manager!: RetryManager;
+  private requestInterceptorId: number | null = null;
   private interceptorId: number | null = null;
   private responseInterceptorId: number | null = null;
   private refreshAxios!: AxiosInstance;
@@ -73,11 +74,11 @@ export class TokenRefreshPlugin implements RetryPlugin {
       );
     }
 
-    this.manager.axiosInstance.interceptors.request.use((config) => {
+    this.requestInterceptorId = this.manager.axiosInstance.interceptors.request.use((config) => {
       const { authHeaderName } = this.options;
-      //update the auth header
-      if (this.manager.axiosInstance.defaults.headers.common[authHeaderName] && config.headers[authHeaderName]) {
-        config.headers[authHeaderName] = this.manager.axiosInstance.defaults.headers.common[authHeaderName];
+      const currentToken = this.manager.axiosInstance.defaults.headers.common[authHeaderName];
+      if (currentToken && config.headers?.[authHeaderName]) {
+        config.headers[authHeaderName] = currentToken;
       }
       return config;
     });
@@ -87,6 +88,10 @@ export class TokenRefreshPlugin implements RetryPlugin {
    * Called when the plugin is removed.
    */
   public onBeforeDestroyed(manager: RetryManager): void {
+    // eslint-disable-next-line eqeqeq
+    if (this.requestInterceptorId != null) {
+      manager.axiosInstance.interceptors.request.eject(this.requestInterceptorId);
+    }
     // eslint-disable-next-line eqeqeq
     if (this.interceptorId != null) {
       manager.axiosInstance.interceptors.response.eject(this.interceptorId);
@@ -111,6 +116,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
     // Check if response contains auth error that should trigger refresh
     if (customErrorDetector(response.data)) {
       this.logger?.debug(`[${this.name}] Custom auth error detected in response body`);
+      this.manager.releaseRequestTracking(response.config);
       
       if (this.isRefreshing) {
         // Queue the request and wait for token refresh to complete
@@ -163,6 +169,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
     if (!this.isRefreshableError(error)) {
       return Promise.reject(error);
     }
+    this.manager.releaseRequestTracking(originalRequest);
     if (this.isRefreshing) {
       return this.queueRefreshRequest(originalRequest);
     }
@@ -203,7 +210,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
   }
 
   /**
-   * Attempts token refresh up to (maxRefreshAttempts + 1) times if retryOnRefreshFail is true.
+   * Attempts token refresh up to maxRefreshAttempts times if retryOnRefreshFail is true.
    * Each attempt is subject to a timeout defined in refreshTimeout.
    */
   private async executeTokenRefresh(): Promise<string> {
@@ -213,7 +220,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
     const { maxRefreshAttempts, refreshTimeout, retryOnRefreshFail } = this.options;
     let lastError: Error | undefined;
 
-    // Total attempts = maxRefreshAttempts + 1
+    // Total attempts = maxRefreshAttempts
     for (let attempt = 1; attempt <= maxRefreshAttempts; attempt++) {
       this.logger?.debug(`[${this.name}] Refresh attempt ${attempt}/${maxRefreshAttempts}`);
       try {
@@ -238,7 +245,7 @@ export class TokenRefreshPlugin implements RetryPlugin {
         if (!retryOnRefreshFail) {
           break;
         }
-        if (attempt < maxRefreshAttempts + 1) {
+        if (attempt < maxRefreshAttempts) {
           this.logger?.debug(`[${this.name}] Refresh attempt failed, retrying...`);
           continue;
         }
@@ -257,17 +264,20 @@ export class TokenRefreshPlugin implements RetryPlugin {
   }
 
   /**
-   * Retries the given request using the refreshAxios instance,
+   * Retries the given request through the retry manager pipeline,
    * marking it with __isRetryRefreshRequest to avoid loops.
    */
   private retryRequest(request: AxiosRequestConfig, token: string): Promise<AxiosResponse> {
     const { authHeaderName, tokenPrefix } = this.options;
-    request.__isRetryRefreshRequest = true;
-    request.headers = {
-      ...request.headers,
-      [authHeaderName]: `${tokenPrefix}${token}`,
+    const replayRequest: AxiosRequestConfig = {
+      ...request,
+      __isRetryRefreshRequest: true,
+      headers: {
+        ...request.headers,
+        [authHeaderName]: `${tokenPrefix}${token}`,
+      },
     };
-    return this.refreshAxios(request);
+    return this.manager.axiosInstance.request(replayRequest);
   }
 
   /**

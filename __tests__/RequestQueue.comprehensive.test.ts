@@ -240,6 +240,7 @@ describe('RequestQueue Comprehensive Tests', () => {
     
     // Now say there are no more critical requests active
     mockHasActiveCriticalRequests.mockReturnValue(false);
+    queue.markComplete();
     
     // Wait for all requests to finish
     await Promise.all([lowPromise, mediumPromise]);

@@ -27,6 +27,34 @@ describe('RequestQueue', () => {
     expect(() => new RequestQueue(1, 50, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined)).not.toThrow();
   });
 
+  it('should acquire immediately when there is free capacity and no backlog', () => {
+    mockIsCriticalRequest.mockReturnValue(false);
+    mockHasActiveCriticalRequests.mockReturnValue(false);
+
+    const config = createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req-immediate');
+
+    expect(queue.tryAcquireImmediate(config)).toBe(true);
+    expect(queue.getWaitingCount()).toBe(0);
+    expect(queue['inProgressCount']).toBe(1);
+  });
+
+  it('should not acquire immediately when there is already queued work', () => {
+    mockIsCriticalRequest.mockReturnValue(false);
+    mockHasActiveCriticalRequests.mockReturnValue(false);
+
+    const limitedQueue = new RequestQueue(1, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    expect(limitedQueue.tryAcquireImmediate(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req-1'))).toBe(
+      true
+    );
+
+    limitedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'req-2')).catch(() => {});
+
+    expect(
+      limitedQueue.tryAcquireImmediate(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, Date.now(), 'req-3'))
+    ).toBe(false);
+    expect(limitedQueue.getWaitingCount()).toBe(1);
+  });
+
   it('should throw an error if maxConcurrent is less than 1', () => {
     expect(() => new RequestQueue(0, 50, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined)).toThrow(
       'maxConcurrent must be >= 1. Received: 0'

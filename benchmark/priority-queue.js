@@ -1,94 +1,123 @@
-const { RetryManager } = require('../dist/index.cjs.js');
 const { performance } = require('perf_hooks');
 
-// Mock adapter for faster testing
-function createMockAdapter() {
-  return async function mockAdapter(config) {
-    // Simulate realistic latency
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 10 + 5)); // 5-15ms
-    
-    // Extract status from URL or generate random status
-    const urlMatch = config.url.match(/\/status\/(\d+)/);
-    const status = urlMatch ? parseInt(urlMatch[1]) : 200;
-    
-    if (status >= 400) {
-      const error = new Error(`Request failed with status code ${status}`);
-      error.response = {
-        data: { error: 'Simulated error' },
-        status: status,
-        statusText: 'Error',
-        headers: {},
-        config: config
-      };
-      error.config = config;
-      throw error;
-    }
-    
-    return {
-      data: { success: true, status },
-      status: status,
-      statusText: 'OK',
-      headers: {},
-      config: config
-    };
-  };
+const { RetryManager, createRetryStrategy } = require('../dist/index.cjs.js');
+const {
+  createAdapter,
+  deterministicUnit,
+  emitResult,
+  getProfile,
+  measureRequests,
+  nowIso,
+  percentile,
+  printHeader,
+  round,
+  scaleCount,
+  silenceManager,
+} = require('./_utils');
+
+const BENCHMARK_NAME = 'priority-queue';
+const SEED = 4101;
+
+function latency(key, attempt) {
+  return Math.max(1, Math.round(18 + deterministicUnit(SEED, key, attempt) * 8));
 }
 
-// Total number of requests to process
-const totalRequests = 10000;
-// Record the start time globally so that event handlers can use it
-const start = performance.now();
+async function main() {
+  const profile = getProfile();
+  const concurrency = Math.max(3, scaleCount(profile, 5));
+  const requestCount = scaleCount(profile, 180);
+  const lowCount = Math.floor(requestCount * 0.6);
+  const mediumCount = Math.floor(requestCount * 0.25);
+  const highCount = requestCount - lowCount - mediumCount;
 
-// Initialize the retry manager with a maximum of 100 concurrent requests
-const manager = new RetryManager({ maxConcurrentRequests: 100 });
+  printHeader('Priority Queue Benchmark', `Profile: ${profile.name}`);
 
-// Use mock adapter for faster testing
-manager.axiosInstance.defaults.adapter = createMockAdapter();
+  const harness = createAdapter(({ key, attempt }) => ({
+    latencyMs: latency(key, attempt),
+    data: { ok: true, key, attempt },
+  }));
+  const manager = new RetryManager({
+    retries: 1,
+    maxConcurrentRequests: concurrency,
+    queueDelay: 0,
+    debug: false,
+    retryStrategy: createRetryStrategy({
+      getDelay: () => 15,
+    }),
+  });
+  silenceManager(manager);
+  manager.axiosInstance.defaults.adapter = harness.adapter;
 
-// Event listener for when a retry is about to occur.
-// This logs the current number of in-progress requests.
-manager.on('beforeRetry', () => {
-  console.log(`CONCURRENT REQUESTS: ${manager.requestQueue.inProgressCount}`);
-});
+  const items = [
+    ...Array.from({ length: lowCount }, (_, index) => ({
+      url: `/priority/low/${index}`,
+      priority: 0,
+      tier: 'low',
+    })),
+    ...Array.from({ length: mediumCount }, (_, index) => ({
+      url: `/priority/medium/${index}`,
+      priority: 1,
+      tier: 'medium',
+    })),
+    ...Array.from({ length: highCount }, (_, index) => ({
+      url: `/priority/high/${index}`,
+      priority: 3,
+      tier: 'high',
+    })),
+  ];
 
-// Event listener for when the entire retry process is finished.
-// This logs aggregated metrics along with the elapsed time.
-manager.on('onRetryProcessFinished', () => {
-  const metrics = manager.getMetrics();
-  console.log(
-    `(Event) Processed ${totalRequests} requests in ${performance.now() - start}ms`
-  );
-  console.log(`Metrics: ${JSON.stringify(metrics, null, 2)}`);
-  console.log(`Active requests: ${manager.activeRequests.size}`);
-  console.log(`Requests store count: ${manager.requestStore.getAll().length}`);
-});
+  const startedAt = performance.now();
+  const result = await measureRequests({
+    items,
+    concurrency: items.length,
+    execute: (item) =>
+      manager.axiosInstance.get(item.url, {
+        __priority: item.priority,
+      }),
+  });
+  const finishedAt = performance.now();
 
-// Main benchmark runner function
-async function runBenchmark() {
-  // Generate an array of promises representing each HTTP GET request.
-  // Each request targets a URL that returns a status code between 200 and 599.
-  const requests = Array.from({ length: totalRequests }).map((_, i) => {
-    const status = 200 + (i % 400); // Cycles through status codes 200-599
-    return manager.axiosInstance
-      .get(`/status/${status}`, {
-        __priority: i % 5 // Mixed priorities from 0 to 4
-      })
-      .catch((err) => {
-        // Optionally log individual errors here if needed.
-        // For now, simply return the error so Promise.all doesn't reject early.
-        return err;
-      });
+  const latencyByTier = { high: [], medium: [], low: [] };
+  result.samples.forEach((sample, index) => {
+    latencyByTier[items[index].tier].push(sample.durationMs);
   });
 
-  // Wait until all requests have been processed.
-  await Promise.all(requests);
+  const summary = {
+    benchmark: BENCHMARK_NAME,
+    title: 'Priority Queue Benchmark',
+    generatedAt: nowIso(),
+    profile: profile.name,
+    durationMs: round(finishedAt - startedAt),
+    throughputPerSec: round((requestCount / (finishedAt - startedAt)) * 1000),
+    successRate: result.totals.successRate,
+    tiers: {
+      high: {
+        p50Ms: round(percentile(latencyByTier.high, 0.5)),
+        p95Ms: round(percentile(latencyByTier.high, 0.95)),
+      },
+      medium: {
+        p50Ms: round(percentile(latencyByTier.medium, 0.5)),
+        p95Ms: round(percentile(latencyByTier.medium, 0.95)),
+      },
+      low: {
+        p50Ms: round(percentile(latencyByTier.low, 0.5)),
+        p95Ms: round(percentile(latencyByTier.low, 0.95)),
+      },
+    },
+    queueWaitAvgMs: round(manager.getMetrics().avgQueueWait),
+    upstreamCalls: harness.stats.upstreamCalls,
+  };
 
-  // Once done, compute and log the final metrics.
-  const elapsedTime = performance.now() - start;
-  console.log(`\nProcessed ${totalRequests} requests in ${elapsedTime.toFixed(2)}ms`);
+  console.log(`High priority p95: ${summary.tiers.high.p95Ms}ms`);
+  console.log(`Medium priority p95: ${summary.tiers.medium.p95Ms}ms`);
+  console.log(`Low priority p95: ${summary.tiers.low.p95Ms}ms`);
+  console.log(`Throughput: ${summary.throughputPerSec} req/sec`);
+
+  manager.destroy();
+  emitResult(summary);
 }
 
-// Run the benchmark and catch any unexpected errors.
-runBenchmark().catch((err) => {
-  console.error('Benchmark failed:', err);
+main().catch((error) => {
+  console.error('Benchmark failed:', error);
+  process.exit(1);
 });

@@ -33,7 +33,7 @@ const DEFAULT_CONFIG = {
   ENABLE_SANITIZATION: true,
 };
 
-const initialMetrics: AxiosRetryerMetrics = {
+const createInitialMetrics = (): AxiosRetryerMetrics => ({
   totalRequests: 0,
   successfulRetries: 0,
   failedRetries: 0,
@@ -51,7 +51,7 @@ const initialMetrics: AxiosRetryerMetrics = {
   requestCountsByPriority: {},
   queueWaitDuration: 0,
   retryDelayDuration: 0,
-};
+});
 
 const initialPriorityMetrics = {
   total: 0,
@@ -168,10 +168,10 @@ export class RetryManager {
   private responseInterceptorId: number | null = null;
 
   constructor(options: RetryManagerOptions = {}) {
-    this.validateOptions(options);
-
     this.debug = options.debug ?? DEFAULT_CONFIG.DEBUG;
     this.logger = new RetryLogger(this.debug);
+    this.validateOptions(options);
+
     this.enableSanitization = options.enableSanitization ?? DEFAULT_CONFIG.ENABLE_SANITIZATION;
     this.sanitizeOptions = options.sanitizeOptions ?? {};
     
@@ -215,7 +215,7 @@ export class RetryManager {
     );
     this.blockingQueueThreshold = options.blockingQueueThreshold;
     this._axiosInstance = options.axiosInstance || this.createAxiosInstance();
-    this.metrics = { ...initialMetrics };
+    this.metrics = createInitialMetrics();
 
     this.timerManager = new TimerManager();
 
@@ -296,7 +296,9 @@ export class RetryManager {
 
     try {
       // Enqueue request and wait for concurrency slot
+      const queueStartTime = Date.now();
       const updatedConfig = await this.requestQueue.enqueue(config);
+      this.metrics.queueWaitDuration += Date.now() - queueStartTime;
       return updatedConfig;
     } catch (error) {
       // If queue is full, error gets propagated directly to the user
@@ -314,9 +316,6 @@ export class RetryManager {
       const failed = this.requestStore.getAll() || [];
       const failedRequests = failed.length;
       const failedCritical = failed.filter(this.isCriticalRequest).length;
-
-      this.metrics.completelyFailedRequests += failedRequests;
-      this.metrics.completelyFailedCriticalRequests += failedCritical;
 
       this.logger.debug('Retry process finished', {
         failedRequests,
@@ -548,6 +547,11 @@ export class RetryManager {
       this.requestStore.add(config);
     }
 
+    this.metrics.completelyFailedRequests++;
+    if (this.isCriticalRequest(config)) {
+      this.metrics.completelyFailedCriticalRequests++;
+    }
+
     if (config.__requestId) {
       this.activeRequests.delete(config.__requestId);
     }
@@ -732,6 +736,18 @@ export class RetryManager {
     return this._axiosInstance;
   }
 
+  public releaseRequestTracking = (config: AxiosRequestConfig): void => {
+    const requestId = config.__requestId;
+    if (requestId && this.activeRequests.has(requestId)) {
+      this.activeRequests.delete(requestId);
+      this.requestQueue.markComplete();
+
+      if (this.isCriticalRequest(config) && !this.checkCriticalRequests()) {
+        this.triggerAndEmit('onAllCriticalRequestsResolved');
+      }
+    }
+  };
+
   public cancelRequest = (requestId: string): void => {
     const controller = this.activeRequests.get(requestId);
     if (controller) {
@@ -847,8 +863,8 @@ export class RetryManager {
       errorTypesDistribution: this.metrics.errorTypes,
       retryAttemptsDistribution: this.metrics.retryAttemptsDistribution,
       requestCountsByPriority: this.metrics.requestCountsByPriority,
-      avgQueueWait: (this.metrics.queueWaitDuration / this.metrics.totalRequests) * 0.001,
-      avgRetryDelay: (this.metrics.retryDelayDuration / totalRetries) * 0.001,
+      avgQueueWait: this.metrics.totalRequests > 0 ? (this.metrics.queueWaitDuration / this.metrics.totalRequests) * 0.001 : 0,
+      avgRetryDelay: totalRetries > 0 ? (this.metrics.retryDelayDuration / totalRetries) * 0.001 : 0,
       priorityMetrics: Object.entries(this.metrics.retryPrioritiesDistribution).map(([priority, data]) => ({
         priority: Number(priority),
         ...data,

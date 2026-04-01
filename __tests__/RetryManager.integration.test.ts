@@ -312,7 +312,8 @@ describe('RetryManager Integration Tests', () => {
       );
 
       // Verify that the store does not exceed its capacity
-      expect(retryManager.getMetrics().completelyFailedRequests).toBeLessThanOrEqual(100);
+      expect(retryManager.getMetrics().completelyFailedRequests).toBe(150);
+      expect((retryManager as any).requestStore.getAll()).toHaveLength(100);
       expect(hookSpy.onRequestRemovedFromStore).toHaveBeenCalled();
     }, 10000);
   });

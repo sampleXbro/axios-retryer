@@ -29,6 +29,9 @@ describe('RetryManager', () => {
   });
 
   afterEach(() => {
+    if (retryManager) {
+      retryManager.destroy();
+    }
     mock.restore();
   });
 
@@ -38,6 +41,17 @@ describe('RetryManager', () => {
     const response = await retryManager.axiosInstance.get('/success');
     expect(response.status).toBe(200);
     expect(response.data).toEqual({ data: 'ok' });
+  });
+
+  test('should throw a clear validation error for negative retries', () => {
+    expect(() => new RetryManager({ retries: -1 })).toThrow('Retries must be a non-negative number');
+  });
+
+  test('should return zero averages for a fresh manager metrics snapshot', () => {
+    const metrics = retryManager.getMetrics();
+
+    expect(metrics.avgQueueWait).toBe(0);
+    expect(metrics.avgRetryDelay).toBe(0);
   });
 
   test('should retry on failure and succeed on second attempt', async () => {
@@ -61,6 +75,46 @@ describe('RetryManager', () => {
     await expect(retryManager.axiosInstance.get('/retry-fail')).rejects.toThrow(
       'Request failed with status code 500',
     );
+  });
+
+  test('should count a terminal failure when retries are disabled', async () => {
+    retryManager = new RetryManager({
+      retries: 0,
+      throwErrorOnFailedRetries: true,
+    });
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+    mock.onGet('/no-retries-terminal-failure').reply(500, 'Server Error');
+
+    await expect(retryManager.axiosInstance.get('/no-retries-terminal-failure')).rejects.toThrow(
+      'Request failed with status code 500',
+    );
+
+    expect(retryManager.getMetrics().completelyFailedRequests).toBe(1);
+  });
+
+  test('should track queue wait time in metrics when requests are queued', async () => {
+    retryManager = new RetryManager({
+      axiosInstance: axios.create(),
+      retries: 0,
+      maxConcurrentRequests: 1,
+      queueDelay: 10,
+    });
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+
+    mock.onGet('/slow').reply(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve([200, { ok: true }]), 50);
+        }),
+    );
+    mock.onGet('/queued').reply(200, { ok: true });
+
+    await Promise.all([
+      retryManager.axiosInstance.get('/slow'),
+      retryManager.axiosInstance.get('/queued'),
+    ]);
+
+    expect(retryManager.getMetrics().avgQueueWait).toBeGreaterThan(0);
   });
 
   test('should abort and not retry if request is cancelled before retry', async () => {

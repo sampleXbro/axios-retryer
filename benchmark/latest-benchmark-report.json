@@ -1,0 +1,822 @@
+{
+  "generatedAt": "2026-04-01T18:37:40.009Z",
+  "profile": "standard",
+  "executions": [
+    {
+      "name": "Core RetryManager",
+      "file": "local-mock-server.js",
+      "success": true,
+      "durationMs": 2369.61,
+      "error": null,
+      "result": {
+        "benchmark": "local-mock-server",
+        "title": "Core RetryManager Benchmarks",
+        "generatedAt": "2026-04-01T18:36:50.129Z",
+        "profile": "standard",
+        "scenarios": [
+          {
+            "name": "Healthy API Overhead",
+            "description": "Measures RetryManager overhead against plain axios when every request succeeds on the first attempt.",
+            "requestCount": 600,
+            "concurrency": 32,
+            "durationMs": 221.19,
+            "throughputPerSec": 2712.55,
+            "successCount": 600,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 600,
+              "minMs": 7.35,
+              "maxMs": 15.79,
+              "avgMs": 11.42,
+              "p50Ms": 11.46,
+              "p95Ms": 14.22,
+              "p99Ms": 15.48
+            },
+            "upstreamCalls": 600,
+            "upstreamCallsPerRequest": 1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 1.58,
+            "extras": {
+              "baselineThroughputPerSec": 2682.01,
+              "baselineP95Ms": 14.46,
+              "managerOverheadPct": -1.14
+            }
+          },
+          {
+            "name": "Transient 5xx Recovery",
+            "description": "Simulates a flaky upstream where some requests fail once with 503 and should succeed on retry.",
+            "requestCount": 500,
+            "concurrency": 24,
+            "durationMs": 488.66,
+            "throughputPerSec": 1023.22,
+            "successCount": 500,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 500,
+              "minMs": 9.39,
+              "maxMs": 65.53,
+              "avgMs": 23.04,
+              "p50Ms": 17.8,
+              "p95Ms": 57.15,
+              "p99Ms": 62.97
+            },
+            "upstreamCalls": 597,
+            "upstreamCallsPerRequest": 1.19,
+            "retryMetrics": {
+              "successfulRetries": 97,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0.02
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "recoveredRequests": 97,
+              "retryAmplification": 1.19
+            }
+          },
+          {
+            "name": "Rate Limit Recovery",
+            "description": "Simulates brief 429 responses to show recovery cost and tail latency under backoff.",
+            "requestCount": 220,
+            "concurrency": 16,
+            "durationMs": 295.14,
+            "throughputPerSec": 745.42,
+            "successCount": 220,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 220,
+              "minMs": 13.66,
+              "maxMs": 67.19,
+              "avgMs": 20.81,
+              "p50Ms": 19.27,
+              "p95Ms": 24.67,
+              "p99Ms": 62.58
+            },
+            "upstreamCalls": 229,
+            "upstreamCallsPerRequest": 1.04,
+            "retryMetrics": {
+              "successfulRetries": 9,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0.02
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "retriedRequests": 9,
+              "configuredRetryDelayMs": 20
+            }
+          },
+          {
+            "name": "Priority Queue Under Contention",
+            "description": "Floods the queue with low-priority work before high-priority requests arrive, showing tail latency separation.",
+            "requestCount": 180,
+            "concurrency": 6,
+            "durationMs": 687.14,
+            "throughputPerSec": 261.96,
+            "successCount": 180,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 180,
+              "minMs": 20.16,
+              "maxMs": 686.42,
+              "avgMs": 349.52,
+              "p50Ms": 348.87,
+              "p95Ms": 652.75,
+              "p99Ms": 684.14
+            },
+            "upstreamCalls": 180,
+            "upstreamCallsPerRequest": 1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0.33,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "latencyByTier": {
+                "high": {
+                  "p50Ms": 63.44,
+                  "p95Ms": 110.41
+                },
+                "medium": {
+                  "p50Ms": 201.51,
+                  "p95Ms": 270.57
+                },
+                "low": {
+                  "p50Ms": 487.85,
+                  "p95Ms": 668.36
+                }
+              }
+            }
+          }
+        ],
+        "summary": {
+          "profile": "standard",
+          "avgThroughputPerSec": 1185.79,
+          "slowestP95Ms": 652.75,
+          "highestSuccessRate": 100,
+          "memory": {
+            "cycles": 5,
+            "requestsPerCycle": 120,
+            "startHeapMb": 6.41,
+            "endHeapMb": 6.47,
+            "totalGrowthMb": 0.06
+          }
+        }
+      }
+    },
+    {
+      "name": "Stress",
+      "file": "stress-testing.js",
+      "success": true,
+      "durationMs": 46281.56,
+      "error": null,
+      "result": {
+        "benchmark": "stress-testing",
+        "title": "Stress Benchmarks",
+        "generatedAt": "2026-04-01T18:37:36.410Z",
+        "profile": "standard",
+        "scenarios": [
+          {
+            "name": "Burst Capacity",
+            "description": "Measures how the manager behaves when concurrency ramps up in larger spikes with transient 503s.",
+            "requestCount": 1020,
+            "concurrency": 48,
+            "durationMs": 237.17,
+            "throughputPerSec": 4300.7,
+            "successCount": 1020,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 1020,
+              "minMs": 6.34,
+              "maxMs": 17.01,
+              "avgMs": 10.19,
+              "p50Ms": 9.98,
+              "p95Ms": 13.71,
+              "p99Ms": 15.23
+            },
+            "upstreamCalls": 1020,
+            "upstreamCallsPerRequest": 1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "phases": [
+                {
+                  "burst": 1,
+                  "requestCount": 120,
+                  "throughputPerSec": 3123.41,
+                  "successRate": 100,
+                  "p95Ms": 15.41
+                },
+                {
+                  "burst": 2,
+                  "requestCount": 300,
+                  "throughputPerSec": 4333.55,
+                  "successRate": 100,
+                  "p95Ms": 13.88
+                },
+                {
+                  "burst": 3,
+                  "requestCount": 600,
+                  "throughputPerSec": 4637.77,
+                  "successRate": 100,
+                  "p95Ms": 12.55
+                }
+              ]
+            }
+          },
+          {
+            "name": "Sustained Load",
+            "description": "Sends a paced stream for a fixed duration to surface queue growth, timer pressure, and long-run throughput.",
+            "requestCount": 1800,
+            "concurrency": 32,
+            "durationMs": 45009.52,
+            "throughputPerSec": 39.99,
+            "successCount": 1800,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 1800,
+              "minMs": 9.78,
+              "maxMs": 57.12,
+              "avgMs": 17.16,
+              "p50Ms": 14.04,
+              "p95Ms": 48.71,
+              "p99Ms": 54.49
+            },
+            "upstreamCalls": 1963,
+            "upstreamCallsPerRequest": 1.09,
+            "retryMetrics": {
+              "successfulRetries": 163,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0.02
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "durationMs": 45000,
+              "snapshots": [
+                {
+                  "elapsedMs": 0.09,
+                  "totalRequests": 0,
+                  "avgQueueWaitMs": 0,
+                  "activeTimers": 0,
+                  "activeRetryTimers": 0,
+                  "memoryMb": 12.58
+                },
+                {
+                  "elapsedMs": 10005.83,
+                  "totalRequests": 436,
+                  "avgQueueWaitMs": 0,
+                  "activeTimers": 0,
+                  "activeRetryTimers": 0,
+                  "memoryMb": 6.76
+                },
+                {
+                  "elapsedMs": 20007.59,
+                  "totalRequests": 872,
+                  "avgQueueWaitMs": 0,
+                  "activeTimers": 0,
+                  "activeRetryTimers": 0,
+                  "memoryMb": 7.46
+                },
+                {
+                  "elapsedMs": 30007.56,
+                  "totalRequests": 1309,
+                  "avgQueueWaitMs": 0,
+                  "activeTimers": 0,
+                  "activeRetryTimers": 0,
+                  "memoryMb": 8.53
+                },
+                {
+                  "elapsedMs": 40009.06,
+                  "totalRequests": 1745,
+                  "avgQueueWaitMs": 0,
+                  "activeTimers": 0,
+                  "activeRetryTimers": 0,
+                  "memoryMb": 9.63
+                }
+              ]
+            }
+          },
+          {
+            "name": "Outage And Recovery",
+            "description": "Runs healthy traffic into a hard outage and then a partial recovery window to show recovery cost and residual failures.",
+            "requestCount": 540,
+            "concurrency": 24,
+            "durationMs": 848.66,
+            "throughputPerSec": 636.3,
+            "successCount": 362,
+            "failureCount": 178,
+            "successRate": 67.04,
+            "latencyMs": {
+              "count": 540,
+              "minMs": 7.31,
+              "maxMs": 83.69,
+              "avgMs": 36.5,
+              "p50Ms": 14.25,
+              "p95Ms": 77.37,
+              "p99Ms": 80.73
+            },
+            "upstreamCalls": 988,
+            "upstreamCallsPerRequest": 1.83,
+            "retryMetrics": {
+              "successfulRetries": 92,
+              "failedRetries": 356,
+              "completelyFailedRequests": 178,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0.02
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "terminalFailureRate": 32.96
+            }
+          }
+        ],
+        "summary": {
+          "profile": "standard",
+          "peakThroughputPerSec": 4300.7,
+          "slowestP95Ms": 77.37,
+          "avgSuccessRate": 89.01
+        }
+      }
+    },
+    {
+      "name": "Plugin Integration",
+      "file": "plugin-integration.js",
+      "success": true,
+      "durationMs": 1135.09,
+      "error": null,
+      "result": {
+        "benchmark": "plugin-integration",
+        "title": "Plugin Integration Benchmarks",
+        "generatedAt": "2026-04-01T18:37:37.543Z",
+        "profile": "standard",
+        "scenarios": [
+          {
+            "name": "Caching Plugin Effectiveness",
+            "description": "Measures cold misses, warm-cache hits, and stale revalidation with deterministic repeated reads.",
+            "requestCount": 240,
+            "concurrency": 24,
+            "durationMs": 152,
+            "throughputPerSec": 1578.93,
+            "successCount": 240,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 240,
+              "minMs": 0.08,
+              "maxMs": 18.66,
+              "avgMs": 1.95,
+              "p50Ms": 0.58,
+              "p95Ms": 14.26,
+              "p99Ms": 18.01
+            },
+            "upstreamCalls": 24,
+            "upstreamCallsPerRequest": 0.1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "warmupUpstreamCalls": 24,
+              "hotReadHitRate": 100,
+              "staleRevalidationCalls": 0,
+              "cacheStats": {
+                "size": 24,
+                "oldestItemAge": 1,
+                "newestItemAge": 1,
+                "averageAge": 1
+              }
+            }
+          },
+          {
+            "name": "Circuit Breaker Protection",
+            "description": "Trips the breaker on an outage, measures fail-fast protection, then verifies half-open recovery.",
+            "requestCount": 40,
+            "concurrency": 6,
+            "durationMs": 658.08,
+            "throughputPerSec": 60.78,
+            "successCount": 14,
+            "failureCount": 26,
+            "successRate": 35,
+            "latencyMs": {
+              "count": 40,
+              "minMs": 0.06,
+              "maxMs": 13.01,
+              "avgMs": 4.49,
+              "p50Ms": 0.71,
+              "p95Ms": 10.87,
+              "p99Ms": 13.01
+            },
+            "upstreamCalls": 18,
+            "upstreamCallsPerRequest": 0.45,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 4,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "blockedByCircuit": 20,
+              "upstreamCallsAvoided": 22,
+              "finalState": "CLOSED",
+              "breakerMetrics": {
+                "state": "CLOSED",
+                "failureCount": 0,
+                "halfOpenCount": 0,
+                "successCount": 0,
+                "nextAttemptIn": 0,
+                "failuresInWindow": 0,
+                "adaptiveTimeouts": []
+              }
+            }
+          },
+          {
+            "name": "Token Refresh Storm",
+            "description": "Fires a burst of expired-token requests concurrently to verify refresh fan-in and replay reliability.",
+            "requestCount": 72,
+            "concurrency": 24,
+            "durationMs": 68.07,
+            "throughputPerSec": 1057.73,
+            "successCount": 72,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 72,
+              "minMs": 7.93,
+              "maxMs": 44.23,
+              "avgMs": 21.27,
+              "p50Ms": 11.73,
+              "p95Ms": 44.11,
+              "p99Ms": 44.23
+            },
+            "upstreamCalls": 97,
+            "upstreamCallsPerRequest": 1.35,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "refreshCalls": 1,
+              "replayAmplification": 1.35
+            }
+          },
+          {
+            "name": "Cache After Token Refresh",
+            "description": "Triggers a single token refresh under concurrency, then measures how warm cached reads reduce upstream traffic.",
+            "requestCount": 114,
+            "concurrency": 16,
+            "durationMs": 50.84,
+            "throughputPerSec": 2242.49,
+            "successCount": 114,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 114,
+              "minMs": 0.03,
+              "maxMs": 39.01,
+              "avgMs": 4.85,
+              "p50Ms": 0.31,
+              "p95Ms": 37.82,
+              "p99Ms": 38.99
+            },
+            "upstreamCalls": 32,
+            "upstreamCallsPerRequest": 0.28,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "refreshCalls": 1,
+              "cacheHitRateAfterWarmAuth": 100,
+              "authWarmSuccessRate": 100,
+              "cacheStats": {
+                "size": 6,
+                "oldestItemAge": 0,
+                "newestItemAge": 0,
+                "averageAge": 0
+              }
+            }
+          }
+        ],
+        "summary": {
+          "profile": "standard",
+          "avgSuccessRate": 83.75,
+          "avgThroughputPerSec": 1234.98,
+          "bestCacheHitRate": 100,
+          "refreshCallsObserved": [
+            1,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "Priority Queue",
+      "file": "priority-queue.js",
+      "success": true,
+      "durationMs": 1001.06,
+      "error": null,
+      "result": {
+        "benchmark": "priority-queue",
+        "title": "Priority Queue Benchmark",
+        "generatedAt": "2026-04-01T18:37:38.547Z",
+        "profile": "standard",
+        "durationMs": 820.86,
+        "throughputPerSec": 219.28,
+        "successRate": 100,
+        "tiers": {
+          "high": {
+            "p50Ms": 73.26,
+            "p95Ms": 129.47
+          },
+          "medium": {
+            "p50Ms": 234.78,
+            "p95Ms": 323.7
+          },
+          "low": {
+            "p50Ms": 571.92,
+            "p95Ms": 795.48
+          }
+        },
+        "queueWaitAvgMs": 0.39,
+        "upstreamCalls": 180
+      }
+    },
+    {
+      "name": "Caching",
+      "file": "caching.js",
+      "success": true,
+      "durationMs": 344.24,
+      "error": null,
+      "result": {
+        "benchmark": "caching",
+        "title": "Caching Benchmark",
+        "generatedAt": "2026-04-01T18:37:38.892Z",
+        "profile": "standard",
+        "scenario": {
+          "name": "Caching Plugin Effectiveness",
+          "description": "Measures cold misses, warm-cache hits, and stale revalidation with deterministic repeated reads.",
+          "requestCount": 240,
+          "concurrency": 24,
+          "durationMs": 153.05,
+          "throughputPerSec": 1568.09,
+          "successCount": 240,
+          "failureCount": 0,
+          "successRate": 100,
+          "latencyMs": {
+            "count": 240,
+            "minMs": 0.08,
+            "maxMs": 18.96,
+            "avgMs": 1.95,
+            "p50Ms": 0.62,
+            "p95Ms": 13.93,
+            "p99Ms": 17.8
+          },
+          "upstreamCalls": 24,
+          "upstreamCallsPerRequest": 0.1,
+          "retryMetrics": {
+            "successfulRetries": 0,
+            "failedRetries": 0,
+            "completelyFailedRequests": 0,
+            "avgQueueWaitMs": 0,
+            "avgRetryDelayMs": 0
+          },
+          "timerHealth": {
+            "healthScore": 0,
+            "activeTimers": 0,
+            "activeRetryTimers": 0
+          },
+          "memoryDeltaMb": 0,
+          "extras": {
+            "warmupUpstreamCalls": 24,
+            "hotReadHitRate": 100,
+            "staleRevalidationCalls": 0,
+            "cacheStats": {
+              "size": 24,
+              "oldestItemAge": 0,
+              "newestItemAge": 0,
+              "averageAge": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Circuit Breaker",
+      "file": "circuit-braker.js",
+      "success": true,
+      "durationMs": 852.17,
+      "error": null,
+      "result": {
+        "benchmark": "circuit-breaker",
+        "title": "Circuit Breaker Benchmark",
+        "generatedAt": "2026-04-01T18:37:39.745Z",
+        "profile": "standard",
+        "scenario": {
+          "name": "Circuit Breaker Protection",
+          "description": "Trips the breaker on an outage, measures fail-fast protection, then verifies half-open recovery.",
+          "requestCount": 40,
+          "concurrency": 6,
+          "durationMs": 661.25,
+          "throughputPerSec": 60.49,
+          "successCount": 14,
+          "failureCount": 26,
+          "successRate": 35,
+          "latencyMs": {
+            "count": 40,
+            "minMs": 0.16,
+            "maxMs": 12.99,
+            "avgMs": 4.76,
+            "p50Ms": 0.93,
+            "p95Ms": 11.47,
+            "p99Ms": 12.99
+          },
+          "upstreamCalls": 18,
+          "upstreamCallsPerRequest": 0.45,
+          "retryMetrics": {
+            "successfulRetries": 0,
+            "failedRetries": 0,
+            "completelyFailedRequests": 4,
+            "avgQueueWaitMs": 0,
+            "avgRetryDelayMs": 0
+          },
+          "timerHealth": {
+            "healthScore": 0,
+            "activeTimers": 0,
+            "activeRetryTimers": 0
+          },
+          "memoryDeltaMb": 0,
+          "extras": {
+            "blockedByCircuit": 20,
+            "upstreamCallsAvoided": 22,
+            "finalState": "CLOSED",
+            "breakerMetrics": {
+              "state": "CLOSED",
+              "failureCount": 0,
+              "halfOpenCount": 0,
+              "successCount": 0,
+              "nextAttemptIn": 0,
+              "failuresInWindow": 0,
+              "adaptiveTimeouts": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Token Refresh",
+      "file": "token-refresh.js",
+      "success": true,
+      "durationMs": 260.15,
+      "error": null,
+      "result": {
+        "benchmark": "token-refresh",
+        "title": "Token Refresh Benchmark",
+        "generatedAt": "2026-04-01T18:37:40.005Z",
+        "profile": "standard",
+        "scenario": {
+          "name": "Token Refresh Storm",
+          "description": "Fires a burst of expired-token requests concurrently to verify refresh fan-in and replay reliability.",
+          "requestCount": 72,
+          "concurrency": 24,
+          "durationMs": 75.74,
+          "throughputPerSec": 950.66,
+          "successCount": 72,
+          "failureCount": 0,
+          "successRate": 100,
+          "latencyMs": {
+            "count": 72,
+            "minMs": 8.08,
+            "maxMs": 49.58,
+            "avgMs": 22.89,
+            "p50Ms": 12.34,
+            "p95Ms": 48.79,
+            "p99Ms": 49.58
+          },
+          "upstreamCalls": 97,
+          "upstreamCallsPerRequest": 1.35,
+          "retryMetrics": {
+            "successfulRetries": 0,
+            "failedRetries": 0,
+            "completelyFailedRequests": 0,
+            "avgQueueWaitMs": 0,
+            "avgRetryDelayMs": 0
+          },
+          "timerHealth": {
+            "healthScore": 0,
+            "activeTimers": 0,
+            "activeRetryTimers": 0
+          },
+          "memoryDeltaMb": 0,
+          "extras": {
+            "refreshCalls": 1,
+            "replayAmplification": 1.35
+          }
+        }
+      }
+    }
+  ],
+  "rollup": {
+    "benchmarkCount": 7,
+    "successfulCount": 7,
+    "failedCount": 0,
+    "avgDurationMs": 7463.41,
+    "avgScenarioSuccessRate": 88.36,
+    "peakThroughputPerSec": 4300.7,
+    "slowestP95Ms": 652.75,
+    "failures": []
+  }
+}

@@ -25,18 +25,16 @@ export class InMemoryRequestStore implements RequestStore {
 
   /**
    * Adds a request configuration to the store.
-   * If the store exceeds the maximum size, the most recent request is removed.
+   * If the store exceeds the maximum size, the oldest request is removed.
    *
    * @param request - The Axios request configuration to store.
    */
   add(request: AxiosRequestConfig): void {
     this.requests.push(request);
 
-    // If the store exceeds maxStoreSize, remove the last request.
-    // (This assumes that newer requests are less critical than older ones.
-    //  If you prefer to remove the oldest, use shift() instead.)
+    // If the store exceeds maxStoreSize, remove the oldest request first.
     if (this.requests.length > this.maxStoreSize) {
-      const removedRequest = this.requests.pop();
+      const removedRequest = this.requests.shift();
       if (removedRequest) {
         this.emit('onRequestRemovedFromStore', removedRequest);
       }

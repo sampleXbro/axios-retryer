@@ -162,6 +162,7 @@ export class RequestQueue {
   private inProgressCount = 0;
   private isDestroyed = false;
   private dequeueTimer: ReturnType<typeof setTimeout> | null = null;
+  private microtaskScheduled = false;
 
   /**
    * @param maxConcurrent - maximum number of requests to process at once
@@ -209,6 +210,27 @@ export class RequestQueue {
       this.waiting.push(item); // Now O(log n) instead of O(n)
       this.tryDequeue();
     });
+  }
+
+  /**
+   * Starts a request synchronously when capacity is available and there is no backlog.
+   * This avoids the async queue path for the common healthy-case request.
+   */
+  public tryAcquireImmediate(config: AxiosRequestConfig): boolean {
+    if (this.isDestroyed) {
+      return false;
+    }
+
+    if (this.waiting.length > 0 || this.inProgressCount >= this.maxConcurrent) {
+      return false;
+    }
+
+    if (!this.canProcess(config)) {
+      return false;
+    }
+
+    this.inProgressCount++;
+    return true;
   }
 
   /**
@@ -295,6 +317,7 @@ export class RequestQueue {
       clearTimeout(this.dequeueTimer);
       this.dequeueTimer = null;
     }
+    this.microtaskScheduled = false;
 
     // Clear all waiting requests
     this.clear();
@@ -309,46 +332,58 @@ export class RequestQueue {
    * so those requests can start.
    */
   private tryDequeue = (): void => {
-    // Clear any existing timer to prevent multiple timers
-    if (this.dequeueTimer) {
-      clearTimeout(this.dequeueTimer);
-      this.dequeueTimer = null;
-    }
-    
-    // Don't schedule if queue is destroyed
-    if (this.isDestroyed) {
+    if (this.isDestroyed || this.waiting.length === 0 || this.inProgressCount >= this.maxConcurrent) {
       return;
     }
 
-    // Schedule the actual dequeue after the delay
-    this.dequeueTimer = setTimeout(() => {
-      this.dequeueTimer = null;
-      
-      // Check if the queue has been destroyed during the timeout
-      if (this.isDestroyed) {
+    if (this.queueDelay <= 0) {
+      if (this.microtaskScheduled) {
         return;
       }
-      
-      // While there's capacity, shift from waiting and resolve the promise
-      while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
-        const topItem = this.waiting.peek(); // Peek at the first item
-        if (!topItem) break;
 
-        if (this.isCriticalRequest(topItem.config) || !this.hasActiveCriticalRequests()) {
-          // Remove from queue and resolve - now O(log n) instead of O(n)
-          const item = this.waiting.shift()!;
-          this.inProgressCount++;
-          item.resolve(item.config);
-          
-          // Cleanup references after resolving
-          this.cleanupRequest(item);
-        } else {
-          // Stop processing non-critical requests while critical ones exist
-          break;
+      this.microtaskScheduled = true;
+      queueMicrotask(() => {
+        this.microtaskScheduled = false;
+        if (!this.isDestroyed) {
+          this.drainQueue();
         }
+      });
+      return;
+    }
+
+    if (this.dequeueTimer) {
+      return;
+    }
+
+    this.dequeueTimer = setTimeout(() => {
+      this.dequeueTimer = null;
+      if (!this.isDestroyed) {
+        this.drainQueue();
       }
     }, this.queueDelay);
   };
+
+  private drainQueue(): void {
+    while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
+      const topItem = this.waiting.peek();
+      if (!topItem) {
+        return;
+      }
+
+      if (!this.canProcess(topItem.config)) {
+        return;
+      }
+
+      const item = this.waiting.shift()!;
+      this.inProgressCount++;
+      item.resolve(item.config);
+      this.cleanupRequest(item);
+    }
+  }
+
+  private canProcess(config: AxiosRequestConfig): boolean {
+    return this.isCriticalRequest(config) || !this.hasActiveCriticalRequests();
+  }
 
   /**
    * Compare by priority desc, then timestamp asc, then insertion order for stability.
