@@ -1,5 +1,5 @@
 export { CachingPlugin } from './CachingPlugin';
-export { type CachingPluginOptions } from './CachingPlugin';
+export { InMemoryCacheStorage, type CacheStorage, type CachedItem, type CachingPluginOptions } from './CachingPlugin';
 
 import { CachingPlugin, type CachingPluginOptions } from './CachingPlugin';
 
@@ -15,9 +15,11 @@ import { CachingPlugin, type CachingPluginOptions } from './CachingPlugin';
  * 
  * @example
  * ```typescript
+ * import { AXIOS_RETRYER_HTTP_METHODS } from 'axios-retryer';
+ *
  * const cachePlugin = createCachePlugin({
  *   timeToRevalidate: 60000,  // Cache responses for 60 seconds
- *   cacheMethods: ['GET'],    // Only cache GET requests
+ *   cacheMethods: [AXIOS_RETRYER_HTTP_METHODS.GET], // Only cache GET requests
  *   cleanupInterval: 300000,  // Run cleanup every 5 minutes
  *   maxItems: 100,            // Store at most 100 responses
  *   compareHeaders: false     // Don't include headers in cache key

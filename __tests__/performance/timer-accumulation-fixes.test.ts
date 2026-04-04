@@ -2,8 +2,28 @@ import axios, { AxiosError } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { RetryManager } from '../../src/core/RetryManager';
 import { RETRY_MODES } from '../../src/types';
+import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
 jest.setTimeout(60000);
+
+async function waitForRetryTimers(
+  retryManager: RetryManager,
+  minCount = 1,
+  timeoutMs = 500,
+): Promise<{ activeTimers: number; activeRetryTimers: number }> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const stats = retryManager.getTimerStats();
+    if (stats.activeRetryTimers >= minCount) {
+      return stats;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  return retryManager.getTimerStats();
+}
 
 describe('Timer Accumulation Fixes - Performance Tests', () => {
   let retryManager: RetryManager;
@@ -17,6 +37,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       maxConcurrentRequests: 10,
       queueDelay: 10, // Fast for testing
     });
+    retryManager.use(new MetricsPlugin());
     mockAdapter = new MockAdapter(retryManager.axiosInstance);
   });
 
@@ -36,11 +57,11 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
 
       // Start a request that will fail and trigger retry
       const requestPromise = retryManager.axiosInstance.get('/test');
+      requestPromise.catch(() => {
+        // Attach a handler immediately so cancellation does not become an unhandled rejection before assertion time.
+      });
 
-      // Wait a bit to ensure retry timer is scheduled
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      const statsAfterFailure = retryManager.getTimerStats();
+      const statsAfterFailure = await waitForRetryTimers(retryManager);
       expect(statsAfterFailure.activeRetryTimers).toBeGreaterThan(0);
 
       // Cancel all requests
@@ -58,11 +79,11 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       mockAdapter.onGet('/test').reply(500);
 
       const requestPromise = retryManager.axiosInstance.get('/test');
-      
-      // Wait for retry timer to be scheduled
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      const statsWithTimer = retryManager.getTimerStats();
+      requestPromise.catch(() => {
+        // Attach a handler immediately so cancellation does not become an unhandled rejection before assertion time.
+      });
+
+      const statsWithTimer = await waitForRetryTimers(retryManager);
       expect(statsWithTimer.activeRetryTimers).toBeGreaterThan(0);
 
       // Cancel specific request
@@ -84,13 +105,14 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       
       // Create many failing requests
       for (let i = 0; i < 20; i++) {
-        requests.push(retryManager.axiosInstance.get(`/test-${i}`));
+        const request = retryManager.axiosInstance.get(`/test-${i}`);
+        request.catch(() => {
+          // Attach a handler immediately so mass cancellation does not surface as unhandled rejection noise.
+        });
+        requests.push(request);
       }
 
-      // Wait for retry timers to be scheduled
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const statsWithTimers = retryManager.getTimerStats();
+      const statsWithTimers = await waitForRetryTimers(retryManager);
       expect(statsWithTimers.activeRetryTimers).toBeGreaterThan(0);
 
       // Cancel all requests rapidly
@@ -187,9 +209,8 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       // Start a failing request
       const requestPromise = retryManager.axiosInstance.get('/test').catch(() => {});
       
-      // Wait for retry timer
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
+      await waitForRetryTimers(retryManager);
+
       const metricsWithTimer = retryManager.getMetrics();
       expect(metricsWithTimer.timerHealth.activeRetryTimers).toBeGreaterThan(0);
       expect(metricsWithTimer.timerHealth.healthScore).toBeGreaterThan(0);
@@ -204,7 +225,9 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
 
     test('should calculate health score correctly', async () => {
       const manager1 = new RetryManager({ retries: 1, queueDelay: 10 });
+      manager1.use(new MetricsPlugin());
       const manager2 = new RetryManager({ retries: 1, queueDelay: 10 });
+      manager2.use(new MetricsPlugin());
       const mock1 = new MockAdapter(manager1.axiosInstance);
       const mock2 = new MockAdapter(manager2.axiosInstance);
 
@@ -217,13 +240,22 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
         const promise2 = manager2.axiosInstance.get('/test1').catch(() => {});
         const promise3 = manager2.axiosInstance.get('/test2').catch(() => {});
 
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await Promise.all([
+          waitForRetryTimers(manager1),
+          waitForRetryTimers(manager2),
+        ]);
 
         const metrics1 = manager1.getMetrics();
         const metrics2 = manager2.getMetrics();
 
-        // Manager2 should have higher health score (more timers)
-        expect(metrics2.timerHealth.healthScore).toBeGreaterThan(metrics1.timerHealth.healthScore);
+        expect(metrics1.timerHealth.healthScore).toBe(
+          metrics1.timerHealth.activeTimers + (metrics1.timerHealth.activeRetryTimers * 2)
+        );
+        expect(metrics2.timerHealth.healthScore).toBe(
+          metrics2.timerHealth.activeTimers + (metrics2.timerHealth.activeRetryTimers * 2)
+        );
+        expect(metrics1.timerHealth.activeRetryTimers).toBeGreaterThan(0);
+        expect(metrics2.timerHealth.activeRetryTimers).toBeGreaterThan(0);
 
         await Promise.all([promise1, promise2, promise3]);
       } finally {
@@ -300,6 +332,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
         queueDelay: 5,
         debug: false,
       });
+      stressManager.use(new MetricsPlugin());
       const stressMock = new MockAdapter(stressManager.axiosInstance);
 
       try {

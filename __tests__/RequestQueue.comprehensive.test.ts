@@ -6,18 +6,22 @@ import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../src/types';
 
 // Extend AxiosRequestConfig type to include our custom properties
 interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
-  __priority?: number;
-  __timestamp?: number;
-  __requestId?: string;
+  __axiosRetryer?: {
+    priority?: number;
+    timestamp?: number;
+    requestId?: string;
+  };
 }
 
 describe('RequestQueue Comprehensive Tests', () => {
   const createConfig = (priority: number, timestamp: number, requestId: string): ExtendedAxiosRequestConfig => ({
     url: '/test-url', // Add a minimal required property for AxiosRequestConfig
     method: 'get',
-    __priority: priority,
-    __timestamp: timestamp,
-    __requestId: requestId,
+    __axiosRetryer: {
+      priority,
+      timestamp,
+      requestId,
+    },
   });
 
   // Mock functions for testing
@@ -168,10 +172,10 @@ describe('RequestQueue Comprehensive Tests', () => {
     // Check that they're in the correct priority order
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(4);
-    expect(waiting[0].config.__requestId).toBe('critical');
-    expect(waiting[1].config.__requestId).toBe('high');
-    expect(waiting[2].config.__requestId).toBe('medium');
-    expect(waiting[3].config.__requestId).toBe('low');
+    expect(waiting[0].config.__axiosRetryer?.requestId).toBe('critical');
+    expect(waiting[1].config.__axiosRetryer?.requestId).toBe('high');
+    expect(waiting[2].config.__axiosRetryer?.requestId).toBe('medium');
+    expect(waiting[3].config.__axiosRetryer?.requestId).toBe('low');
   });
   
   // Test that tie-breaking by timestamp works correctly
@@ -189,16 +193,16 @@ describe('RequestQueue Comprehensive Tests', () => {
     // Check that they're ordered by timestamp (earliest first)
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(3);
-    expect(waiting[0].config.__requestId).toBe('earlier');
-    expect(waiting[1].config.__requestId).toBe('middle');
-    expect(waiting[2].config.__requestId).toBe('later');
+    expect(waiting[0].config.__axiosRetryer?.requestId).toBe('earlier');
+    expect(waiting[1].config.__axiosRetryer?.requestId).toBe('middle');
+    expect(waiting[2].config.__axiosRetryer?.requestId).toBe('later');
   });
 
   // Test critical request handling
   it('should prioritize critical requests absolutely', async () => {
     // Test scenario: Active critical request blocks all non-critical requests
-    mockIsCriticalRequest.mockImplementation(config => 
-      config.__priority === AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL);
+    mockIsCriticalRequest.mockImplementation(config =>
+      config.__axiosRetryer?.priority === AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL);
     mockHasActiveCriticalRequests.mockReturnValue(true);
     
     const results: string[] = [];
@@ -267,7 +271,7 @@ describe('RequestQueue Comprehensive Tests', () => {
       fail('Should have thrown QueueFullError');
     } catch (error: any) {
       expect(error).toBeInstanceOf(QueueFullError);
-      expect(error.config.__requestId).toBe('overflow');
+      expect(error.config.__axiosRetryer?.requestId).toBe('overflow');
     }
     
     // When we complete a request, we should be able to add another
@@ -334,9 +338,9 @@ describe('RequestQueue Comprehensive Tests', () => {
     // Check that they're ordered by timestamp (earliest first)
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(3);
-    expect(waiting[0].config.__requestId).toBe('ancient');
-    expect(waiting[1].config.__requestId).toBe('now');
-    expect(waiting[2].config.__requestId).toBe('future');
+    expect(waiting[0].config.__axiosRetryer?.requestId).toBe('ancient');
+    expect(waiting[1].config.__axiosRetryer?.requestId).toBe('now');
+    expect(waiting[2].config.__axiosRetryer?.requestId).toBe('future');
   });
 
   // Test queue with extremely small delay
@@ -395,16 +399,16 @@ describe('RequestQueue Comprehensive Tests', () => {
       const prev = waiting[i-1].config as ExtendedAxiosRequestConfig;
       const curr = waiting[i].config as ExtendedAxiosRequestConfig;
       
-      const prevPriority = prev.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-      const currPriority = curr.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-      
+      const prevPriority = prev.__axiosRetryer?.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
+      const currPriority = curr.__axiosRetryer?.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
+
       if (prevPriority !== currPriority) {
         // If priorities differ, higher priority should come first
         expect(prevPriority).toBeGreaterThan(currPriority);
       } else {
         // If priorities are the same, earlier timestamp should come first
-        const prevTimestamp = prev.__timestamp ?? 0;
-        const currTimestamp = curr.__timestamp ?? 0;
+        const prevTimestamp = prev.__axiosRetryer?.timestamp ?? 0;
+        const currTimestamp = curr.__axiosRetryer?.timestamp ?? 0;
         expect(prevTimestamp).toBeLessThanOrEqual(currTimestamp);
       }
     }

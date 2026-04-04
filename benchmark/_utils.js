@@ -1,3 +1,4 @@
+/* istanbul ignore file */
 const { performance } = require('perf_hooks');
 
 const PROFILE_SETTINGS = {

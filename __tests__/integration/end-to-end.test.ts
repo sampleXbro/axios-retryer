@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { createRetryer, RetryManager, AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../../src';
+import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
 describe('End-to-End Integration Tests', () => {
   let axiosInstance: AxiosInstance;
@@ -71,11 +72,11 @@ describe('End-to-End Integration Tests', () => {
 
       // Send requests with different priorities simultaneously
       const requests = [
-        retryer.axiosInstance.get('/low1', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW }),
-        retryer.axiosInstance.get('/low2', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW }),
-        retryer.axiosInstance.get('/critical', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL }),
-        retryer.axiosInstance.get('/high', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH }),
-        retryer.axiosInstance.get('/medium', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM })
+        retryer.axiosInstance.get('/low1', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW } }),
+        retryer.axiosInstance.get('/low2', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW } }),
+        retryer.axiosInstance.get('/critical', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL } }),
+        retryer.axiosInstance.get('/high', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH } }),
+        retryer.axiosInstance.get('/medium', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM } })
       ];
 
       await Promise.all(requests);
@@ -150,6 +151,7 @@ describe('End-to-End Integration Tests', () => {
         maxQueueSize: 100,
         retries: 1
       });
+      retryer.use(new MetricsPlugin());
 
       // Setup fast responding mock
       mock.onGet(/\/burst\/\d+/).reply(200, { success: true });
@@ -209,6 +211,7 @@ describe('End-to-End Integration Tests', () => {
         retries: 2,
         debug: false
       });
+      retryer.use(new MetricsPlugin());
 
       let timeoutCount = 0;
       mock.onGet('/timeout-test').timeout();
@@ -232,6 +235,7 @@ describe('End-to-End Integration Tests', () => {
         debug: false,
         maxConcurrentRequests: 3
       });
+      retryer.use(new MetricsPlugin());
 
       // Setup mixed success/failure responses
       mock.onGet('/success').reply(200, { result: 'success' });
@@ -345,19 +349,18 @@ describe('End-to-End Integration Tests', () => {
       const testPlugin = {
         name: 'TestPlugin',
         version: '1.0.0',
-        initialize: jest.fn(),
-                 hooks: {
-           beforeRetry: (config: AxiosRequestConfig) => {
-             pluginCalls.push('beforeRetry');
-             config.headers = { ...config.headers, 'X-Plugin-Retry': 'true' };
-           },
-           afterRetry: (config: AxiosRequestConfig, response: any) => {
-             pluginCalls.push('afterRetry');
-           },
-           onFailure: (config: AxiosRequestConfig) => {
-             pluginCalls.push('onFailure');
-           }
-         }
+        initialize: (manager: RetryManager) => {
+          manager.on('beforeRetry', (config: AxiosRequestConfig) => {
+            pluginCalls.push('beforeRetry');
+            config.headers = { ...config.headers, 'X-Plugin-Retry': 'true' };
+          });
+          manager.on('afterRetry', () => {
+            pluginCalls.push('afterRetry');
+          });
+          manager.on('onFailure', () => {
+            pluginCalls.push('onFailure');
+          });
+        }
       };
 
       retryer.use(testPlugin);

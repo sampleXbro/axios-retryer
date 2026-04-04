@@ -58,7 +58,7 @@ describe('RetryManager Additional Tests', () => {
       const requestStore = (retryManager as any).requestStore;
       const storedRequests = requestStore.getAll();
       storedRequests.forEach((request) => {
-        idsSet.add(request.__requestId);
+        idsSet.add(request.__axiosRetryer?.requestId);
       });
 
       // Assertions
@@ -113,7 +113,7 @@ describe('RetryManager Additional Tests', () => {
       await retryManager
         .axiosInstance
         .get('/override-config', {
-          __requestRetries: 1, // Override default of 2 retries
+          __axiosRetryer: { requestRetries: 1 }, // Override default of 2 retries
         })
         .catch(() => {});
 
@@ -126,7 +126,7 @@ describe('RetryManager Additional Tests', () => {
       await retryManager
         .axiosInstance
         .get('/override-mode', {
-          __requestMode: 'manual',
+          __axiosRetryer: { requestMode: 'manual' },
         })
         .catch(() => {});
 
@@ -301,19 +301,20 @@ describe('RetryManager Additional Tests', () => {
       mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
       let retryHeader = null;
+      const beforeRetry = (config) => {
+        config.headers = config.headers || {};
+        config.headers['X-Retry-Count'] = config.__axiosRetryer?.retryAttempt;
+      };
+      const afterRetry = (config) => {
+        retryHeader = config.headers['X-Retry-Count'];
+      };
 
       const headerPlugin = {
         name: 'HeaderPlugin',
         version: '1.0.0',
-        initialize: () => {},
-        hooks: {
-          beforeRetry: (config) => {
-            config.headers = config.headers || {};
-            config.headers['X-Retry-Count'] = config.__retryAttempt;
-          },
-          afterRetry: (config) => {
-            retryHeader = config.headers['X-Retry-Count'];
-          },
+        initialize: (manager) => {
+          manager.on('beforeRetry', beforeRetry);
+          manager.on('afterRetry', afterRetry);
         },
       };
 

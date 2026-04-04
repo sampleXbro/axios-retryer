@@ -4,6 +4,8 @@ import typescript from 'rollup-plugin-typescript2';
 import terser from '@rollup/plugin-terser';
 import { visualizer } from 'rollup-plugin-visualizer';
 
+const includeBrowserBuild = process.env.BUILD_BROWSER === 'true';
+
 // Common options for all builds
 const commonPlugins = (minify = true, name = 'core') => [
     resolve({
@@ -31,8 +33,6 @@ const commonPlugins = (minify = true, name = 'core') => [
         },
         compress: {
             pure_getters: true,
-            unsafe: true,
-            unsafe_comps: true,
             passes: 3
         }
     }),
@@ -48,22 +48,23 @@ const mainBundle = {
     input: 'src/index.ts',
     output: [
         { 
-            file: 'dist/index.cjs.js', 
+            dir: 'dist',
+            entryFileNames: '[name].cjs.js',
+            chunkFileNames: 'chunks/[name]-[hash].cjs.js',
             format: 'cjs', 
             sourcemap: false,
-            exports: 'named',
-            name: 'AxiosRetryer'
+            exports: 'named'
         },
         { 
-            file: 'dist/index.esm.js', 
+            dir: 'dist',
+            entryFileNames: '[name].esm.js',
+            chunkFileNames: 'chunks/[name]-[hash].esm.js',
             format: 'es', 
-            sourcemap: false 
+            sourcemap: false
         }
     ],
     plugins: commonPlugins(true, 'main'),
     external: ['axios'],
-    // Preserve module structure for better tree-shaking
-    preserveModules: false,
     treeshake: {
         moduleSideEffects: false,
         propertyReadSideEffects: false,
@@ -71,24 +72,23 @@ const mainBundle = {
     }
 };
 
-// Generate plugin configurations
-const generatePluginConfig = (pluginName) => ({
-    input: `./src/plugins/${pluginName}/index.ts`,
+const createPluginBundle = (input, outputName, bundleName) => ({
+    input,
     output: [
         { 
-            file: `./dist/plugins/${pluginName}.cjs.js`, 
+            file: `./dist/plugins/${outputName}.cjs.js`, 
             format: 'cjs', 
             sourcemap: false,
             exports: 'named'
         },
         { 
-            file: `./dist/plugins/${pluginName}.esm.js`, 
+            file: `./dist/plugins/${outputName}.esm.js`, 
             format: 'es', 
             sourcemap: false 
         }
     ],
-    plugins: commonPlugins(true, pluginName),
-    external: ['axios', '../..'], // Ensure we don't bundle core library code
+    plugins: commonPlugins(true, bundleName),
+    external: ['axios'],
     treeshake: {
         moduleSideEffects: false,
         propertyReadSideEffects: false,
@@ -96,14 +96,24 @@ const generatePluginConfig = (pluginName) => ({
     }
 });
 
+// Generate plugin configurations
+const generatePluginConfig = (pluginName) =>
+    createPluginBundle(`./src/plugins/${pluginName}/index.ts`, pluginName, pluginName);
+
 // Generate all plugin configurations
 const pluginConfigs = [
     'CachingPlugin',
     'CircuitBreakerPlugin',
-    'TokenRefreshPlugin'
+    'TokenRefreshPlugin',
+    'ManualRetryPlugin',
+    'DebugSanitizationPlugin',
+    'CriticalRequestPlugin',
+    'MetricsPlugin',
 ].map(generatePluginConfig);
 
-// Create browser-optimized bundle with all functionality
+const pluginsEntryBundle = createPluginBundle('./src/plugins/index.ts', 'index', 'plugins');
+
+// Optional browser-optimized bundle with all functionality
 const browserBundle = {
     input: 'src/index.ts',
     output: { 
@@ -111,6 +121,7 @@ const browserBundle = {
         format: 'umd', 
         name: 'AxiosRetryer',
         sourcemap: false,
+        inlineDynamicImports: true,
         globals: {
             axios: 'axios'
         }
@@ -119,4 +130,10 @@ const browserBundle = {
     external: ['axios']
 };
 
-export default [mainBundle, ...pluginConfigs, browserBundle];
+const builds = [mainBundle, pluginsEntryBundle, ...pluginConfigs];
+
+if (includeBrowserBuild) {
+    builds.push(browserBundle);
+}
+
+export default builds;

@@ -2,7 +2,7 @@ export class RetryLogger {
   constructor(private debugMode = false) {}
 
   // eslint-disable-next-line
-  log(message: string, data?: any) {
+  log(message: string, data?: unknown) {
     // eslint-disable-next-line no-console
     console.log(`[AXIOS_RETRYER] ${message}`, data ? JSON.stringify(data) : '');
   }

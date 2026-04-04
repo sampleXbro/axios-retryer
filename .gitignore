@@ -54,6 +54,10 @@ Thumbs.db
 
 # Generated documentation
 docs/
+internal-docs/
+
+# Local assistant settings
+.claude/settings.local.json
 
 # TGZ files
 *.tgz

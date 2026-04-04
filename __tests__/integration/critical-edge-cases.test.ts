@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { createRetryer, RetryManager, QueueFullError, RETRY_MODES } from '../../src';
+import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
 describe('Critical Edge Cases & Error Scenarios', () => {
   let axiosInstance: AxiosInstance;
@@ -62,6 +63,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         retries: 2,
         throwErrorOnFailedRetries: false
       });
+      retryer.use(new MetricsPlugin());
 
       mock.onGet('/network-error').networkError();
 
@@ -97,6 +99,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         retries: 1,
         throwErrorOnFailedRetries: false
       });
+      retryer.use(new MetricsPlugin());
 
       const clientErrors = [400, 401, 403, 404, 429];
       
@@ -117,6 +120,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         retries: 1,
         throwErrorOnFailedRetries: false
       });
+      retryer.use(new MetricsPlugin());
 
       const serverErrors = [500, 502, 503, 504];
       
@@ -156,11 +160,10 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const errorPlugin = {
         name: 'ErrorPlugin',
         version: '1.0.0',
-        initialize: jest.fn(),
-        hooks: {
-          beforeRetry: () => {
+        initialize: (manager: RetryManager) => {
+          manager.on('beforeRetry', () => {
             throw new Error('Plugin error');
-          }
+          });
         }
       };
 
@@ -203,6 +206,18 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       }).toThrow();
     });
 
+    it('should validate invalid max queue size', () => {
+      expect(() => {
+        createRetryer({ maxQueueSize: 0 });
+      }).toThrow('maxQueueSize must be a positive integer');
+    });
+
+    it('should validate negative queue delay', () => {
+      expect(() => {
+        createRetryer({ queueDelay: -1 });
+      }).toThrow('queueDelay must be a non-negative integer');
+    });
+
     it('should handle invalid priority values', async () => {
       const retryer = createRetryer({ axiosInstance });
 
@@ -210,7 +225,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
 
       // Should handle null/undefined priorities gracefully
       const response = await retryer.axiosInstance.get('/invalid-priority', {
-        __priority: null as any
+        __axiosRetryer: { priority: null as any }
       });
       expect(response.status).toBe(200);
     });
@@ -387,6 +402,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         axiosInstance,
         retries: 1
       });
+      retryer.use(new MetricsPlugin());
 
       mock.onGet('/timer-health').reply(200, { success: true });
 
@@ -402,12 +418,13 @@ describe('Critical Edge Cases & Error Scenarios', () => {
 
     it('should calculate priority metrics', async () => {
       const retryer = createRetryer({ axiosInstance });
+      retryer.use(new MetricsPlugin());
 
       mock.onGet('/high-priority').reply(200, { success: true });
       mock.onGet('/low-priority').reply(200, { success: true });
 
-      await retryer.axiosInstance.get('/high-priority', { __priority: 0 });
-      await retryer.axiosInstance.get('/low-priority', { __priority: 10 as any });
+      await retryer.axiosInstance.get('/high-priority', { __axiosRetryer: { priority: 0 } });
+      await retryer.axiosInstance.get('/low-priority', { __axiosRetryer: { priority: 10 as any } });
 
       const metrics = retryer.getMetrics();
       expect(metrics.requestCountsByPriority[0]).toBe(1);

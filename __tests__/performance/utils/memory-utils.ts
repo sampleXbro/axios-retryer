@@ -1,3 +1,4 @@
+/* istanbul ignore file */
 /**
  * Utilities for memory management in performance tests
  */

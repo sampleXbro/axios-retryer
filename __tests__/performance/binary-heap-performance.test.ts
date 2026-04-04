@@ -11,9 +11,11 @@ describe('Binary Heap Performance Tests', () => {
   });
 
   const createConfig = (priority: AxiosRetryerRequestPriority, timestamp: number, requestId: string) => ({
-    __priority: priority,
-    __timestamp: timestamp,
-    __requestId: requestId,
+    __axiosRetryer: {
+      priority,
+      timestamp,
+      requestId,
+    },
     url: `https://api.example.com/${requestId}`,
     method: 'GET' as const,
   });

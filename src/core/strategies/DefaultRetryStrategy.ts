@@ -3,12 +3,17 @@
 import type { AxiosError, AxiosRequestConfig } from 'axios';
 
 import type { RetryLogger } from '../../services/logger';
-import type { AxiosRetryerBackoffType, RetryStrategy } from '../../types';
-import { AXIOS_RETRYER_BACKOFF_TYPES } from '../../types';
+import type { AxiosRetryerBackoffType, AxiosRetryerHttpMethod, AxiosRetryerRetryableStatus, RetryStrategy } from '../../types';
+import { AXIOS_RETRYER_BACKOFF_TYPES, AXIOS_RETRYER_HTTP_METHODS } from '../../types';
 import { getBackoffDelay } from '../../utils';
+import { getRequestMetadata } from '../../utils/requestMetadata';
 
-const DEFAULT_RETRYABLE_STATUSES: (number | [number, number])[] = [408, 429, 500, 502, 503, 504, [520, 527]];
-const DEFAULT_RETRYABLE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
+const DEFAULT_RETRYABLE_STATUSES: readonly AxiosRetryerRetryableStatus[] = [408, 429, 500, 502, 503, 504, [520, 527]];
+const DEFAULT_RETRYABLE_METHODS: readonly AxiosRetryerHttpMethod[] = [
+  AXIOS_RETRYER_HTTP_METHODS.GET,
+  AXIOS_RETRYER_HTTP_METHODS.HEAD,
+  AXIOS_RETRYER_HTTP_METHODS.OPTIONS,
+];
 
 export class DefaultRetryStrategy implements RetryStrategy {
   private retryableMethodsLower: string[];
@@ -23,10 +28,10 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @param logger - Optional logger for debug information.
    */
   constructor(
-    private readonly retryableStatuses: (number | [number, number])[] = DEFAULT_RETRYABLE_STATUSES,
-    private readonly retryableMethods: string[] = DEFAULT_RETRYABLE_METHODS,
+    private readonly retryableStatuses: readonly AxiosRetryerRetryableStatus[] = DEFAULT_RETRYABLE_STATUSES,
+    private readonly retryableMethods: readonly AxiosRetryerHttpMethod[] = DEFAULT_RETRYABLE_METHODS,
     private readonly backoffType: AxiosRetryerBackoffType = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
-    private readonly idempotencyHeaders: string[] = ['Idempotency-Key'],
+    private readonly idempotencyHeaders: readonly string[] = ['Idempotency-Key'],
     private readonly logger?: RetryLogger,
   ) {
     // Precompute lower-case methods once
@@ -51,7 +56,7 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @param statuses - The statuses (or ranges) to test against.
    * @returns true if the status is considered retryable.
    */
-  private isRetryableStatus(status: number, statuses: (number | [number, number])[]): boolean {
+  private isRetryableStatus(status: number, statuses: readonly AxiosRetryerRetryableStatus[]): boolean {
     // If statuses is exactly the default, use precomputed values.
     if (statuses === this.retryableStatuses) {
       return (
@@ -84,7 +89,7 @@ export class DefaultRetryStrategy implements RetryStrategy {
     const config = error.config as AxiosRequestConfig;
     const method = config?.method?.toLowerCase();
     const status = error.response.status;
-    const statuses = config?.__retryableStatuses ?? this.retryableStatuses;
+    const statuses = getRequestMetadata(config)?.retryableStatuses ?? this.retryableStatuses;
 
     if (method && this.retryableMethodsLower.includes(method)) {
       if (this.isRetryableStatus(status, statuses)) {

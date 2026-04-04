@@ -8,9 +8,11 @@ jest.setTimeout(60000); // Increase timeout to 60 seconds
 
 describe('RequestQueue Extended Tests', () => {
   const createConfig = (priority: number, timestamp: number, requestId: string) => ({
-    __priority: priority,
-    __timestamp: timestamp,
-    __requestId: requestId,
+    __axiosRetryer: {
+      priority,
+      timestamp,
+      requestId,
+    },
   });
 
   // Test for queue maxQueueSize functionality with debugging
@@ -79,7 +81,7 @@ describe('RequestQueue Extended Tests', () => {
       // Mock function to check if there are active critical requests
       () => criticalInProgress,
       // Mock function to identify critical requests
-      (config) => config.__requestId.startsWith('crit'),
+      (config) => config.__axiosRetryer?.requestId?.startsWith('crit'),
       undefined // No maxQueueSize
     );
 

@@ -109,7 +109,7 @@ describe('Coverage Improvement - Critical Edge Cases', () => {
       const config = {
         method: 'get',
         url: '/test',
-        __retryableStatuses: [400, [420, 430]]
+        __axiosRetryer: { retryableStatuses: [400, [420, 430]] },
       };
 
       // Test individual status
@@ -347,14 +347,18 @@ describe('Coverage Improvement - Critical Edge Cases', () => {
       // Create requests with identical priority and timestamp
       const config1 = {
         url: '/api/test1',
-        __priority: 2, // HIGH priority
-        __timestamp: timestamp
+        __axiosRetryer: {
+          priority: 2, // HIGH priority
+          timestamp: timestamp,
+        },
       };
-      
+
       const config2 = {
-        url: '/api/test2', 
-        __priority: 2, // Same HIGH priority
-        __timestamp: timestamp // Same timestamp
+        url: '/api/test2',
+        __axiosRetryer: {
+          priority: 2, // Same HIGH priority
+          timestamp: timestamp, // Same timestamp
+        },
       };
 
       testMockAdapter.onGet('/api/test1').reply(200, { id: 1 });

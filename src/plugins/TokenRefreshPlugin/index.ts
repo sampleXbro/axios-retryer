@@ -1,9 +1,9 @@
 export { TokenRefreshPlugin } from './TokenRefreshPlugin';
-export type { TokenRefreshPluginOptions } from './types';
+export type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
+export type { TokenRefreshPluginEvents } from '../../types';
 
 import { TokenRefreshPlugin } from './TokenRefreshPlugin';
-import type { TokenRefreshPluginOptions } from './types';
-import type { AxiosInstance } from 'axios';
+import type { TokenRefreshHandler, TokenRefreshPluginOptions } from './types';
 
 /**
  * Creates a TokenRefreshPlugin instance.
@@ -18,6 +18,9 @@ import type { AxiosInstance } from 'axios';
  * const tokenRefresher = createTokenRefreshPlugin(
  *   async (axiosInstance) => {
  *     const refreshToken = localStorage.getItem('refreshToken');
+ *     if (!refreshToken) {
+ *       throw new Error('Refresh token not found');
+ *     }
  *     const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });
  *     return { token: data.accessToken };
  *   },
@@ -31,7 +34,7 @@ import type { AxiosInstance } from 'axios';
  * ```
  */
 export function createTokenRefreshPlugin(
-  refreshToken: (axiosInst: AxiosInstance) => Promise<{ token: string }>,
+  refreshToken: TokenRefreshHandler,
   options?: TokenRefreshPluginOptions
 ): TokenRefreshPlugin {
   return new TokenRefreshPlugin(refreshToken, options);

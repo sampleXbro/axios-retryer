@@ -11,9 +11,11 @@ describe('RequestQueue Edge Cases', () => {
   const mockHasActiveCriticalRequests = jest.fn();
 
   const createConfig = (priority: number, timestamp: number, requestId: string) => ({
-    __priority: priority,
-    __timestamp: timestamp,
-    __requestId: requestId,
+    __axiosRetryer: {
+      priority,
+      timestamp,
+      requestId,
+    },
   });
 
   let queue: RequestQueue;
@@ -84,13 +86,13 @@ describe('RequestQueue Edge Cases', () => {
     const results: string[] = [];
     
     // Request with undefined values
-    queue.enqueue({ __requestId: 'undefined1' }).then(() => {
+    queue.enqueue({ __axiosRetryer: { requestId: 'undefined1' } }).then(() => {
       results.push('undefined1');
       queue.markComplete();
     });
-    
+
     // Request with null values
-    queue.enqueue({ __priority: null, __timestamp: null, __requestId: 'null1' }).then(() => {
+    queue.enqueue({ __axiosRetryer: { priority: null, timestamp: null, requestId: 'null1' } }).then(() => {
       results.push('null1');
       queue.markComplete();
     });
@@ -125,7 +127,7 @@ describe('RequestQueue Edge Cases', () => {
       fail('Should have thrown QueueFullError');
     } catch (error) {
       expect(error).toBeInstanceOf(QueueFullError);
-      expect(error.config.__requestId).toBe('req2');
+      expect(error.config.__axiosRetryer?.requestId).toBe('req2');
     }
     
     // Clean up

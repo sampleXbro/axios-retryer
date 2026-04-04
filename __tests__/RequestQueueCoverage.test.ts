@@ -5,9 +5,11 @@ import { AxiosError, AxiosRequestConfig } from 'axios';
 
 // Extend AxiosRequestConfig type to include our custom properties
 interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
-  __priority?: AxiosRetryerRequestPriority;
-  __timestamp?: number;
-  __requestId?: string;
+  __axiosRetryer?: {
+    priority?: AxiosRetryerRequestPriority;
+    timestamp?: number;
+    requestId?: string;
+  };
 }
 
 describe('RequestQueue Coverage Improvements', () => {
@@ -17,9 +19,11 @@ describe('RequestQueue Coverage Improvements', () => {
   const createConfig = (priority: AxiosRetryerRequestPriority, timestamp: number, requestId: string): ExtendedAxiosRequestConfig => ({
     url: 'https://example.com',
     method: 'get',
-    __priority: priority,
-    __timestamp: timestamp,
-    __requestId: requestId,
+    __axiosRetryer: {
+      priority,
+      timestamp,
+      requestId,
+    },
   });
 
   let queue: RequestQueue;
@@ -139,7 +143,7 @@ describe('RequestQueue Coverage Improvements', () => {
     
     // Set up how isCriticalRequest will respond
     mockIsCriticalRequest.mockImplementation((config) => {
-      return config.__requestId?.includes('critical') ?? false;
+      return config.__axiosRetryer?.requestId?.includes('critical') ?? false;
     });
     
     const results: string[] = [];

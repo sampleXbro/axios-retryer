@@ -52,13 +52,13 @@ export interface SanitizeOptions {
    * Custom list of sensitive headers to redact (case-insensitive)
    * Will be merged with DEFAULT_SENSITIVE_HEADERS
    */
-  sensitiveHeaders?: string[];
+  sensitiveHeaders?: readonly string[];
   
   /**
    * Custom list of sensitive fields to redact in request/response data
    * Will be merged with DEFAULT_SENSITIVE_FIELDS
    */
-  sensitiveFields?: string[];
+  sensitiveFields?: readonly string[];
   
   /**
    * Character to use for redaction
@@ -83,6 +83,22 @@ export interface SanitizeOptions {
    * @default true
    */
   sanitizeUrlParams?: boolean;
+
+  /**
+   * Explicit list of payload field names that may remain visible in logs.
+   * Matching is case-insensitive.
+   *
+   * @default []
+   */
+  allowedFields?: readonly string[];
+
+  /**
+   * When true, payload values are redacted by default unless their field name
+   * is present in allowedFields.
+   *
+   * @default true
+   */
+  allowlistOnly?: boolean;
 }
 
 const DEFAULT_OPTIONS: Required<SanitizeOptions> = {
@@ -92,33 +108,68 @@ const DEFAULT_OPTIONS: Required<SanitizeOptions> = {
   sanitizeRequestData: true,
   sanitizeResponseData: true,
   sanitizeUrlParams: true,
+  allowedFields: [],
+  allowlistOnly: true,
 };
 
 // Create a redaction value once
 const getRedactionValue = (char: string) => char.repeat(8);
 
+type LookupCollections = {
+  sensitiveFields: string[];
+  sensitiveFieldsSet: Set<string>;
+  sensitiveHeaders: string[];
+  sensitiveHeadersSet: Set<string>;
+  allowedFieldsSet: Set<string>;
+};
+
+const lookupCache = new Map<string, LookupCollections>();
+
+function normalizeList(values: readonly string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ).sort();
+}
+
 /**
- * Creates sets of lowercase sensitive fields and headers for faster lookups
+ * Creates sets of lowercase sensitive fields and headers for faster lookups.
+ * Results are memoized by option shape to avoid rebuilding identical Sets.
  */
-function createSensitiveSets(options: Required<SanitizeOptions>) {
-  // Create lowercase sets for O(1) lookups
-  const sensitiveFieldsSet = new Set([
-    ...DEFAULT_SENSITIVE_FIELDS,
-    ...options.sensitiveFields
-  ].map(field => field.toLowerCase()));
-  
-  const sensitiveHeadersSet = new Set([
-    ...DEFAULT_SENSITIVE_HEADERS,
-    ...options.sensitiveHeaders
-  ].map(header => header.toLowerCase()));
-  
-  return { sensitiveFieldsSet, sensitiveHeadersSet };
+function createLookupCollections(options: Required<SanitizeOptions>): LookupCollections {
+  const sensitiveFields = normalizeList([...DEFAULT_SENSITIVE_FIELDS, ...options.sensitiveFields]);
+  const sensitiveHeaders = normalizeList([...DEFAULT_SENSITIVE_HEADERS, ...options.sensitiveHeaders]);
+  const allowedFields = normalizeList(options.allowedFields);
+  const cacheKey = [sensitiveFields.join('|'), sensitiveHeaders.join('|'), allowedFields.join('|')].join('::');
+  const cached = lookupCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const collections: LookupCollections = {
+    sensitiveFields,
+    sensitiveFieldsSet: new Set(sensitiveFields),
+    sensitiveHeaders,
+    sensitiveHeadersSet: new Set(sensitiveHeaders),
+    allowedFieldsSet: new Set(allowedFields),
+  };
+
+  lookupCache.set(cacheKey, collections);
+  return collections;
+}
+
+function isAllowedKey(key: string, allowedFieldsSet: Set<string>): boolean {
+  return allowedFieldsSet.has(key.toLowerCase());
 }
 
 /**
  * Checks if a key contains any sensitive field name
  */
-function isSensitiveKey(key: string, sensitiveFieldsSet: Set<string>): boolean {
+function isSensitiveKey(key: string, sensitiveFieldsSet: Set<string>, sensitiveFields: string[]): boolean {
   const lowerKey = key.toLowerCase();
   
   // Direct match is fastest
@@ -126,8 +177,8 @@ function isSensitiveKey(key: string, sensitiveFieldsSet: Set<string>): boolean {
     return true;
   }
   
-  // Check if the key includes any sensitive field - use Array.from for compatibility
-  for (const field of Array.from(sensitiveFieldsSet)) {
+  // Check if the key includes any sensitive field
+  for (const field of sensitiveFields) {
     if (lowerKey.includes(field)) {
       return true;
     }
@@ -143,49 +194,80 @@ function isSensitiveKey(key: string, sensitiveFieldsSet: Set<string>): boolean {
  * @returns Sanitized data object
  */
 export function sanitizeData(
-  data: Record<string, any> | null | undefined,
+  data: Record<string, unknown> | null | undefined,
   options: SanitizeOptions = {},
-): Record<string, any> | null | undefined {
+): Record<string, unknown> | null | undefined {
   if (!data) return data;
   
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
-  const { sensitiveFieldsSet } = createSensitiveSets(mergedOptions);
+  const lookups = createLookupCollections(mergedOptions);
   const redactionValue = getRedactionValue(mergedOptions.redactionChar);
-  
-  // Use structuredClone for better performance if available
-  const sanitized = typeof structuredClone === 'function' 
-    ? structuredClone(data) 
-    : JSON.parse(JSON.stringify(data));
-  
-  // Recursively sanitize the object
-  function recursiveSanitize(obj: Record<string, any>) {
-    if (!obj || typeof obj !== 'object') return;
-    
-    // Handle arrays
-    if (Array.isArray(obj)) {
-      for (let i = 0; i < obj.length; i++) {
-        if (obj[i] && typeof obj[i] === 'object') {
-          recursiveSanitize(obj[i]);
-        }
-      }
-      return;
+  const seen = new WeakMap<object, unknown>();
+
+  const sanitizeValue = (value: unknown, keyHint?: string): unknown => {
+    if (value === null || value === undefined) {
+      return value;
     }
-    
-    // Handle objects
-    for (const key of Object.keys(obj)) {
-      // Check if current key is sensitive
-      if (isSensitiveKey(key, sensitiveFieldsSet)) {
-        obj[key] = redactionValue;
-      } 
-      // If it's an object, recursively check it
-      else if (obj[key] && typeof obj[key] === 'object') {
-        recursiveSanitize(obj[key]);
+
+    if (typeof value !== 'object') {
+      if (!mergedOptions.allowlistOnly) {
+        return value;
       }
+
+      return keyHint && isAllowedKey(keyHint, lookups.allowedFieldsSet) ? value : redactionValue;
     }
-  }
-  
-  recursiveSanitize(sanitized);
-  return sanitized;
+
+    if (value instanceof Date) {
+      if (mergedOptions.allowlistOnly && (!keyHint || !isAllowedKey(keyHint, lookups.allowedFieldsSet))) {
+        return redactionValue;
+      }
+      return new Date(value.getTime());
+    }
+
+    const seenValue = seen.get(value);
+    if (seenValue) {
+      return seenValue;
+    }
+
+    if (Array.isArray(value)) {
+      const sanitizedArray: unknown[] = [];
+      seen.set(value, sanitizedArray);
+
+      value.forEach((entry, index) => {
+        sanitizedArray[index] = sanitizeValue(entry);
+      });
+
+      return sanitizedArray;
+    }
+
+    const sanitizedObject: Record<string, unknown> = {};
+    seen.set(value, sanitizedObject);
+
+    Object.keys(value as Record<string, unknown>).forEach((key) => {
+      const currentValue = (value as Record<string, unknown>)[key];
+
+      if (isSensitiveKey(key, lookups.sensitiveFieldsSet, lookups.sensitiveFields)) {
+        sanitizedObject[key] = redactionValue;
+        return;
+      }
+
+      if (currentValue && typeof currentValue === 'object') {
+        sanitizedObject[key] = sanitizeValue(currentValue, key);
+        return;
+      }
+
+      if (mergedOptions.allowlistOnly && !isAllowedKey(key, lookups.allowedFieldsSet)) {
+        sanitizedObject[key] = redactionValue;
+        return;
+      }
+
+      sanitizedObject[key] = currentValue;
+    });
+
+    return sanitizedObject;
+  };
+
+  return sanitizeValue(data) as Record<string, unknown>;
 }
 
 /**
@@ -195,13 +277,13 @@ export function sanitizeData(
  * @returns Sanitized headers object
  */
 export function sanitizeHeaders(
-  headers: Record<string, any> | null | undefined,
+  headers: Record<string, unknown> | null | undefined,
   options: SanitizeOptions = {},
-): Record<string, any> | null | undefined {
+): Record<string, unknown> | null | undefined {
   if (!headers) return headers;
   
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
-  const { sensitiveHeadersSet } = createSensitiveSets(mergedOptions);
+  const lookups = createLookupCollections(mergedOptions);
   
   const redactionValue = getRedactionValue(mergedOptions.redactionChar);
   const sanitized = { ...headers };
@@ -210,8 +292,10 @@ export function sanitizeHeaders(
     const lowerKey = key.toLowerCase();
     
     // Check if the header is sensitive
-    if (sensitiveHeadersSet.has(lowerKey) || 
-        Array.from(sensitiveHeadersSet).some(h => lowerKey.includes(h))) {
+    if (
+      lookups.sensitiveHeadersSet.has(lowerKey) ||
+      lookups.sensitiveHeaders.some((header) => lowerKey.includes(header))
+    ) {
       sanitized[key] = redactionValue;
     }
   }
@@ -234,35 +318,45 @@ export function sanitizeUrl(
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
   if (!mergedOptions.sanitizeUrlParams) return url;
   
-  const { sensitiveFieldsSet } = createSensitiveSets(mergedOptions);
+  const lookups = createLookupCollections(mergedOptions);
   const redactionValue = getRedactionValue(mergedOptions.redactionChar);
   
   try {
-    // Fast path - if URL has no query params, return as is
     if (!url.includes('?')) return url;
-    
-    const urlObj = new URL(url);
-    const params = urlObj.searchParams;
+
+    const hashIndex = url.indexOf('#');
+    const hash = hashIndex === -1 ? '' : url.slice(hashIndex);
+    const withoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
+    const queryIndex = withoutHash.indexOf('?');
+
+    if (queryIndex === -1) {
+      return url;
+    }
+
+    const base = withoutHash.slice(0, queryIndex);
+    const query = withoutHash.slice(queryIndex + 1);
+
+    if (!query) {
+      return url;
+    }
+
+    const params = new URLSearchParams(query);
     let sanitized = false;
     
-    // Manual iteration of query parameters for compatibility
     const paramKeys = new Set<string>();
-    // Add all keys to set
     params.forEach((_, key) => {
       paramKeys.add(key);
     });
     
-    // Check each key
     paramKeys.forEach(key => {
-      if (isSensitiveKey(key, sensitiveFieldsSet)) {
+      if (isSensitiveKey(key, lookups.sensitiveFieldsSet, lookups.sensitiveFields)) {
         params.set(key, redactionValue);
         sanitized = true;
       }
     });
     
-    return sanitized ? urlObj.toString() : url;
-  } catch (e) {
-    // If URL parsing fails, fallback to string
+    return sanitized ? `${base}?${params.toString()}${hash}` : url;
+  } catch {
     return url;
   }
 } 

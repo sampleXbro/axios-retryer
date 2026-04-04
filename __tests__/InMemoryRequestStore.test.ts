@@ -9,8 +9,8 @@ describe('InMemoryRequestStore', () => {
 
     beforeEach(() => {
         store = new InMemoryRequestStore(100, () => {});
-        mockRequest1 = { url: 'http://example.com/request1', method: 'GET', __requestId: 'ID1' } as AxiosRequestConfig;
-        mockRequest2 = { url: 'http://example.com/request2', method: 'POST', __requestId: 'ID2' } as AxiosRequestConfig;
+        mockRequest1 = { url: 'http://example.com/request1', method: 'GET', __axiosRetryer: { requestId: 'ID1' } } as AxiosRequestConfig;
+        mockRequest2 = { url: 'http://example.com/request2', method: 'POST', __axiosRetryer: { requestId: 'ID2' } } as AxiosRequestConfig;
     });
 
     describe('add', () => {
@@ -32,7 +32,7 @@ describe('InMemoryRequestStore', () => {
             const mockRequest3 = {
                 url: 'http://example.com/request3',
                 method: 'PUT',
-                __requestId: 'ID3'
+                __axiosRetryer: { requestId: 'ID3' }
             } as AxiosRequestConfig;
 
             store.add(mockRequest1);

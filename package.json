@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "1.5.4",
+  "version": "2.0.0",
   "description": "TypeScript-first Axios retry library with concurrency limits, request priority, token refresh, response caching, and circuit breaker plugins.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -11,7 +11,8 @@
     "url": "git+https://github.com/sampleXbro/axios-retryer.git"
   },
   "scripts": {
-    "build": "mkdir -p stats && rollup -c --bundleConfigAsCjs",
+    "build": "rm -rf dist && mkdir -p stats && rollup -c --bundleConfigAsCjs",
+    "build:browser": "rm -rf dist/browser && mkdir -p stats && BUILD_BROWSER=true rollup -c --bundleConfigAsCjs",
     "analyze": "open stats/bundle-stats-*.html",
     "prepare": "npm run build",
     "test": "jest --coverage --silent",
@@ -58,21 +59,29 @@
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "axios": ">=1.0.0"
+    "axios": ">=1.7.4"
   },
   "files": [
-    "dist"
+    "dist/index.cjs.js",
+    "dist/index.esm.js",
+    "dist/chunks",
+    "dist/plugins",
+    "dist/types"
   ],
   "directories": {
     "lib": "dist"
   },
-  "browser": "dist/browser/axios-retryer.min.js",
   "exports": {
     ".": {
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.esm.js",
       "require": "./dist/index.cjs.js",
       "default": "./dist/index.esm.js"
+    },
+    "./plugins": {
+      "types": "./dist/types/plugins/index.d.ts",
+      "import": "./dist/plugins/index.esm.js",
+      "require": "./dist/plugins/index.cjs.js"
     },
     "./plugins/CachingPlugin": {
       "types": "./dist/types/plugins/CachingPlugin/index.d.ts",
@@ -88,6 +97,26 @@
       "types": "./dist/types/plugins/TokenRefreshPlugin/index.d.ts",
       "import": "./dist/plugins/TokenRefreshPlugin.esm.js",
       "require": "./dist/plugins/TokenRefreshPlugin.cjs.js"
+    },
+    "./plugins/ManualRetryPlugin": {
+      "types": "./dist/types/plugins/ManualRetryPlugin/index.d.ts",
+      "import": "./dist/plugins/ManualRetryPlugin.esm.js",
+      "require": "./dist/plugins/ManualRetryPlugin.cjs.js"
+    },
+    "./plugins/DebugSanitizationPlugin": {
+      "types": "./dist/types/plugins/DebugSanitizationPlugin/index.d.ts",
+      "import": "./dist/plugins/DebugSanitizationPlugin.esm.js",
+      "require": "./dist/plugins/DebugSanitizationPlugin.cjs.js"
+    },
+    "./plugins/CriticalRequestPlugin": {
+      "types": "./dist/types/plugins/CriticalRequestPlugin/index.d.ts",
+      "import": "./dist/plugins/CriticalRequestPlugin.esm.js",
+      "require": "./dist/plugins/CriticalRequestPlugin.cjs.js"
+    },
+    "./plugins/MetricsPlugin": {
+      "types": "./dist/types/plugins/MetricsPlugin/index.d.ts",
+      "import": "./dist/plugins/MetricsPlugin.esm.js",
+      "require": "./dist/plugins/MetricsPlugin.cjs.js"
     },
     "./package.json": "./package.json"
   },

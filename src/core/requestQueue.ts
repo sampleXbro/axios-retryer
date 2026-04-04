@@ -5,11 +5,13 @@ import { AxiosError } from 'axios';
 
 import { QueueFullError } from './errors/QueueFullError';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
+import { ensureRequestMetadata, getRequestMetadata } from '../utils/requestMetadata';
 
 interface EnqueuedItem {
   config: AxiosRequestConfig;
   resolve: (cfg: AxiosRequestConfig) => void;
   reject: (err: unknown) => void;
+  insertionOrder?: number;
 }
 
 /**
@@ -20,6 +22,7 @@ class PriorityHeap {
   private heap: EnqueuedItem[] = [];
   private compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number;
   private insertionCounter = 0; // To ensure stable ordering
+  private sortedCache: EnqueuedItem[] | null = null;
 
   constructor(compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number) {
     this.compareFn = compareFn;
@@ -34,9 +37,10 @@ class PriorityHeap {
    */
   push(item: EnqueuedItem): void {
     // Add insertion order to ensure stability
-    (item as any).__insertionOrder = this.insertionCounter++;
+    item.insertionOrder = this.insertionCounter++;
     this.heap.push(item);
     this.heapifyUp(this.heap.length - 1);
+    this.sortedCache = null;
   }
 
   /**
@@ -44,11 +48,15 @@ class PriorityHeap {
    */
   shift(): EnqueuedItem | undefined {
     if (this.heap.length === 0) return undefined;
-    if (this.heap.length === 1) return this.heap.pop();
+    if (this.heap.length === 1) {
+      this.sortedCache = null;
+      return this.heap.pop();
+    }
 
     const root = this.heap[0];
     this.heap[0] = this.heap.pop()!;
     this.heapifyDown(0);
+    this.sortedCache = null;
     return root;
   }
 
@@ -64,10 +72,11 @@ class PriorityHeap {
    * This is still O(n) but only called during cancellations
    */
   removeByRequestId(requestId: string): EnqueuedItem | undefined {
-    const index = this.heap.findIndex(item => item.config.__requestId === requestId);
+    const index = this.heap.findIndex((item) => getRequestMetadata(item.config)?.requestId === requestId);
     if (index === -1) return undefined;
 
     const item = this.heap[index];
+    this.sortedCache = null;
     
     // Replace with last element and restore heap property
     if (index === this.heap.length - 1) {
@@ -90,16 +99,19 @@ class PriorityHeap {
     const items = [...this.heap];
     this.heap.length = 0;
     this.insertionCounter = 0;
+    this.sortedCache = null;
     return items;
   }
 
   /**
-   * Get a copy of all items (for debugging/testing)
-   * Returns items in priority order (not heap order)
+   * Get a cached, sorted snapshot of all items for debugging/testing.
    */
   getAll(): EnqueuedItem[] {
-    // Return items sorted by priority for testing
-    return [...this.heap].sort(this.compareFn);
+    if (!this.sortedCache) {
+      this.sortedCache = [...this.heap].sort(this.compareFn);
+    }
+
+    return [...this.sortedCache];
   }
 
   private heapifyUp(index: number): void {
@@ -181,6 +193,12 @@ export class RequestQueue {
     if (maxConcurrent < 1) {
       throw new Error(`maxConcurrent must be >= 1. Received: ${maxConcurrent}`);
     }
+    if (!Number.isInteger(queueDelay) || queueDelay < 0) {
+      throw new Error(`queueDelay must be >= 0. Received: ${queueDelay}`);
+    }
+    if (maxQueueSize !== undefined && (!Number.isInteger(maxQueueSize) || maxQueueSize < 1)) {
+      throw new Error(`maxQueueSize must be >= 1 when provided. Received: ${maxQueueSize}`);
+    }
     this.maxConcurrent = maxConcurrent;
     this.queueDelay = queueDelay;
     this.maxQueueSize = maxQueueSize;
@@ -195,6 +213,8 @@ export class RequestQueue {
    * @throws {QueueFullError} When the queue is at maximum capacity
    */
   public enqueue(config: AxiosRequestConfig): Promise<AxiosRequestConfig> {
+    ensureRequestMetadata(config);
+
     // Check if the queue has been destroyed
     if (this.isDestroyed) {
       return Promise.reject(new AxiosError('Queue has been destroyed', 'QUEUE_DESTROYED'));
@@ -210,27 +230,6 @@ export class RequestQueue {
       this.waiting.push(item); // Now O(log n) instead of O(n)
       this.tryDequeue();
     });
-  }
-
-  /**
-   * Starts a request synchronously when capacity is available and there is no backlog.
-   * This avoids the async queue path for the common healthy-case request.
-   */
-  public tryAcquireImmediate(config: AxiosRequestConfig): boolean {
-    if (this.isDestroyed) {
-      return false;
-    }
-
-    if (this.waiting.length > 0 || this.inProgressCount >= this.maxConcurrent) {
-      return false;
-    }
-
-    if (!this.canProcess(config)) {
-      return false;
-    }
-
-    this.inProgressCount++;
-    return true;
   }
 
   /**
@@ -280,7 +279,6 @@ export class RequestQueue {
       ),
     );
 
-    // Cleanup large references
     this.cleanupRequest(request);
 
     return true;
@@ -302,7 +300,6 @@ export class RequestQueue {
           item.config as InternalAxiosRequestConfig,
         ),
       );
-      // Cleanup large references
       this.cleanupRequest(item);
     }
   }
@@ -389,40 +386,29 @@ export class RequestQueue {
    * Compare by priority desc, then timestamp asc, then insertion order for stability.
    */
   private comparePriority(a: EnqueuedItem, b: EnqueuedItem): number {
-    const pA = a.config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-    const pB = b.config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-    if (pA !== pB) {
+    const priorityA = getRequestMetadata(a.config)?.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
+    const priorityB = getRequestMetadata(b.config)?.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
+    if (priorityA !== priorityB) {
       // higher priority first => return negative if a > b
-      return pB - pA;
+      return priorityB - priorityA;
     }
     // tie-break by earliest timestamp first
-    const tA = a.config.__timestamp ?? 0;
-    const tB = b.config.__timestamp ?? 0;
+    const tA = getRequestMetadata(a.config)?.timestamp ?? 0;
+    const tB = getRequestMetadata(b.config)?.timestamp ?? 0;
     if (tA !== tB) {
       return tA - tB;
     }
     // final tie-break by insertion order for stability
-    const iA = (a as any).__insertionOrder ?? 0;
-    const iB = (b as any).__insertionOrder ?? 0;
+    const iA = a.insertionOrder ?? 0;
+    const iB = b.insertionOrder ?? 0;
     return iA - iB;
   }
   
   /**
-   * Helper to clean up potentially large references in requests
-   * to aid garbage collection
+   * Clear callback references once the queue item has been fully handled.
    */
   private cleanupRequest(item: EnqueuedItem): void {
-    // Clear out large properties that might retain memory
-    // Only clear data/body as we don't want to affect the actual request
-    // if it's still in flight
-    if (item.config.data) {
-      // Keep the original reference but null out contents
-      // since the reference might be needed elsewhere
-      if (typeof item.config.data === 'object' && item.config.data !== null) {
-        // Only clean if we're done with this request
-        // @ts-ignore - intentionally clearing data properties
-        item.config.__cleanedForGC = true;
-      }
-    }
+    item.resolve = () => {};
+    item.reject = () => {};
   }
 }

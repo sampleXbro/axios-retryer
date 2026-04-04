@@ -2,7 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.5.4 - 01.04.2026
+## 2.0.0 - 04.04.2026
+
+> `1.5.4` was prepared but never published. The fixes and API cleanup planned for that release ship in `2.0.0`.
+
+### ⚠️ Breaking Changes
+- **Core sanitization options moved to `DebugSanitizationPlugin`.** The root `RetryManager` options no longer accept `enableSanitization` or `sanitizeOptions`; install the sanitization plugin explicitly when you need redacted debug logs.
+- **Populated retry metrics now require `MetricsPlugin`.** `getMetrics()` still returns the full metrics shape, but live counters and `onMetricsUpdated` reporting are now opt-in to keep the core smaller.
+- **The browser bundle is now an optional local build.** Generate it with `npm run build:browser` when you need a script-tag artifact.
+- **`maxRefreshAttempts` now means the exact number of refresh attempts.** Previously the loop ran `maxRefreshAttempts + 1` times, so `maxRefreshAttempts: 3` silently produced 4 attempts. If you relied on the old (off-by-one) behavior, decrease your value by 1 (e.g. `3` → `2` to keep the same total attempts).
 
 ### 🐛 Bug Fixes
 - Fixed `TokenRefreshPlugin` replay flow so refreshed business requests go back through `RetryManager` instead of bypassing queueing, metrics, cancellation handling, and other plugins
@@ -20,8 +28,12 @@ All notable changes to this project will be documented in this file.
 
 ### 🧪 Testing
 - Added regression coverage for token refresh replay, interceptor cleanup, queue wait metrics, retry-disabled terminal failures, request store eviction, and benchmark helper utilities
-- Full suite validated at `43/43` test suites and `439/439` tests passing
+- Full suite validated at `55/55` test suites and `519/519` tests passing
 - Release benchmark suite validated at `7/7` benchmarks passing
+
+### 📚 Documentation
+- Updated the README to reflect the current core-vs-plugin public API, plugin barrel imports, metrics plugin, and sanitization plugin
+- Added a dedicated `1.x` → `2.0` migration guide
 
 ## 1.5.3 - 04.05.2025
 
@@ -109,7 +121,7 @@ All notable changes to this project will be documented in this file.
 
 ## 1.4.1 - 09.04.2025
 - **Queue Size Limits**: Added the `maxQueueSize` option to limit the number of requests that can be queued. When the queue is full, new requests will be rejected with `QueueFullError`. Prevents memory issues during high load.
-- **Sensitive Data Protection**: Added automatic redaction of tokens, passwords, and other sensitive information in logs and error reporting. Configurable via `enableSanitization` and `sanitizeOptions`.
+- **Sensitive Data Protection**: Added redaction support for tokens, passwords, and other sensitive information in logs and error reporting. This now lives on the sanitization plugin surface.
 - **Enhanced CircuitBreakerPlugin**: Added advanced features to the CircuitBreaker including sliding window analysis, adaptive timeouts, URL exclusion patterns, configurable success thresholds, and detailed monitoring metrics for more sophisticated failure detection and recovery.
 - **Tree-Shakeable React Hooks**: Made React hooks individually importable via subpaths (e.g., `import { useGet } from 'axios-retryer/react/hooks/useGet'`) to reduce bundle size through tree shaking.
 - **Custom Error Detection for TokenRefreshPlugin**: Added support for detecting auth errors in 200 OK responses through customErrorDetector option, useful for GraphQL and other APIs that return errors in the response body rather than HTTP status codes.

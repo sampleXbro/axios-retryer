@@ -92,7 +92,7 @@ describe('CachingPlugin', () => {
     expect(mock.history.post.length).toBe(2);
   });
 
-  test('should not cache when cacheOnlyRetriedRequests is true and __isRetrying is false', async () => {
+  test('should not cache when cacheOnlyRetriedRequests is true and __axiosRetryer.isRetrying is false', async () => {
     // Set cacheOnlyRetriedRequests option to true.
     const options: CachingPluginOptions = { cacheOnlyRetriedRequests: true };
     cachingPlugin = new CachingPlugin(options);
@@ -101,12 +101,12 @@ describe('CachingPlugin', () => {
     const url = '/test';
     const responseData = { data: 'response' };
 
-    // First GET: request does NOT have __isRetrying set.
+    // First GET: request does NOT have __axiosRetryer.isRetrying set.
     mock.onGet(url).replyOnce(200, responseData);
     const res1 = await axiosInstance.get(url);
     expect(res1.data).toEqual(responseData);
 
-    // Second GET: still without __isRetrying, so should not be cached.
+    // Second GET: still without __axiosRetryer.isRetrying, so should not be cached.
     mock.onGet(url).replyOnce(200, responseData);
     const res2 = await axiosInstance.get(url);
     expect(res2.data).toEqual(responseData);
@@ -115,7 +115,7 @@ describe('CachingPlugin', () => {
     expect(mock.history.get.length).toBe(2);
   });
 
-  test('should cache when cacheOnlyRetriedRequests is true and __isRetrying is true', async () => {
+  test('should cache when cacheOnlyRetriedRequests is true and __axiosRetryer.isRetrying is true', async () => {
     const options: CachingPluginOptions = { cacheOnlyRetriedRequests: true };
     cachingPlugin = new CachingPlugin(options);
     cachingPlugin.initialize(fakeManager as unknown as RetryManager);
@@ -123,13 +123,13 @@ describe('CachingPlugin', () => {
     const url = '/test';
     const responseData = { data: 'response' };
 
-    // First GET with __isRetrying true.
+    // First GET with __axiosRetryer.isRetrying true.
     mock.onGet(url).replyOnce(200, responseData);
-    const res1 = await axiosInstance.get(url, { __isRetrying: true });
+    const res1 = await axiosInstance.get(url, { __axiosRetryer: { isRetrying: true } });
     expect(res1.data).toEqual(responseData);
 
-    // Second GET with __isRetrying true should hit cache.
-    const res2 = await axiosInstance.get(url, { __isRetrying: true });
+    // Second GET with __axiosRetryer.isRetrying true should hit cache.
+    const res2 = await axiosInstance.get(url, { __axiosRetryer: { isRetrying: true } });
     expect(res2.data).toEqual(responseData);
 
     // Only one network call should have been made.
@@ -470,7 +470,7 @@ describe('CachingPlugin', () => {
       cachingPlugin.onBeforeDestroyed();
     });
 
-    test('should cache a POST request when explicitly enabled via __cachingOptions', async () => {
+    test('should cache a POST request when explicitly enabled via __axiosRetryer.cachingOptions', async () => {
       // Setup response for POST request
       const url = '/should-cache-post';
       const postData = { key: 'value' };
@@ -478,8 +478,10 @@ describe('CachingPlugin', () => {
 
       // Make POST request with cache enabled
       const res1 = await axiosInstance.post(url, postData, {
-        __cachingOptions: {
-          cache: true
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: true
+          }
         }
       });
       expect(res1.data).toEqual({ success: true });
@@ -487,25 +489,29 @@ describe('CachingPlugin', () => {
 
       // Second request should be served from cache
       const res2 = await axiosInstance.post(url, postData, {
-        __cachingOptions: {
-          cache: true
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: true
+          }
         }
       });
       expect(res2.data).toEqual({ success: true });
-      
+
       // No new network call should have been made
       expect(mockAxios.history.post.length).toBe(1);
     });
 
-    test('should not cache a GET request when explicitly disabled via __cachingOptions', async () => {
+    test('should not cache a GET request when explicitly disabled via __axiosRetryer.cachingOptions', async () => {
       // Setup response for GET request
       const url = '/do-not-cache-get';
       mockAxios.onGet(url).reply(200, { data: 'response' });
 
       // Make GET request with cache disabled
       const res1 = await axiosInstance.get(url, {
-        __cachingOptions: {
-          cache: false
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: false
+          }
         }
       });
       expect(res1.data).toEqual({ data: 'response' });
@@ -513,25 +519,29 @@ describe('CachingPlugin', () => {
 
       // Second request should NOT be served from cache
       const res2 = await axiosInstance.get(url, {
-        __cachingOptions: {
-          cache: false
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: false
+          }
         }
       });
       expect(res2.data).toEqual({ data: 'response' });
-      
+
       // A new network call should have been made
       expect(mockAxios.history.get.length).toBe(2);
     });
 
-    test('should store custom TTR when provided in __cachingOptions', async () => {
+    test('should store custom TTR when provided in __axiosRetryer.cachingOptions', async () => {
       // This test just ensures TTR is stored in the cache map
       const url = '/custom-ttr';
       mockAxios.onGet(url).replyOnce(200, { data: 'response' });
-      
+
       // Make request with custom TTR
       await axiosInstance.get(url, {
-        __cachingOptions: {
-          ttr: 5000 // 5 seconds
+        __axiosRetryer: {
+          cachingOptions: {
+            ttr: 5000 // 5 seconds
+          }
         }
       });
       

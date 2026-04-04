@@ -1,5 +1,17 @@
 export { CircuitBreakerPlugin } from './CircuitBreakerPlugin';
-export { type CircuitBreakerOptions } from './CircuitBreakerPlugin';
+export {
+  CIRCUIT_BREAKER_SCOPES,
+  CircuitBreakerState,
+  InMemoryCircuitBreakerStateAdapter,
+  type CircuitBreakerFailureRecord,
+  type CircuitBreakerMetrics,
+  type CircuitBreakerOptions,
+  type CircuitBreakerScope,
+  type CircuitBreakerScopeMetrics,
+  type CircuitBreakerAdaptiveTimeoutMetrics,
+  type CircuitBreakerScopeState,
+  type CircuitBreakerStateAdapter,
+} from './CircuitBreakerPlugin';
 
 import { CircuitBreakerPlugin, type CircuitBreakerOptions } from './CircuitBreakerPlugin';
 

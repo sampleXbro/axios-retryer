@@ -107,7 +107,7 @@ describe('RequestQueue Advanced Edge Cases', () => {
     
     // First send the initial request to block execution
     const initialPromise = retryManager.axiosInstance.get('/initial', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },
     });
     
     // Wait for the initial request to start processing
@@ -115,19 +115,19 @@ describe('RequestQueue Advanced Edge Cases', () => {
     
     // Queue requests in priority order
     const lowPromise = retryManager.axiosInstance.get('/low', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },
     });
-    
+
     const mediumPromise = retryManager.axiosInstance.get('/medium', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM },
     });
-    
+
     const highPromise = retryManager.axiosInstance.get('/high', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },
     });
-    
+
     const criticalPromise = retryManager.axiosInstance.get('/critical', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },
     });
     
     await Promise.all([initialPromise, lowPromise, mediumPromise, highPromise, criticalPromise]);
@@ -179,7 +179,7 @@ describe('RequestQueue Advanced Edge Cases', () => {
     
     // First start a high priority request
     const highPriorityPromise = retryManager.axiosInstance.get('/high-priority-slow', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },
     });
     
     // Wait a bit to make sure the high priority request gets started
@@ -187,12 +187,12 @@ describe('RequestQueue Advanced Edge Cases', () => {
     
     // Then queue a medium priority which should execute
     const mediumPriorityPromise = retryManager.axiosInstance.get('/medium-priority', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM },
     });
     
     // Then a low priority which should be blocked
     const lowPriorityPromise = retryManager.axiosInstance.get('/low-priority', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },
     });
     
     await Promise.all([highPriorityPromise, mediumPriorityPromise, lowPriorityPromise]);
@@ -336,11 +336,11 @@ describe('RequestQueue Advanced Edge Cases', () => {
     
     // Send both requests with their natural priorities
     const lowPromise = retryManager.axiosInstance.get('/low-priority', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },
     });
-    
+
     const mediumPromise = retryManager.axiosInstance.get('/medium-priority', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM,
+      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM },
     });
     
     // After blocker finishes, the medium should run before low due to priority
@@ -383,7 +383,7 @@ describe('RequestQueue Advanced Edge Cases', () => {
     });
     
     // Start the first request which will fail and then retry
-    const firstPromise = retryManager.axiosInstance.get('/first-operation', {__priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL});
+    const firstPromise = retryManager.axiosInstance.get('/first-operation', {__axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL }});
     
     // Wait briefly so the retry is queued
     await new Promise(resolve => setTimeout(resolve, 100));

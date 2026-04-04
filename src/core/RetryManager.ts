@@ -7,21 +7,28 @@ import { RetryLogger } from '../services/logger';
 import { InMemoryRequestStore } from '../store/InMemoryRequestStore';
 import type {
   AxiosRetryerDetailedMetrics,
-  AxiosRetryerMetrics,
   AxiosRetryerRequestPriority,
+  CoreRetryEvents,
+  CriticalRequestProvider,
+  MetricsRecorder,
   RequestStore,
+  RetryEventArgs,
+  RetryEventListener,
   RetryHooks,
+  RetryManagerEvents,
   RetryManagerOptions,
   RetryMode,
   RetryPlugin,
   RetryStrategy,
 } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../types';
-import { sanitizeData, sanitizeHeaders, sanitizeUrl, type SanitizeOptions } from '../utils/sanitize';
 import { DefaultRetryStrategy } from './strategies/DefaultRetryStrategy';
+import { EventBus } from './EventBus';
+import { PluginRegistry } from './PluginRegistry';
 import { RequestQueue } from './requestQueue';
+import { parseRetryAfterMs, RetryScheduler } from './RetryScheduler';
+import { assignRequestMetadata, ensureRequestMetadata, getRequestMetadata, setRequestMetadataValue } from '../utils/requestMetadata';
 
-// Default configuration constants
 const DEFAULT_CONFIG = {
   MODE: RETRY_MODES.AUTOMATIC,
   RETRIES: 3,
@@ -30,117 +37,29 @@ const DEFAULT_CONFIG = {
   DEBUG: false,
   MAX_REQUESTS_TO_STORE: 200,
   MAX_CONCURRENT_REQUESTS: 5,
-  ENABLE_SANITIZATION: true,
 };
 
-const createInitialMetrics = (): AxiosRetryerMetrics => ({
+const EMPTY_METRICS: AxiosRetryerDetailedMetrics = {
   totalRequests: 0,
   successfulRetries: 0,
   failedRetries: 0,
   completelyFailedRequests: 0,
   canceledRequests: 0,
   completelyFailedCriticalRequests: 0,
-  errorTypes: {
-    network: 0,
-    server5xx: 0,
-    client4xx: 0,
-    cancelled: 0,
-  },
+  errorTypesDistribution: { network: 0, server5xx: 0, client4xx: 0, cancelled: 0 },
   retryAttemptsDistribution: {},
-  retryPrioritiesDistribution: {},
   requestCountsByPriority: {},
-  queueWaitDuration: 0,
-  retryDelayDuration: 0,
-});
-
-const initialPriorityMetrics = {
-  total: 0,
-  successes: 0,
-  failures: 0,
+  avgQueueWait: 0,
+  avgRetryDelay: 0,
+  priorityMetrics: [],
+  timerHealth: { activeTimers: 0, activeRetryTimers: 0, healthScore: 0 },
 };
-
-/**
- * Manages timers to prevent accumulation and event loop congestion
- */
-class TimerManager {
-  private activeTimers = new Set<ReturnType<typeof setTimeout>>();
-  private isDestroyed = false;
-
-  /**
-   * Creates a cancellable timeout with automatic cleanup
-   */
-  public createTimeout(callback: () => void, delay: number): { timerId: ReturnType<typeof setTimeout>; cancel: () => void } {
-    if (this.isDestroyed) {
-      // If destroyed, execute immediately to prevent hanging promises
-      callback();
-      return { timerId: null as any, cancel: () => {} };
-    }
-
-    const timerId = setTimeout(() => {
-      this.activeTimers.delete(timerId);
-      if (!this.isDestroyed) {
-        callback();
-      }
-    }, delay);
-
-    this.activeTimers.add(timerId);
-
-    return {
-      timerId,
-      cancel: () => {
-        if (this.activeTimers.has(timerId)) {
-          clearTimeout(timerId);
-          this.activeTimers.delete(timerId);
-        }
-      }
-    };
-  }
-
-  /**
-   * Creates a cancellable sleep promise
-   */
-  public createSleep(ms: number): { promise: Promise<void>; cancel: () => void } {
-    let cancelFn: () => void = () => {};
-    
-    const promise = new Promise<void>((resolve, reject) => {
-      const { cancel } = this.createTimeout(resolve, ms);
-      cancelFn = () => {
-        cancel();
-        reject(new Error('Sleep cancelled'));
-      };
-    });
-
-    return { promise, cancel: cancelFn };
-  }
-
-  /**
-   * Get count of active timers for monitoring
-   */
-  public getActiveTimerCount(): number {
-    return this.activeTimers.size;
-  }
-
-  /**
-   * Clear all active timers and mark as destroyed
-   */
-  public destroy(): void {
-    this.isDestroyed = true;
-    this.activeTimers.forEach(timerId => {
-      clearTimeout(timerId);
-    });
-    this.activeTimers.clear();
-  }
-}
 
 interface ExtendedAbortController extends AbortController {
-  __priority: number;
+  __priority?: AxiosRetryerRequestPriority;
 }
 
-type HookListeners = {
-  [K in keyof RetryHooks]?: ((...args: Parameters<NonNullable<RetryHooks[K]>>) => void)[];
-};
-
-export class RetryManager {
+export class RetryManager<TPluginEvents extends object = {}> {
   private readonly _axiosInstance: AxiosInstance;
   private readonly mode: RetryMode;
   private readonly retries: number;
@@ -148,40 +67,35 @@ export class RetryManager {
   private readonly throwErrorOnCancelRequest: boolean;
   private readonly debug: boolean;
   private readonly logger: RetryLogger;
-  private readonly hooks?: RetryHooks;
-  private readonly blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
-  private readonly metrics: AxiosRetryerMetrics;
-  private readonly enableSanitization: boolean;
-  private readonly sanitizeOptions: SanitizeOptions;
+  private readonly hooks?: RetryHooks<TPluginEvents>;
+  private _metricsRecorder: MetricsRecorder | null = null;
+  private readonly eventBus: EventBus<TPluginEvents>;
+  private readonly pluginRegistry: PluginRegistry;
+  private readonly retryScheduler: RetryScheduler;
+
   private inRetryProgress = false;
   private retryStrategy: RetryStrategy;
-  private requestStore: RequestStore;
+  public readonly requestStore: RequestStore;
+  public blockingQueueThreshold: AxiosRetryerRequestPriority | undefined;
   private activeRequests: Map<string, ExtendedAbortController>;
   private requestIndex = 0;
-  private plugins: Map<string, RetryPlugin>;
-  private listeners: HookListeners = {};
-  private timerManager: TimerManager;
-  private activeRetryTimers = new Map<string, () => void>(); // Map of requestId to cancel function
+  private _criticalRequestProvider: CriticalRequestProvider | null = null;
 
   private requestQueue: RequestQueue;
   private requestInterceptorId: number | null = null;
   private responseInterceptorId: number | null = null;
 
-  constructor(options: RetryManagerOptions = {}) {
+  constructor(options: RetryManagerOptions<TPluginEvents> = {}) {
     this.debug = options.debug ?? DEFAULT_CONFIG.DEBUG;
     this.logger = new RetryLogger(this.debug);
     this.validateOptions(options);
 
-    this.enableSanitization = options.enableSanitization ?? DEFAULT_CONFIG.ENABLE_SANITIZATION;
-    this.sanitizeOptions = options.sanitizeOptions ?? {};
-    
     this.logger.debug('Initializing RetryManager', {
       options: {
         mode: options.mode,
         retries: options.retries,
         maxConcurrent: options.maxConcurrentRequests,
         maxQueueSize: options.maxQueueSize,
-        enableSanitization: this.enableSanitization,
       },
     });
 
@@ -198,36 +112,67 @@ export class RetryManager {
         undefined,
         this.logger,
       );
-    this.requestStore = new InMemoryRequestStore(
-      options.maxRequestsToStore ?? DEFAULT_CONFIG.MAX_REQUESTS_TO_STORE,
-      this.triggerAndEmit,
-    );
     this.hooks = options.hooks;
+    this.requestStore =
+      options.requestStore ??
+      new InMemoryRequestStore(
+        options.maxRequestsToStore ?? DEFAULT_CONFIG.MAX_REQUESTS_TO_STORE,
+        this.triggerAndEmitInternal,
+      );
     this.activeRequests = new Map();
-    this.plugins = new Map();
-    this.inRetryProgress = false;
+    this.blockingQueueThreshold = options.blockingQueueThreshold;
     this.requestQueue = new RequestQueue(
       options.maxConcurrentRequests ?? DEFAULT_CONFIG.MAX_CONCURRENT_REQUESTS,
       options.queueDelay,
-      this.checkCriticalRequests,
+      this.hasActiveCriticalRequests,
       this.isCriticalRequest,
       options.maxQueueSize,
     );
-    this.blockingQueueThreshold = options.blockingQueueThreshold;
     this._axiosInstance = options.axiosInstance || this.createAxiosInstance();
-    this.metrics = createInitialMetrics();
-
-    this.timerManager = new TimerManager();
+    this.pluginRegistry = new PluginRegistry(this.logger);
+    this.eventBus = new EventBus<TPluginEvents>({
+      hooks: this.hooks,
+      logger: this.logger,
+      getPlugins: () => this.pluginRegistry.getPlugins(),
+    });
+    this.retryScheduler = new RetryScheduler(this.logger, this.retryStrategy);
 
     this.setupInterceptors();
 
     this.logger.debug('RetryManager initialized successfully');
   }
 
-  private validateOptions(options: RetryManagerOptions): void {
+  private validateOptions(options: RetryManagerOptions<TPluginEvents>): void {
     if (options.retries !== undefined && options.retries < 0) {
       this.logger.error('Invalid retries configuration', { retries: options.retries });
       throw new Error('Retries must be a non-negative number');
+    }
+
+    this.assertPositiveIntegerOption(options.maxConcurrentRequests, 'maxConcurrentRequests');
+    this.assertPositiveIntegerOption(options.maxQueueSize, 'maxQueueSize');
+    this.assertPositiveIntegerOption(options.maxRequestsToStore, 'maxRequestsToStore');
+    this.assertNonNegativeIntegerOption(options.queueDelay, 'queueDelay');
+  }
+
+  private assertPositiveIntegerOption(value: number | undefined, optionName: string): void {
+    if (value === undefined) {
+      return;
+    }
+
+    if (!Number.isInteger(value) || value < 1) {
+      this.logger.error(`Invalid ${optionName} configuration`, { [optionName]: value });
+      throw new Error(`${optionName} must be a positive integer`);
+    }
+  }
+
+  private assertNonNegativeIntegerOption(value: number | undefined, optionName: string): void {
+    if (value === undefined) {
+      return;
+    }
+
+    if (!Number.isInteger(value) || value < 0) {
+      this.logger.error(`Invalid ${optionName} configuration`, { [optionName]: value });
+      throw new Error(`${optionName} must be a non-negative integer`);
     }
   }
 
@@ -240,10 +185,16 @@ export class RetryManager {
   }
 
   private generateRequestId(url?: string): string {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(7);
     const urlPart = url ? url.substring(0, 40) : 'unknown';
-    return `${urlPart}-${timestamp}-${random}-${++this.requestIndex}`;
+    const counter = ++this.requestIndex;
+    const uuid =
+      typeof globalThis !== 'undefined' &&
+      typeof globalThis.crypto !== 'undefined' &&
+      typeof globalThis.crypto.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now().toString(36)}-${counter.toString(36)}`;
+
+    return `${urlPart}-${uuid}-${counter}`;
   }
 
   private setupInterceptors = (): void => {
@@ -260,6 +211,18 @@ export class RetryManager {
     );
   };
 
+  private ejectRetryerInterceptors = (): void => {
+    if (this.requestInterceptorId !== null) {
+      this._axiosInstance.interceptors.request.eject(this.requestInterceptorId);
+      this.requestInterceptorId = null;
+    }
+
+    if (this.responseInterceptorId !== null) {
+      this._axiosInstance.interceptors.response.eject(this.responseInterceptorId);
+      this.responseInterceptorId = null;
+    }
+  };
+
   private onRequestError = (error: AxiosError): Promise<AxiosError> => {
     this.logger.error('Request interceptor error', {
       message: error.message,
@@ -271,38 +234,34 @@ export class RetryManager {
 
   private onRequest = async (config: AxiosRequestConfig) => {
     const controller = new AbortController() as ExtendedAbortController;
-    const requestId = config.__requestId ?? this.generateRequestId(config.url);
-    config.__requestId = requestId;
-    config.__timestamp = Date.now();
-    config.__priority = config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-    config.signal = controller.signal;
-    controller.__priority = config.__priority;
+    const metadata = ensureRequestMetadata(config);
+    const requestId = metadata.requestId ?? this.generateRequestId(config.url);
+    const priority = metadata.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
 
-    this.activeRequests.set(requestId, controller);
-    this.metrics.totalRequests++;
-
-    this.logger.debug('New request created', {
+    assignRequestMetadata(config, {
       requestId,
-      url: this.enableSanitization ? sanitizeUrl(config.url, this.sanitizeOptions) : config.url,
-      method: config.method?.toUpperCase(),
-      priority: config.__priority,
-      ...(this.debug ? { headers: this.sanitizeForLogging(config.headers) } : {}),
+      timestamp: Date.now(),
+      priority,
     });
 
-    if (!this.metrics.requestCountsByPriority[config.__priority]) {
-      this.metrics.requestCountsByPriority[config.__priority] = 0;
-    }
-    this.metrics.requestCountsByPriority[config.__priority]++;
+    config.signal = controller.signal;
+    controller.__priority = priority;
+
+    this.activeRequests.set(requestId, controller);
+    this._criticalRequestProvider?.trackRequestStarted(requestId, config);
+    this._metricsRecorder?.recordRequestStart(
+      priority,
+    );
+
+    this.logger.debug('New request created', this.buildRequestLogMeta(config, requestId));
 
     try {
-      // Enqueue request and wait for concurrency slot
       const queueStartTime = Date.now();
       const updatedConfig = await this.requestQueue.enqueue(config);
-      this.metrics.queueWaitDuration += Date.now() - queueStartTime;
+      this._metricsRecorder?.recordQueueWait(Date.now() - queueStartTime);
       return updatedConfig;
     } catch (error) {
-      // If queue is full, error gets propagated directly to the user
-      this.activeRequests.delete(requestId);
+      this.removeActiveRequest(requestId);
       this.logger.error('Queue error when enqueuing request', {
         requestId,
         error,
@@ -313,51 +272,39 @@ export class RetryManager {
 
   private handleRetryProcessFinish = (): void => {
     if (this.activeRequests.size === 0 && this.inRetryProgress) {
-      const failed = this.requestStore.getAll() || [];
-      const failedRequests = failed.length;
-      const failedCritical = failed.filter(this.isCriticalRequest).length;
-
-      this.logger.debug('Retry process finished', {
-        failedRequests,
-        failedCriticalRequests: failedCritical,
-      });
-
-      this.triggerAndEmit('onRetryProcessFinished', this.getMetrics());
+      this.logger.debug('Retry process finished');
+      this.triggerAndEmitInternal('onRetryProcessFinished', this.getMetrics());
       this.inRetryProgress = false;
     }
   };
 
   private onSuccessfulResponse = (response: AxiosResponse): AxiosResponse => {
     const config = response.config;
-    const requestId = config.__requestId;
+    const requestId = getRequestMetadata(config)?.requestId;
     if (requestId) {
-      this.activeRequests.delete(requestId);
+      this.removeActiveRequest(requestId);
     }
     this.requestQueue.markComplete();
 
     this.logger.debug('Request succeeded', {
       requestId,
       status: response.status,
-      retrying: config.__isRetrying,
+      retrying: getRequestMetadata(config)?.isRetrying,
     });
 
-    // eslint-disable-next-line eqeqeq
-    if (config.__isRetrying && config.__priority != undefined) {
-      this.metrics.successfulRetries++;
-      if (!this.metrics.retryPrioritiesDistribution[config.__priority]) {
-        this.metrics.retryPrioritiesDistribution[config.__priority] = { ...initialPriorityMetrics };
-      }
-      this.metrics.retryPrioritiesDistribution[config.__priority].successes++;
-      this.triggerAndEmit('afterRetry', config, true);
-      config.__isRetrying = false;
+    const metadata = getRequestMetadata(config);
+    if (metadata?.isRetrying && metadata.priority !== undefined) {
+      this._metricsRecorder?.recordRetrySuccess(metadata.priority);
+      this.triggerAndEmitInternal('afterRetry', config, true);
+      setRequestMetadataValue(config, 'isRetrying', false);
     }
 
-    if (this.isCriticalRequest(config) && !this.checkCriticalRequests()) {
-      this.triggerAndEmit('onAllCriticalRequestsResolved');
+    if (this.isCriticalRequest(config) && !this.hasActiveCriticalRequests()) {
+      this.triggerAndEmitInternal('onAllCriticalRequestsResolved');
     }
 
     this.handleRetryProcessFinish();
-    this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
+    this.triggerAndEmitInternal('onMetricsUpdated', this.getMetrics());
     return response;
   };
 
@@ -369,92 +316,69 @@ export class RetryManager {
   ): Promise<AxiosResponse> {
     if (!this.inRetryProgress) {
       this.logger.debug('Starting retry process');
-      this.triggerAndEmit('onRetryProcessStarted');
+      this.triggerAndEmitInternal('onRetryProcessStarted');
       this.inRetryProgress = true;
     }
 
-    config.__retryAttempt = attempt;
-    config.__isRetrying = true;
+    assignRequestMetadata(config, {
+      retryAttempt: attempt,
+      isRetrying: true,
+    });
 
-    const delay = this.retryStrategy.getDelay(Number(config.__retryAttempt), maxRetries, config.__backoffType);
+    const metadata = getRequestMetadata(config);
+    const delay = this.retryScheduler.getRetryDelay(config, Number(metadata?.retryAttempt ?? attempt), maxRetries);
 
     this.logger.debug('Scheduling retry attempt', {
-      requestId: config.__requestId,
+      requestId: metadata?.requestId,
       attempt,
       maxRetries,
       delayMs: delay,
-      backoffType: config.__backoffType || 'default',
+      backoffType: metadata?.backoffType || 'default',
     });
 
-    // Use cancellable sleep from timer manager
-    const { promise: sleepPromise, cancel } = this.timerManager.createSleep(delay);
-    
-    // Store cancel function for this request  
-    if (config.__requestId) {
-      this.activeRetryTimers.set(config.__requestId, cancel);
-    }
-
-    try {
-      await sleepPromise;
-    } catch (error) {
-      // Sleep was cancelled
-      if (config.__requestId) {
-        this.activeRetryTimers.delete(config.__requestId);
-      }
-      this.logger.warn('Retry sleep cancelled', { requestId: config.__requestId });
-      this.metrics.canceledRequests++;
-      this.metrics.errorTypes.cancelled++;
+    const sleepCompleted = await this.retryScheduler.waitForRetryDelay(config, delay);
+    if (!sleepCompleted) {
+      this._metricsRecorder?.recordCancellation(true);
       return this.handleCancelAction(config);
     }
 
-    // Clean up the timer reference
-    if (config.__requestId) {
-      this.activeRetryTimers.delete(config.__requestId);
-    }
-
-    this.metrics.retryDelayDuration += delay;
+    this._metricsRecorder?.recordRetryDelay(delay);
 
     this.logger.debug('Executing retry attempt', {
-      requestId: config.__requestId,
-      timeSinceFirstAttempt: Date.now() - (config.__timestamp || 0),
+      requestId: metadata?.requestId,
+      timeSinceFirstAttempt: Date.now() - (metadata?.timestamp || 0),
     });
 
-    if (config.__requestId) {
-      this.activeRequests.delete(config.__requestId);
+    if (metadata?.requestId) {
+      this.removeActiveRequest(metadata.requestId);
     }
 
     if (cancelledFromQueue || config.signal?.aborted) {
       this.logger.warn('Retry cancelled', {
-        requestId: config.__requestId,
+        requestId: metadata?.requestId,
         source: cancelledFromQueue ? 'queue' : 'user',
       });
-      this.metrics.canceledRequests++;
-      this.metrics.errorTypes.cancelled++;
-      if (cancelledFromQueue) this.requestStore.add(config);
+      if (cancelledFromQueue) {
+        this.requestStore.add(config);
+      }
+      this._metricsRecorder?.recordCancellation(true);
       return this.handleCancelAction(config);
     }
 
-    this.metrics.retryAttemptsDistribution[attempt] = (this.metrics.retryAttemptsDistribution[attempt] ?? 0) + 1;
-
-    this.triggerAndEmit('beforeRetry', config);
-
-    // eslint-disable-next-line eqeqeq
-    if (config.__priority != undefined) {
-      if (!this.metrics.retryPrioritiesDistribution[config.__priority]) {
-        this.metrics.retryPrioritiesDistribution[config.__priority] = { ...initialPriorityMetrics };
-      }
-      this.metrics.retryPrioritiesDistribution[config.__priority].total++;
+    if (metadata?.priority !== undefined) {
+      this._metricsRecorder?.recordRetryAttempt(attempt, metadata.priority);
     }
 
+    this.triggerAndEmitInternal('beforeRetry', config);
     return this._axiosInstance.request(config);
   }
 
   private handleCancelAction(config: AxiosRequestConfig): Promise<never> {
-    config.__isRetrying = false;
-    this.logger.warn('Handling request cancellation', { requestId: config.__requestId });
+    setRequestMetadataValue(config, 'isRetrying', false);
+    this.logger.warn('Handling request cancellation', { requestId: getRequestMetadata(config)?.requestId });
     this.handleRetryProcessFinish();
     return this.throwErrorOnCancelRequest
-      ? Promise.reject(new Error(`Request aborted. ID: ${config.__requestId}`))
+      ? Promise.reject(new Error(`Request aborted. ID: ${getRequestMetadata(config)?.requestId}`))
       : Promise.resolve(null as never);
   }
 
@@ -462,7 +386,7 @@ export class RetryManager {
     let cancelledInQueue = false;
     const config = error.config;
 
-    this.triggerAndEmit('onMetricsUpdated', this.getMetrics());
+    this.triggerAndEmitInternal('onMetricsUpdated', this.getMetrics());
 
     if (!config || Object.values(config).length === 0) {
       this.logger.error('Handling error without valid config', { error: error.message });
@@ -475,55 +399,33 @@ export class RetryManager {
 
     this.requestQueue.markComplete();
 
-    this.logger.error('Request failed', {
-      requestId: config.__requestId,
-      url: this.enableSanitization ? sanitizeUrl(config.url, this.sanitizeOptions) : config.url,
-      method: config.method?.toUpperCase(),
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      code: error.code,
-      message: error.message,
-      ...(this.debug
-        ? {
-            headers: this.sanitizeForLogging(config.headers),
-            data: this.sanitizeForLogging(config.data),
-            response: error.response
-              ? {
-                  data: this.sanitizeForLogging(error.response.data),
-                  headers: this.sanitizeForLogging(error.response.headers),
-                }
-              : undefined,
-          }
-        : {}),
-    });
+    this.logger.error('Request failed', this.buildErrorMeta(config, error));
 
-    // eslint-disable-next-line eqeqeq
-    if (!cancelledInQueue && config.__isRetrying && config.__priority != undefined) {
-      this.metrics.failedRetries++;
-      if (!error.response) {
-        this.metrics.errorTypes.network++;
-      } else if (error.response.status >= 500) {
-        this.metrics.errorTypes.server5xx++;
-      } else if (error.response.status >= 400) {
-        this.metrics.errorTypes.client4xx++;
-      }
-      if (!this.metrics.retryPrioritiesDistribution[config.__priority]) {
-        this.metrics.retryPrioritiesDistribution[config.__priority] = { ...initialPriorityMetrics };
-      }
-      this.metrics.retryPrioritiesDistribution[config.__priority].failures++;
-      this.triggerAndEmit('afterRetry', config, false);
+    const metadata = ensureRequestMetadata(config);
+
+    if (!cancelledInQueue && metadata.isRetrying && metadata.priority !== undefined) {
+      this._metricsRecorder?.recordRetryFailure(metadata.priority, error);
+      this.triggerAndEmitInternal('afterRetry', config, false);
     }
 
-    config.__priority = config.__priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
-    const maxRetries = config.__requestRetries || this.retries;
-    const requestMode = config.__requestMode || this.mode;
-    const attempt = (config.__retryAttempt || 0) + 1;
+    assignRequestMetadata(config, {
+      priority: metadata.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM,
+    });
+
+    const effectiveMetadata = getRequestMetadata(config)!;
+    const maxRetries = effectiveMetadata.requestRetries || this.retries;
+    const requestMode = effectiveMetadata.requestMode || this.mode;
+    const attempt = (effectiveMetadata.retryAttempt || 0) + 1;
 
     if (requestMode === RETRY_MODES.AUTOMATIC && this.retryStrategy.shouldRetry(error, attempt, maxRetries)) {
+      const retryAfterHeader = error.response?.headers?.['retry-after'];
+      setRequestMetadataValue(config, 'retryAfterMs', parseRetryAfterMs(retryAfterHeader));
+
       this.logger.debug('Auto-retrying request', {
-        requestId: config.__requestId,
+        requestId: effectiveMetadata.requestId,
         attempt,
         maxRetries,
+        ...(getRequestMetadata(config)?.retryAfterMs ? { retryAfterMs: getRequestMetadata(config)?.retryAfterMs } : {}),
       });
       return this.scheduleRetry(config, attempt, maxRetries, cancelledInQueue);
     }
@@ -533,148 +435,129 @@ export class RetryManager {
 
   private handleNoRetriesAction(error: AxiosError, shouldStore = true): Promise<null> {
     const config = error.config as AxiosRequestConfig;
-    config.__isRetrying = false;
+    setRequestMetadataValue(config, 'isRetrying', false);
+    const metadata = getRequestMetadata(config);
 
     this.logger.warn('Final request failure', {
-      requestId: config.__requestId,
-      finalAttempt: config.__retryAttempt || 0,
+      requestId: metadata?.requestId,
+      finalAttempt: metadata?.retryAttempt || 0,
       stored: shouldStore,
     });
 
-    this.triggerAndEmit('onFailure', config);
+    this.triggerAndEmitInternal('onFailure', config);
 
     if (shouldStore) {
       this.requestStore.add(config);
     }
 
-    this.metrics.completelyFailedRequests++;
-    if (this.isCriticalRequest(config)) {
-      this.metrics.completelyFailedCriticalRequests++;
-    }
+    this._metricsRecorder?.recordTerminalFailure(this.isCriticalRequest(config));
 
-    if (config.__requestId) {
-      this.activeRequests.delete(config.__requestId);
+    if (metadata?.requestId) {
+      this.removeActiveRequest(metadata.requestId);
     }
 
     this.handleRetryProcessFinish();
 
     if (!error.response) {
-      this.triggerAndEmit('onInternetConnectionError', config);
+      this.triggerAndEmitInternal('onInternetConnectionError', config);
     }
 
-    if (this.isCriticalRequest(config)) {
-      this.logger.warn('Critical request failed', { requestId: config.__requestId });
-      this.triggerAndEmit('onCriticalRequestFailed');
-      this.activeRequests.forEach((_, requestId) => {
-        this.requestQueue.cancelQueuedRequest(requestId);
-      });
+    if (!this._criticalRequestProvider && this.isCriticalRequest(config)) {
+      this.logger.warn('Critical request failed', { requestId: metadata?.requestId });
+      this.triggerAndEmitInternal('onCriticalRequestFailed');
+      this.cancelQueuedRequests();
     }
 
     return this.throwErrorOnFailedRetries ? Promise.reject(error) : Promise.resolve(null);
   }
 
-  private triggerHook<K extends keyof RetryHooks>(hookName: K, ...args: Parameters<NonNullable<RetryHooks[K]>>): void {
-    try {
-      const hook = this.hooks?.[hookName];
-      if (hook) {
-        (hook as (...args: Parameters<NonNullable<RetryHooks[K]>>) => void)(...args);
-      }
-      this.plugins.forEach((plugin) => {
-        const pluginHook = plugin.hooks?.[hookName];
-        if (pluginHook) {
-          (pluginHook as (...args: Parameters<NonNullable<RetryHooks[K]>>) => void)(...args);
-        }
-      });
-      this.logger.debug(`Hook "${hookName}" executed`, (args[0] as any)?.__requestId);
-    } catch (error) {
-      this.logger.error(`Error executing "${hookName}" hook:`, error);
-    }
-  }
-
-  private isCriticalRequest = (request: AxiosRequestConfig | ExtendedAbortController): boolean => {
-    // eslint-disable-next-line eqeqeq
-    return this.blockingQueueThreshold != undefined && Number(request.__priority) >= this.blockingQueueThreshold;
-  };
-
-  private checkCriticalRequests = (): boolean => {
-    let has = false;
-    this.activeRequests.forEach((r) => {
-      if (this.isCriticalRequest(r)) {
-        has = true;
-      }
-    });
-    return has;
-  };
-
-  private emit = <K extends keyof RetryHooks>(event: K, ...args: Parameters<NonNullable<RetryHooks[K]>>): void => {
-    this.listeners[event]?.forEach((listener) => {
-      listener(...args);
-    });
-  };
-
-  public triggerAndEmit = <K extends keyof RetryHooks>(
+  private triggerAndEmitInternal = <K extends keyof CoreRetryEvents>(
     event: K,
-    ...args: Parameters<NonNullable<RetryHooks[K]>>
+    ...args: RetryEventArgs<CoreRetryEvents, K>
   ): void => {
-    this.triggerHook(event, ...args);
-    this.emit(event, ...args);
+    this.eventBus.triggerAndEmit(event, ...args);
   };
 
-  private validatePluginVersion(version: string): boolean {
-    return /^\d+\.\d+\.\d+$/.test(version);
-  }
-
-  /**
-   * Register a plugin with version validation.
-   */
-  public use = (plugin: RetryPlugin, beforeRetryerInterceptors = true): void => {
-    if (this.plugins.has(plugin.name)) {
-      this.logger.error('Plugin already registered', { plugin: plugin.name });
-      throw new Error(`Plugin "${plugin.name}" is already registered.`);
-    }
-
-    if (!this.validatePluginVersion(plugin.version)) {
-      this.logger.error('Invalid plugin version', { version: plugin.version });
-      throw new Error(`Invalid plugin version format: ${plugin.version}`);
-    }
-
-    this.plugins.set(plugin.name, plugin);
-
-    if (beforeRetryerInterceptors) {
-      if (this.requestInterceptorId !== null) {
-        this._axiosInstance.interceptors.request.eject(this.requestInterceptorId);
-      }
-      if (this.responseInterceptorId !== null) {
-        this._axiosInstance.interceptors.response.eject(this.responseInterceptorId);
-      }
-    }
-
-    plugin.initialize(this);
-
-    if (beforeRetryerInterceptors) {
-      this.setupInterceptors();
-    }
-
-    this.logger.log('Plugin registered', {
-      name: plugin.name,
-      version: plugin.version,
-    });
+  private triggerHook = <K extends keyof CoreRetryEvents>(
+    hookName: K,
+    ...args: RetryEventArgs<CoreRetryEvents, K>
+  ): void => {
+    this.eventBus.triggerHook(hookName, ...args);
   };
 
-  public unuse = (pluginName: string): boolean => {
-    const plugin = this.plugins.get(pluginName);
-    if (!plugin) {
-      this.logger.debug('Plugin removal failed - not found', { pluginName });
+  private isCriticalRequest = (config: AxiosRequestConfig): boolean => {
+    if (this._criticalRequestProvider) {
+      return this._criticalRequestProvider.isCriticalRequest(config);
+    }
+
+    const priority = getRequestMetadata(config)?.priority;
+    return this.blockingQueueThreshold !== undefined && priority !== undefined && priority >= this.blockingQueueThreshold;
+  };
+
+  private hasActiveCriticalRequests = (): boolean => {
+    if (this._criticalRequestProvider) {
+      return this._criticalRequestProvider.hasActiveCriticalRequests();
+    }
+
+    if (this.blockingQueueThreshold === undefined) {
       return false;
     }
 
-    if (typeof plugin.onBeforeDestroyed === 'function') {
-      plugin.onBeforeDestroyed(this);
+    let hasCriticalRequests = false;
+    this.activeRequests.forEach((controller) => {
+      if (controller.__priority !== undefined && controller.__priority >= this.blockingQueueThreshold!) {
+        hasCriticalRequests = true;
+      }
+    });
+
+    return hasCriticalRequests;
+  };
+
+  private removeActiveRequest(requestId: string): boolean {
+    const controller = this.activeRequests.get(requestId);
+    if (!controller) {
+      return false;
     }
 
-    this.plugins.delete(pluginName);
-    this.logger.log('Plugin removed', { name: plugin.name, version: plugin.version });
+    this.activeRequests.delete(requestId);
+    this._criticalRequestProvider?.trackRequestEnded(requestId);
+
     return true;
+  }
+
+  public emit = <K extends keyof RetryManagerEvents<TPluginEvents>>(
+    event: K,
+    ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
+  ): void => {
+    this.eventBus.emit(event, ...args);
+  };
+
+  public triggerAndEmit = <K extends keyof RetryManagerEvents<TPluginEvents>>(
+    event: K,
+    ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
+  ): void => {
+    this.eventBus.triggerAndEmit(event, ...args);
+  };
+
+  public use = <TAddedPluginEvents extends object>(
+    plugin: RetryPlugin<TAddedPluginEvents>,
+    beforeRetryerInterceptors = true,
+  ): RetryManager<TPluginEvents & TAddedPluginEvents> => {
+    this.pluginRegistry.use(
+      plugin,
+      this as unknown as RetryManager,
+      {
+        ejectRetryerInterceptors: this.ejectRetryerInterceptors,
+        installRetryerInterceptors: this.setupInterceptors,
+      },
+      beforeRetryerInterceptors,
+    );
+
+    return this as RetryManager<TPluginEvents & TAddedPluginEvents>;
+  };
+
+  public unuse = (pluginName: string): boolean => {
+    return this.pluginRegistry.unuse(pluginName, this as unknown as RetryManager);
   };
 
   public getLogger() {
@@ -682,52 +565,42 @@ export class RetryManager {
   }
 
   public listPlugins = (): { name: string; version: string }[] => {
-    return Array.from(this.plugins.values()).map(({ name, version }) => ({ name, version }));
+    return this.pluginRegistry.list();
   };
 
-  public on = <K extends keyof RetryHooks>(
+  public on = <K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,
-    listener: (...args: Parameters<NonNullable<RetryHooks[K]>>) => void,
-  ): RetryManager => {
-    if (!this.listeners[event]) {
-      this.listeners[event] = [];
-    }
-    this.listeners[event]?.push(listener);
-    this.logger.debug('Event listener added', { event });
+    listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
+  ): RetryManager<TPluginEvents> => {
+    this.eventBus.on(event, listener);
     return this;
   };
 
-  public off = <K extends keyof RetryHooks>(
+  public off = <K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,
-    listener: (...args: Parameters<NonNullable<RetryHooks[K]>>) => void,
+    listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
   ): boolean => {
-    const arr = this.listeners[event];
-    if (!arr) {
-      return false;
-    }
-    const index = arr.indexOf(listener);
-    if (index === -1) {
-      return false;
-    }
-    arr.splice(index, 1);
-    if (arr.length === 0) {
-      delete this.listeners[event];
-    }
-    this.logger.debug('Event listener removed', { event });
-    return true;
+    return this.eventBus.off(event, listener);
   };
 
   public retryFailedRequests = async <T = unknown>(): Promise<AxiosResponse<T>[]> => {
     const failedRequests = this.requestStore.getAll();
     this.requestStore.clear();
+
     if (failedRequests.length > 0) {
       this.logger.debug('Starting manual retry process', { count: failedRequests.length });
-      this.triggerAndEmit('onManualRetryProcessStarted');
+      this.triggerAndEmitInternal('onManualRetryProcessStarted');
     }
+
+    const beforeManualRetry = this.hooks?.beforeManualRetry;
+    const replayRequests = failedRequests
+      .map((config) => (beforeManualRetry ? beforeManualRetry(config) : config))
+      .filter((config): config is AxiosRequestConfig => config !== null);
+
     return Promise.all(
-      failedRequests.map(async (config) => {
-        config.__retryAttempt = 1;
-        return this.scheduleRetry(config, config.__retryAttempt, config.__requestRetries || this.retries);
+      replayRequests.map(async (config) => {
+        setRequestMetadataValue(config, 'retryAttempt', 1);
+        return this.scheduleRetry(config, 1, getRequestMetadata(config)?.requestRetries || this.retries);
       }),
     );
   };
@@ -737,13 +610,12 @@ export class RetryManager {
   }
 
   public releaseRequestTracking = (config: AxiosRequestConfig): void => {
-    const requestId = config.__requestId;
-    if (requestId && this.activeRequests.has(requestId)) {
-      this.activeRequests.delete(requestId);
+    const requestId = getRequestMetadata(config)?.requestId;
+    if (requestId && this.removeActiveRequest(requestId)) {
       this.requestQueue.markComplete();
 
-      if (this.isCriticalRequest(config) && !this.checkCriticalRequests()) {
-        this.triggerAndEmit('onAllCriticalRequestsResolved');
+      if (this.isCriticalRequest(config) && !this.hasActiveCriticalRequests()) {
+        this.triggerAndEmitInternal('onAllCriticalRequestsResolved');
       }
     }
   };
@@ -758,156 +630,128 @@ export class RetryManager {
         wasQueued,
       });
       controller.abort();
-      this.activeRequests.delete(requestId);
-      this.metrics.canceledRequests++;
-      this.triggerAndEmit('onRequestCancelled', requestId);
+      this.removeActiveRequest(requestId);
+      this._metricsRecorder?.recordCancellation();
+      this.triggerAndEmitInternal('onRequestCancelled', requestId);
     }
-    
-    // Cancel any active retry timer for this request
-    const cancelRetryTimer = this.activeRetryTimers.get(requestId);
-    if (cancelRetryTimer) {
-      cancelRetryTimer();
-      this.activeRetryTimers.delete(requestId);
-      this.logger.debug('Cancelled retry timer', { requestId });
-    }
+
+    this.retryScheduler.cancelRetryTimer(requestId);
   };
 
   public cancelAllRequests = (): void => {
+    const timerStats = this.retryScheduler.getTimerStats();
     this.logger.warn('Cancelling all requests', {
       activeCount: this.activeRequests.size,
       queuedCount: this.requestQueue.getWaitingCount(),
-      activeRetryTimers: this.activeRetryTimers.size,
+      activeRetryTimers: timerStats.activeRetryTimers,
     });
-    
+
     this.activeRequests.forEach((controller, requestId) => {
       controller.abort();
-      this.metrics.canceledRequests++;
+      this._metricsRecorder?.recordCancellation();
       this.requestQueue.cancelQueuedRequest(requestId);
-      this.triggerAndEmit('onRequestCancelled', requestId);
+      this.triggerAndEmitInternal('onRequestCancelled', requestId);
     });
     this.activeRequests.clear();
-    
-    // Cancel all active retry timers
-    this.activeRetryTimers.forEach((cancelFn, requestId) => {
-      cancelFn();
-      this.logger.debug('Cancelled retry timer', { requestId });
-    });
-    this.activeRetryTimers.clear();
+    this._criticalRequestProvider?.reset();
+
+    this.retryScheduler.cancelAllRetryTimers();
   };
 
   /**
-   * Destroy the RetryManager and clean up all resources
-   * This will cancel all requests, clear timers, and make the instance unusable
+   * Cancel all requests currently waiting in the queue without aborting in-progress requests.
    */
+  public cancelQueuedRequests = (): void => {
+    this.activeRequests.forEach((_, requestId) => {
+      this.requestQueue.cancelQueuedRequest(requestId);
+    });
+  };
+
   public destroy = (): void => {
+    const timerStats = this.retryScheduler.getTimerStats();
     this.logger.warn('Destroying RetryManager', {
       activeRequests: this.activeRequests.size,
-      activeRetryTimers: this.activeRetryTimers.size,
-      activeTimers: this.timerManager.getActiveTimerCount(),
+      activeRetryTimers: timerStats.activeRetryTimers,
+      activeTimers: timerStats.activeTimers,
     });
 
-    // Cancel all requests and retry timers
     this.cancelAllRequests();
-    
-    // Destroy the request queue
     this.requestQueue.destroy();
-    
-    // Destroy the timer manager
-    this.timerManager.destroy();
-    
-    // Clear interceptors
-    if (this.requestInterceptorId !== null) {
-      this._axiosInstance.interceptors.request.eject(this.requestInterceptorId);
-      this.requestInterceptorId = null;
-    }
-    if (this.responseInterceptorId !== null) {
-      this._axiosInstance.interceptors.response.eject(this.responseInterceptorId);
-      this.responseInterceptorId = null;
-    }
-    
-    // Clean up plugins
-    this.plugins.forEach((plugin, name) => {
-      if (typeof plugin.onBeforeDestroyed === 'function') {
-        plugin.onBeforeDestroyed(this);
-      }
-    });
-    this.plugins.clear();
-    
-    // Clear all listeners
-    this.listeners = {};
-    
+    this.retryScheduler.destroy();
+    this.ejectRetryerInterceptors();
+    this.pluginRegistry.cleanup(this as unknown as RetryManager);
+    this.eventBus.clear();
+
     this.logger.log('RetryManager destroyed successfully');
   };
 
-  /**
-   * Get timer statistics for monitoring
-   */
   public getTimerStats = (): { activeTimers: number; activeRetryTimers: number } => {
-    return {
-      activeTimers: this.timerManager.getActiveTimerCount(),
-      activeRetryTimers: this.activeRetryTimers.size,
-    };
+    return this.retryScheduler.getTimerStats();
   };
 
   public getMetrics = (): AxiosRetryerDetailedMetrics => {
     this.logger.debug('Generating metrics snapshot');
-    const totalRetries = this.metrics.failedRetries + this.metrics.successfulRetries;
-    const timerStats = this.getTimerStats();
-    return {
-      totalRequests: this.metrics.totalRequests,
-      successfulRetries: this.metrics.successfulRetries,
-      failedRetries: this.metrics.failedRetries,
-      completelyFailedRequests: this.metrics.completelyFailedRequests,
-      canceledRequests: this.metrics.canceledRequests,
-      completelyFailedCriticalRequests: this.metrics.completelyFailedCriticalRequests,
-      errorTypesDistribution: this.metrics.errorTypes,
-      retryAttemptsDistribution: this.metrics.retryAttemptsDistribution,
-      requestCountsByPriority: this.metrics.requestCountsByPriority,
-      avgQueueWait: this.metrics.totalRequests > 0 ? (this.metrics.queueWaitDuration / this.metrics.totalRequests) * 0.001 : 0,
-      avgRetryDelay: totalRetries > 0 ? (this.metrics.retryDelayDuration / totalRetries) * 0.001 : 0,
-      priorityMetrics: Object.entries(this.metrics.retryPrioritiesDistribution).map(([priority, data]) => ({
-        priority: Number(priority),
-        ...data,
-        successRate: data.total > 0 ? (data.successes / data.total) * 100 : 0,
-        failureRate: data.total > 0 ? (data.failures / data.total) * 100 : 0,
-      })),
-      timerHealth: {
-        activeTimers: timerStats.activeTimers,
-        activeRetryTimers: timerStats.activeRetryTimers,
-        // Health score: 0 = excellent, 100+ = potential issues
-        healthScore: timerStats.activeTimers + (timerStats.activeRetryTimers * 2),
-      },
-    };
+    if (!this._metricsRecorder) {
+      return { ...EMPTY_METRICS };
+    }
+    return this._metricsRecorder.buildDetailedMetrics(this.getTimerStats());
+  };
+
+  public resetMetrics = (): void => {
+    this.logger.debug('Resetting metrics state');
+    this._metricsRecorder?.reset();
+    this.triggerAndEmitInternal('onMetricsUpdated', this.getMetrics());
   };
 
   /**
-   * Sanitizes any sensitive information in the provided object based on configuration
+   * Register a metrics recorder (used by MetricsPlugin).
+   * Pass `null` to remove the recorder. Without a recorder, getMetrics() returns zeros.
    */
-  private sanitizeForLogging<T>(obj: T): T {
-    if (!this.enableSanitization || !obj) return obj;
-    
-    const sanitized = { ...obj } as any;
-    
-    if (sanitized.headers) {
-      sanitized.headers = sanitizeHeaders(sanitized.headers, this.sanitizeOptions);
+  public registerMetricsRecorder = (recorder: MetricsRecorder | null): void => {
+    this._metricsRecorder = recorder;
+  };
+
+  /**
+   * Register a critical request provider (used by CriticalRequestPlugin).
+   * Pass `null` to remove the provider.
+   */
+  public registerCriticalRequestProvider = (provider: CriticalRequestProvider | null): void => {
+    this._criticalRequestProvider = provider;
+  };
+
+  private buildRequestLogMeta(config: AxiosRequestConfig, requestId: string): Record<string, unknown> {
+    return {
+      requestId,
+      url: this.getLogUrl(config.url),
+      method: config.method?.toUpperCase(),
+      priority: getRequestMetadata(config)?.priority,
+    };
+  }
+
+  private buildErrorMeta(config: AxiosRequestConfig, error: AxiosError): Record<string, unknown> {
+    return {
+      requestId: getRequestMetadata(config)?.requestId,
+      url: this.getLogUrl(config.url),
+      method: config.method?.toUpperCase(),
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      code: error.code,
+      message: error.message,
+      retrying: getRequestMetadata(config)?.isRetrying,
+    };
+  }
+
+  private getLogUrl(url?: string): string | undefined {
+    if (!url) {
+      return url;
     }
-    
-    if (sanitized.data && this.sanitizeOptions.sanitizeRequestData !== false) {
-      sanitized.data = sanitizeData(sanitized.data, this.sanitizeOptions);
-    }
-    
-    if (sanitized.url) {
-      sanitized.url = sanitizeUrl(sanitized.url, this.sanitizeOptions);
-    }
-    
-    if (sanitized.baseURL) {
-      sanitized.baseURL = sanitizeUrl(sanitized.baseURL, this.sanitizeOptions);
-    }
-    
-    if (sanitized.auth) {
-      sanitized.auth = { username: sanitized.auth.username, password: '********' };
-    }
-    
-    return sanitized;
+
+    const queryIndex = url.indexOf('?');
+    const hashIndex = url.indexOf('#');
+    const cutoffIndex = [queryIndex, hashIndex]
+      .filter((index) => index >= 0)
+      .reduce((smallest, index) => (smallest === -1 ? index : Math.min(smallest, index)), -1);
+
+    return cutoffIndex === -1 ? url : url.slice(0, cutoffIndex);
   }
 }
