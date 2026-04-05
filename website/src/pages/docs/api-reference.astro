@@ -1,0 +1,133 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="API Reference" description="Complete API reference for the RetryManager class and all public methods in axios-retryer.">
+
+<h1 class="page-title">API Reference</h1>
+<p class="page-lead">Complete reference for <code>RetryManager</code> and its public methods.</p>
+
+<h2>Factory functions</h2>
+
+<h3><code>createRetryer(options?)</code></h3>
+<p>Creates and returns a <code>RetryManager</code> instance. Equivalent to <code>new RetryManager(options)</code>.</p>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+const retryer = createRetryer(&#123; retries: 3 &#125;);</code></pre>
+
+<h3><code>createRetryStrategy(config)</code></h3>
+<p>Creates a custom <code>IRetryStrategy</code> from a plain config object.</p>
+<pre><code class="language-typescript">import &#123; createRetryStrategy &#125; from 'axios-retryer';
+const strategy = createRetryStrategy(&#123;
+  isRetryable: (error) =&gt; error.response?.status === 503,
+  shouldRetry: (error, attempt, max) =&gt; attempt &lt;= max,
+  getDelay: (attempt) =&gt; attempt * 500,
+&#125;);</code></pre>
+
+<h2>RetryManager instance</h2>
+
+<h3>Properties</h3>
+<table>
+  <thead><tr><th>Property</th><th>Type</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>axiosInstance</code></td><td><code>AxiosInstance</code></td><td>The wrapped Axios instance. Use this for all requests.</td></tr>
+  </tbody>
+</table>
+
+<h3>Request management</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>cancelRequest</code></td><td><code>(requestId: string) → void</code></td><td>Cancel a specific in-flight or queued request by its ID</td></tr>
+    <tr><td><code>cancelAllRequests</code></td><td><code>() → void</code></td><td>Cancel all in-flight and queued requests</td></tr>
+  </tbody>
+</table>
+
+<h3>Plugin management</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>use</code></td><td><code>(plugin, before?) → RetryManager</code></td><td>Register a plugin. Returns the same manager instance with widened event types.</td></tr>
+    <tr><td><code>unuse</code></td><td><code>(pluginName: string) → void</code></td><td>Unregister a plugin by name, running its cleanup hooks</td></tr>
+    <tr><td><code>listPlugins</code></td><td><code>() → &#123;name, version&#125;[]</code></td><td>List all registered plugins</td></tr>
+  </tbody>
+</table>
+
+<h3>Event management</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>on</code></td><td><code>(event, listener) → this</code></td><td>Subscribe to a lifecycle event. Chainable.</td></tr>
+    <tr><td><code>off</code></td><td><code>(event, listener) → this</code></td><td>Unsubscribe from an event</td></tr>
+    <tr><td><code>triggerAndEmit</code></td><td><code>(event, ...args) → Promise&lt;void&gt;</code></td><td>Programmatically trigger hooks and emit events (useful for plugins)</td></tr>
+  </tbody>
+</table>
+
+<h3>Metrics and diagnostics</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>getMetrics</code></td><td><code>() → RetryMetrics</code></td><td>Returns metrics snapshot. Counters are zero without <code>MetricsPlugin</code>.</td></tr>
+    <tr><td><code>getTimerStats</code></td><td><code>() → TimerStats</code></td><td>Returns active timer counts for health monitoring</td></tr>
+    <tr><td><code>getLogger</code></td><td><code>() → ILogger</code></td><td>Returns the internal logger instance</td></tr>
+  </tbody>
+</table>
+
+<h3>Lifecycle</h3>
+<table>
+  <thead><tr><th>Method</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>destroy()</code></td><td>Full cleanup: cancel all requests, clear all timers, eject interceptors, unregister all plugins. Makes the instance unusable.</td></tr>
+  </tbody>
+</table>
+
+<h2>RetryMetrics shape</h2>
+<pre><code class="language-typescript">interface RetryMetrics &#123;
+  totalRequests: number;
+  successfulRetries: number;
+  failedRetries: number;
+  completelyFailedRequests: number;
+  completelyFailedCriticalRequests: number;
+  totalRetryAttempts: number;
+  averageRetryDelay: number;
+  timerHealth: &#123;
+    activeTimers: number;
+    activeRetryTimers: number;
+    healthScore: number;          // 0 = excellent, 100+ = potential leak
+  &#125;;
+&#125;</code></pre>
+
+<h2>TimerStats shape</h2>
+<pre><code class="language-typescript">interface TimerStats &#123;
+  activeTimers: number;
+  activeRetryTimers: number;
+&#125;</code></pre>
+
+<h2>Request config extension</h2>
+<p>The <code>__axiosRetryer</code> field on <code>AxiosRequestConfig</code> carries per-request options:</p>
+<pre><code class="language-typescript">interface AxiosRetryerRequestConfig &#123;
+  priority?: AXIOS_RETRYER_REQUEST_PRIORITIES;  // Queue priority
+  requestId?: string;                           // Stable ID for cancellation
+  retries?: number;                             // Override global retry count
+  backoffType?: AXIOS_RETRYER_BACKOFF_TYPES;
+  retryableStatuses?: RetryableStatuses;
+&#125;
+
+// Usage:
+retryer.axiosInstance.get('/api', &#123;
+  __axiosRetryer: &#123;
+    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+    requestId: 'auth-check',
+  &#125;,
+&#125;);</code></pre>
+
+<h2>Constants</h2>
+<pre><code class="language-typescript">import &#123;
+  RETRY_MODES,                        // AUTOMATIC | MANUAL
+  AXIOS_RETRYER_REQUEST_PRIORITIES,   // CRITICAL=4, HIGH=2, MEDIUM=1, LOW=0
+  AXIOS_RETRYER_BACKOFF_TYPES,        // STATIC | LINEAR | EXPONENTIAL
+  AXIOS_RETRYER_HTTP_METHODS,         // GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
+&#125; from 'axios-retryer';</code></pre>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/plugins" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Plugins →</a>
+</div>
+</DocsLayout>

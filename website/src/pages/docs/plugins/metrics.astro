@@ -1,0 +1,86 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="MetricsPlugin" section="Plugins" description="Activate live retry metrics with axios-retryer's MetricsPlugin — counters, timer health, onMetricsUpdated events.">
+
+<h1 class="page-title">MetricsPlugin</h1>
+<p class="page-lead">Activates live retry counters and the <code>onMetricsUpdated</code> event. Without this plugin, <code>getMetrics()</code> still works but always returns a zeroed snapshot — keeping the core overhead-free.</p>
+
+<h2>Install</h2>
+<pre><code class="language-typescript">import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';</code></pre>
+
+<h2>Basic usage</h2>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
+
+const retryer = createRetryer(&#123; retries: 3 &#125;);
+retryer.use(createMetricsPlugin());
+
+// Subscribe to live updates
+retryer.on('onMetricsUpdated', (metrics) =&gt; &#123;
+  console.log('Total requests:  ', metrics.totalRequests);
+  console.log('Successful retries:', metrics.successfulRetries);
+  console.log('Failed completely: ', metrics.completelyFailedRequests);
+  console.log('Timer health:    ', metrics.timerHealth.healthScore);
+&#125;);
+
+// Get a snapshot at any time
+const snapshot = retryer.getMetrics();
+console.log(snapshot);</code></pre>
+
+<h2>Metrics shape</h2>
+<pre><code class="language-typescript">interface RetryMetrics &#123;
+  totalRequests: number;                   // All requests dispatched
+  successfulRetries: number;               // Requests that succeeded after ≥1 retry
+  failedRetries: number;                   // Individual retry attempts that failed
+  completelyFailedRequests: number;        // Requests that exhausted all retries
+  completelyFailedCriticalRequests: number; // Failed CRITICAL priority requests
+  totalRetryAttempts: number;              // Sum of all retry attempts made
+  averageRetryDelay: number;               // ms average delay between retries
+
+  timerHealth: &#123;
+    activeTimers: number;        // Total active internal timers
+    activeRetryTimers: number;   // Active retry-delay timers
+    healthScore: number;         // 0 = excellent, 50+ = investigate, 100+ = likely leak
+  &#125;;
+&#125;</code></pre>
+
+<h2>Dashboard integration</h2>
+<pre><code class="language-typescript">retryer.on('onMetricsUpdated', (metrics) =&gt; &#123;
+  // Push to your metrics backend (Datadog, Prometheus, custom)
+  metricsClient.gauge('api.retries.success', metrics.successfulRetries);
+  metricsClient.gauge('api.retries.failed', metrics.completelyFailedRequests);
+  metricsClient.gauge('api.retry.avg_delay', metrics.averageRetryDelay);
+
+  // Alert on timer accumulation
+  if (metrics.timerHealth.healthScore &gt; 50) &#123;
+    alerting.warn('High timer count detected in RetryManager');
+  &#125;
+&#125;);</code></pre>
+
+<h2>Periodic health check</h2>
+<pre><code class="language-typescript">setInterval(() =&gt; &#123;
+  const &#123; timerHealth &#125; = retryer.getMetrics();
+  const stats = retryer.getTimerStats();
+
+  if (stats.activeTimers &gt; 100) &#123;
+    console.warn(`High timer count: $&#123;stats.activeTimers&#125; active timers`);
+  &#125;
+&#125;, 10_000);
+
+// Always clean up
+process.on('SIGTERM', () =&gt; retryer.destroy());</code></pre>
+
+<div class="callout callout-info">
+  <div class="callout-icon">ℹ️</div>
+  <div class="callout-content">
+    <div class="callout-title">Zero cost without the plugin</div>
+    <p>The core never increments any counters unless <code>MetricsPlugin</code> is installed. If you don't need retry metrics, omit the plugin and pay no overhead.</p>
+  </div>
+</div>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/plugins/debug-sanitization" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">DebugSanitizationPlugin →</a>
+  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

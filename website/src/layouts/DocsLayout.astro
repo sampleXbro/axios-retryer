@@ -1,0 +1,254 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  section?: string;
+}
+const { title, description, section = 'Docs' } = Astro.props;
+const pathname = Astro.url.pathname;
+
+const nav = [
+  {
+    group: 'Getting Started',
+    items: [
+      { label: 'Introduction', href: '/docs' },
+      { label: 'Installation', href: '/docs/installation' },
+      { label: 'Quick Start', href: '/docs/quick-start' },
+    ],
+  },
+  {
+    group: 'Core',
+    items: [
+      { label: 'Configuration', href: '/docs/configuration' },
+      { label: 'Retry Modes', href: '/docs/retry-modes' },
+      { label: 'Events', href: '/docs/events' },
+      { label: 'Error Classes', href: '/docs/errors' },
+      { label: 'API Reference', href: '/docs/api-reference' },
+    ],
+  },
+  {
+    group: 'Plugins',
+    items: [
+      { label: 'Overview', href: '/docs/plugins' },
+      { label: 'TokenRefreshPlugin', href: '/docs/plugins/token-refresh' },
+      { label: 'CircuitBreakerPlugin', href: '/docs/plugins/circuit-breaker' },
+      { label: 'CachingPlugin', href: '/docs/plugins/caching' },
+      { label: 'ManualRetryPlugin', href: '/docs/plugins/manual-retry' },
+      { label: 'MetricsPlugin', href: '/docs/plugins/metrics' },
+      { label: 'DebugSanitizationPlugin', href: '/docs/plugins/debug-sanitization' },
+      { label: 'RequestDependencyPlugin', href: '/docs/plugins/request-dependency' },
+    ],
+  },
+  {
+    group: 'Guides',
+    items: [
+      { label: 'Production Setup', href: '/guides/production' },
+      { label: 'Offline Support', href: '/guides/offline' },
+      { label: 'Concurrency & Priority', href: '/guides/concurrency' },
+      { label: 'Migration 1.x → 2.0', href: '/guides/migration' },
+    ],
+  },
+];
+---
+<BaseLayout title={title} description={description}>
+  <style>
+    .docs-wrapper {
+      display: flex;
+      min-height: 100vh;
+    }
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-top {
+      padding: 1.25rem 1.25rem 0;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 1rem;
+    }
+    .sidebar-logo:hover { text-decoration: none; }
+    .sidebar-logo img { width: 28px; height: 28px; border-radius: 6px; }
+    .sidebar-nav { padding: 1.25rem; flex: 1; }
+    .nav-group { margin-bottom: 1.5rem; }
+    .nav-group-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-subtle);
+      margin-bottom: 0.4rem;
+    }
+    .nav-item {
+      display: block;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      transition: background 0.15s, color 0.15s;
+      text-decoration: none;
+    }
+    .nav-item:hover { background: var(--bg-tertiary); color: var(--text); text-decoration: none; }
+    .nav-item.active { background: var(--accent-subtle); color: var(--accent); font-weight: 600; }
+    /* Content */
+    .docs-content-wrap {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .docs-topbar {
+      height: var(--header-height);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 2rem;
+      gap: 1rem;
+      position: sticky;
+      top: 0;
+      background: rgba(13,17,23,.9);
+      backdrop-filter: blur(8px);
+      z-index: 10;
+    }
+    .docs-topbar-breadcrumb {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .docs-topbar-breadcrumb span { color: var(--text-subtle); }
+    .docs-topbar-actions { margin-left: auto; display: flex; gap: 0.75rem; align-items: center; }
+    .topbar-link {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .topbar-link:hover { color: var(--text); text-decoration: none; }
+    .topbar-btn {
+      background: var(--accent);
+      color: #000;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.4rem 0.9rem;
+      border-radius: 6px;
+      text-decoration: none;
+    }
+    .topbar-btn:hover { text-decoration: none; opacity: 0.9; }
+    .docs-body { flex: 1; padding: 2.5rem 2.5rem 4rem; max-width: 860px; }
+    .docs-body .page-title {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+    .docs-body .page-lead {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+      line-height: 1.6;
+    }
+    /* Mobile hamburger */
+    .sidebar-toggle {
+      display: none;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 0.35rem 0.5rem;
+      cursor: pointer;
+      font-size: 1.1rem;
+    }
+    @media (max-width: 900px) {
+      .sidebar { position: fixed; left: -280px; z-index: 100; transition: left 0.2s; }
+      .sidebar.open { left: 0; box-shadow: 4px 0 20px rgba(0,0,0,.5); }
+      .sidebar-toggle { display: block; }
+      .docs-body { padding: 1.5rem 1.25rem 3rem; }
+    }
+  </style>
+
+  <div class="docs-wrapper">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <a href="/" class="sidebar-logo">
+          <img src="/axios-retryer-logo.png" alt="axios-retryer" />
+          axios-retryer
+        </a>
+      </div>
+      <nav class="sidebar-nav">
+        {nav.map(group => (
+          <div class="nav-group">
+            <div class="nav-group-label">{group.group}</div>
+            {group.items.map(item => (
+              <a
+                href={item.href}
+                class={`nav-item ${pathname === item.href || pathname === item.href + '/' ? 'active' : ''}`}
+              >
+                {item.label}
+              </a>
+            ))}
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <!-- Main content -->
+    <div class="docs-content-wrap">
+      <header class="docs-topbar">
+        <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">☰</button>
+        <div class="docs-topbar-breadcrumb">
+          <span>Docs</span>
+          {section !== 'Docs' && (
+            <>
+              <span>›</span>
+              <span style="color: var(--text-muted)">{section}</span>
+            </>
+          )}
+        </div>
+        <div class="docs-topbar-actions">
+          <a href="https://github.com/sampleXbro/axios-retryer" class="topbar-link" target="_blank" rel="noopener">
+            GitHub ↗
+          </a>
+          <a href="/docs" class="topbar-btn">Get Started</a>
+        </div>
+      </header>
+
+      <main class="docs-body page-content">
+        <slot />
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const toggle = document.getElementById('sidebar-toggle');
+    const sidebar = document.getElementById('sidebar');
+    toggle?.addEventListener('click', () => sidebar?.classList.toggle('open'));
+    document.addEventListener('click', (e) => {
+      if (sidebar?.classList.contains('open') && !(e.target as Element)?.closest('#sidebar') && e.target !== toggle) {
+        sidebar.classList.remove('open');
+      }
+    });
+  </script>
+</BaseLayout>

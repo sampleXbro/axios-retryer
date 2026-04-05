@@ -47,21 +47,8 @@ All notable changes to this project will be documented in this file.
 - Refreshed `SECURITY.md` supported-version policy for `2.x`
 - Refreshed `KNOWN_ISSUES.md` for `2.0` behavior and current test metadata
 - Removed obsolete `PRODUCTION_READINESS.md`; use `README.md` and `BENCHMARK_RESULTS.md` for performance and validation context
-
-## 1.5.3 - 04.05.2025
-
-### 🐛 **Bug Fixes**
-- **CRITICAL**: Fixed TokenRefreshPlugin concurrent request handling for `customErrorDetector`
-  - 🔧 **Issue**: When 4-5 requests simultaneously triggered custom auth errors (200 OK responses with auth errors in body), the plugin was calling token refresh for each request instead of queueing them
-  - ✅ **Fix**: Added missing `this.isRefreshing = true` in `handleSuccessResponse` method to properly queue concurrent requests during token refresh
-  - 🎯 **Impact**: Prevents multiple unnecessary token refresh calls, improves performance, and avoids potential rate limiting issues
-
-### 🧪 **Testing Improvements**
-- **Added comprehensive concurrent request tests** for TokenRefreshPlugin:
-  - ✅ Test for 4-5 concurrent 401 status code requests (already existing, verified)
-  - ✅ **NEW**: Test for 4-5 concurrent requests with custom auth errors in 200 OK responses  
-  - 📊 Both scenarios now properly verify only 1 token refresh call occurs regardless of concurrent request count
-  - 🔍 Tests validate proper queuing behavior and successful retry of all requests with refreshed token
+- Added full documentation website (`website/`) built with Astro — covers all features, all plugins, guides, and API reference in detail
+- Minimized `README.md` to a concise NPM landing page with a link to the documentation website
 
 ## 1.5.2 - 27.05.2025
 

@@ -1,0 +1,68 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+  ogImage?: string;
+}
+const {
+  title,
+  description = 'axios-retryer — TypeScript-first Axios retry library with concurrency control, token refresh, response caching, circuit breaker, and more.',
+  ogImage = '/axios-retryer-logo.png',
+} = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://axios-retryer.dev').toString();
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title} | axios-retryer</title>
+  <meta name="description" content={description} />
+  <link rel="canonical" href={canonical} />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content={`${title} | axios-retryer`} />
+  <meta property="og:description" content={description} />
+  <meta property="og:image" content={ogImage} />
+  <meta property="og:url" content={canonical} />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="axios-retryer" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={`${title} | axios-retryer`} />
+  <meta name="twitter:description" content={description} />
+  <meta name="twitter:image" content={ogImage} />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/axios-retryer-logo.png" />
+
+  <!-- Fonts (self-hosted subsets via Google Fonts CDN for speed) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style is:global>
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    code, pre { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+  </style>
+</head>
+<body>
+  <slot />
+  <script>
+    // Code tabs interactivity
+    document.querySelectorAll<HTMLElement>('.code-tabs').forEach(tabs => {
+      const btns = tabs.querySelectorAll<HTMLButtonElement>('.code-tab-btn');
+      const panels = tabs.querySelectorAll<HTMLElement>('.code-tab-content');
+      btns.forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+          btns.forEach(b => b.classList.remove('active'));
+          panels.forEach(p => p.classList.remove('active'));
+          btn.classList.add('active');
+          panels[i]?.classList.add('active');
+        });
+      });
+    });
+  </script>
+</body>
+</html>

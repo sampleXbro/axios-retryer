@@ -1,0 +1,133 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="TokenRefreshPlugin" section="Plugins" description="Automatically refresh JWT/OAuth tokens on 401 with axios-retryer's TokenRefreshPlugin. Queue concurrent requests, replay after refresh.">
+
+<h1 class="page-title">TokenRefreshPlugin</h1>
+<p class="page-lead">Automatically refreshes access tokens when requests fail with 401. Queues all concurrent requests during the refresh and replays them transparently once a new token is available.</p>
+
+<h2>Install</h2>
+<pre><code class="language-typescript">import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';</code></pre>
+
+<h2>Basic usage</h2>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
+
+const retryer = createRetryer(&#123; retries: 3 &#125;);
+
+retryer.use(
+  createTokenRefreshPlugin(
+    // Refresh callback — called once per refresh cycle regardless of how many requests are queued
+    async (axiosInstance) =&gt; &#123;
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) throw new Error('No refresh token');  // Aborts immediately
+
+      const &#123; data &#125; = await axiosInstance.post('/auth/refresh', &#123; refreshToken &#125;);
+      localStorage.setItem('accessToken', data.accessToken);
+      return &#123; token: data.accessToken &#125;;
+    &#125;
+  )
+);</code></pre>
+
+<h2>All options</h2>
+<pre><code class="language-typescript">retryer.use(
+  createTokenRefreshPlugin(
+    async (axiosInstance) =&gt; &#123;
+      const &#123; data &#125; = await axiosInstance.post('/auth/refresh');
+      return &#123; token: data.accessToken &#125;;
+    &#125;,
+    &#123;
+      authHeaderName: 'Authorization',  // Header to inject the token into (default: 'Authorization')
+      tokenPrefix: 'Bearer ',           // Prefix prepended to the token value (default: 'Bearer ')
+      refreshStatusCodes: [401],        // HTTP status codes that trigger a refresh (default: [401])
+      maxRefreshAttempts: 3,            // Max refresh attempts before giving up (default: 3)
+      // Note: in v2.x this is the exact number of attempts (v1.x had an off-by-one bug)
+
+      // Optional: detect auth errors inside 200 OK bodies (e.g. GraphQL)
+      customErrorDetector: (responseData) =&gt; &#123;
+        if (typeof responseData !== 'object' || !responseData?.errors) return false;
+        return responseData.errors.some((e: any) =&gt;
+          e.extensions?.code === 'UNAUTHENTICATED' ||
+          e.message?.includes('token expired')
+        );
+      &#125;,
+    &#125;
+  )
+);</code></pre>
+
+<h2>How the refresh flow works</h2>
+<ol>
+  <li>A request returns 401 (or <code>customErrorDetector</code> returns <code>true</code>)</li>
+  <li>All subsequent requests queue while the refresh is in progress</li>
+  <li>The refresh callback is called <strong>once</strong> regardless of how many requests are waiting</li>
+  <li>On success: the new token is injected into all queued requests' headers, then they are replayed through the full <code>RetryManager</code> pipeline</li>
+  <li>On failure: all queued requests are rejected with the refresh error</li>
+</ol>
+
+<div class="callout callout-info">
+  <div class="callout-icon">ℹ️</div>
+  <div class="callout-content">
+    <div class="callout-title">Replayed requests go through RetryManager</div>
+    <p>In v2.x, replayed requests re-enter the full RetryManager pipeline — they respect the concurrency queue, MetricsPlugin, and other plugin hooks. This was a bug in v1.x where replayed requests bypassed the manager entirely.</p>
+  </div>
+</div>
+
+<h2>GraphQL — customErrorDetector</h2>
+<p>GraphQL APIs often return auth errors in a successful 200 body. Use <code>customErrorDetector</code> to catch these:</p>
+<pre><code class="language-typescript">createTokenRefreshPlugin(
+  async (axios) =&gt; &#123;
+    const &#123; data &#125; = await axios.post('/graphql/refresh');
+    return &#123; token: data.accessToken &#125;;
+  &#125;,
+  &#123;
+    customErrorDetector: (body) =&gt; &#123;
+      if (!body?.errors) return false;
+      return body.errors.some((e: any) =&gt;
+        e.extensions?.code === 'UNAUTHENTICATED'
+      );
+    &#125;,
+  &#125;
+)</code></pre>
+
+<h2>Abort on missing token</h2>
+<p>Throwing from the refresh callback before any network call aborts all queued requests immediately and does not count as a retry attempt:</p>
+<pre><code class="language-typescript">createTokenRefreshPlugin(async (axios) =&gt; &#123;
+  const token = sessionStorage.getItem('refreshToken');
+  if (!token) &#123;
+    // No retry — redirect to login right away
+    window.location.href = '/login';
+    throw new Error('No refresh token available');
+  &#125;
+  const &#123; data &#125; = await axios.post('/auth/refresh', &#123; token &#125;);
+  return &#123; token: data.accessToken &#125;;
+&#125;)</code></pre>
+
+<h2>Plugin events</h2>
+<pre><code class="language-typescript">import &#123; type TokenRefreshPluginEvents &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
+
+const managed = retryer.use(createTokenRefreshPlugin(refreshFn));
+
+managed.on('onTokenRefreshed', (token) =&gt; &#123;
+  console.log('New token:', token);
+&#125;);</code></pre>
+
+<h2>Error classes</h2>
+<pre><code class="language-typescript">import &#123;
+  TokenRefreshAbortError,     // Callback threw before making the request
+  TokenRefreshFailedError,    // All refresh attempts exhausted
+  TokenRefreshTimeoutError,   // Refresh request timed out
+  MissingTokenRefreshHandlerError, // No callback provided
+&#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
+
+try &#123;
+  await retryer.axiosInstance.get('/api/protected');
+&#125; catch (err) &#123;
+  if (err instanceof TokenRefreshAbortError) redirectToLogin();
+  if (err instanceof TokenRefreshFailedError) showRefreshFailedBanner();
+&#125;</code></pre>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/plugins/circuit-breaker" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CircuitBreakerPlugin →</a>
+  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

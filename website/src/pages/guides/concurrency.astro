@@ -1,0 +1,110 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Concurrency & Priority" section="Guides" description="Control request concurrency and priority with axios-retryer — max concurrent requests, priority queue, RequestDependencyPlugin.">
+
+<h1 class="page-title">Concurrency &amp; Priority</h1>
+<p class="page-lead">Control how many requests run in parallel, which run first, and what blocks lower-priority work until critical requests resolve.</p>
+
+<h2>Setting concurrency limits</h2>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+
+const retryer = createRetryer(&#123;
+  maxConcurrentRequests: 6,   // At most 6 requests run simultaneously
+  queueDelay: 50,             // 50ms between dequeue ticks (0 for max throughput)
+  maxQueueSize: 200,          // Reject with QueueFullError if queue exceeds 200
+&#125;);</code></pre>
+
+<h2>Request priorities</h2>
+<p>Every request in the queue is sorted by priority. CRITICAL requests always dequeue before MEDIUM or LOW work:</p>
+<pre><code class="language-typescript">import &#123; AXIOS_RETRYER_REQUEST_PRIORITIES &#125; from 'axios-retryer';
+
+// CRITICAL: auth, checkout, user-initiated actions
+retryer.axiosInstance.post('/auth/login', creds, &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL &#125;,
+&#125;);
+
+// HIGH: primary page content
+retryer.axiosInstance.get('/api/dashboard', &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH &#125;,
+&#125;);
+
+// MEDIUM: secondary data (default when omitted)
+retryer.axiosInstance.get('/api/sidebar');
+
+// LOW: background prefetch, analytics events
+retryer.axiosInstance.post('/api/analytics', event, &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW &#125;,
+&#125;);</code></pre>
+
+<h2>RequestDependencyPlugin — blocking high-priority work</h2>
+<p>Hold all non-blocking requests in the queue until all CRITICAL requests resolve:</p>
+<pre><code class="language-typescript">import &#123; createRequestDependencyPlugin &#125; from 'axios-retryer/plugins/RequestDependencyPlugin';
+
+retryer.use(
+  createRequestDependencyPlugin(&#123;
+    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+    cancelPendingOnDependencyFailure: true,  // Abort queued LOW/MEDIUM if CRITICAL fails
+  &#125;)
+);</code></pre>
+
+<h2>Handling queue overflow</h2>
+<pre><code class="language-typescript">import &#123; QueueFullError &#125; from 'axios-retryer';
+
+try &#123;
+  await retryer.axiosInstance.get('/api/resource');
+&#125; catch (err) &#123;
+  if (err instanceof QueueFullError) &#123;
+    // Apply backpressure — don't alert Sentry for this
+    showToast('System is busy. Please wait a moment.');
+    return;
+  &#125;
+  throw err;
+&#125;</code></pre>
+
+<h2>High-throughput backend services</h2>
+<p>For Node.js workers calling a rate-limited API, tune concurrency to match the upstream rate limit:</p>
+<pre><code class="language-typescript">// Third-party API allows 20 req/s
+const externalApi = createRetryer(&#123;
+  maxConcurrentRequests: 20,
+  queueDelay: 0,            // No artificial pacing — let the concurrency cap do the work
+  maxQueueSize: 1000,
+  retries: 3,
+&#125;);
+
+// Bulk operation: fan out across the queue, respect concurrency
+async function processItems(items: string[]) &#123;
+  return Promise.allSettled(
+    items.map(id =&gt; externalApi.axiosInstance.get(`/items/$&#123;id&#125;`))
+  );
+  // Up to 20 run concurrently; the rest queue automatically
+&#125;</code></pre>
+
+<h2>Priority under contention</h2>
+<p>With 3 concurrent slots, multiple priorities in flight, and a slow API:</p>
+<pre><code class="language-typescript">const retryer = createRetryer(&#123; maxConcurrentRequests: 3 &#125;);
+
+// Fire 10 requests of mixed priority simultaneously
+const requests = [
+  ...Array(4).fill(null).map(() =&gt;
+    retryer.axiosInstance.get('/api/data', &#123;
+      __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW &#125;,
+    &#125;)
+  ),
+  ...Array(3).fill(null).map(() =&gt;
+    retryer.axiosInstance.get('/api/data', &#123;
+      __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH &#125;,
+    &#125;)
+  ),
+  retryer.axiosInstance.get('/api/critical', &#123;
+    __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL &#125;,
+  &#125;),
+];
+// HIGH and CRITICAL complete well before LOW in the queue
+await Promise.allSettled(requests);</code></pre>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/guides/migration" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Migration Guide →</a>
+  <a href="/docs/plugins/request-dependency" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">RequestDependencyPlugin docs</a>
+</div>
+</DocsLayout>

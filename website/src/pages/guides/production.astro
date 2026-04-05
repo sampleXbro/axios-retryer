@@ -1,0 +1,154 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Production Setup" section="Guides" description="Production-ready axios-retryer setup guide — recommended plugin combinations, security defaults, and monitoring.">
+
+<h1 class="page-title">Production Setup</h1>
+<p class="page-lead">Recommended plugin combinations and configuration decisions for production deployments. Start from the right defaults and avoid the sharp edges.</p>
+
+<h2>Frontend single-user client</h2>
+<p>Typical SPA or mobile app calling one backend service:</p>
+<pre><code class="language-typescript">import &#123;
+  createRetryer,
+  RETRY_MODES,
+  AXIOS_RETRYER_BACKOFF_TYPES,
+  AXIOS_RETRYER_HTTP_METHODS,
+&#125; from 'axios-retryer';
+import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
+import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
+import &#123; createCachePlugin &#125; from 'axios-retryer/plugins/CachingPlugin';
+import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
+import &#123; createDebugSanitizationPlugin &#125; from 'axios-retryer/plugins/DebugSanitizationPlugin';
+import axios from 'axios';
+
+export const api = createRetryer(&#123;
+  axiosInstance: axios.create(&#123;
+    baseURL: import.meta.env.VITE_API_URL,
+    timeout: 10_000,
+  &#125;),
+  mode: RETRY_MODES.AUTOMATIC,
+  retries: 3,
+  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
+  maxConcurrentRequests: 8,
+  retryableStatuses: [408, 429, [500, 599] as const],
+  retryableMethods: [
+    AXIOS_RETRYER_HTTP_METHODS.GET,
+    AXIOS_RETRYER_HTTP_METHODS.HEAD,
+    AXIOS_RETRYER_HTTP_METHODS.OPTIONS,
+  ],
+  debug: import.meta.env.DEV,   // Verbose logs in dev only
+&#125;);
+
+// 1. Token refresh
+export const apiWithAuth = api.use(
+  createTokenRefreshPlugin(async (axiosInstance) =&gt; &#123;
+    const refresh = localStorage.getItem('refreshToken');
+    if (!refresh) throw new Error('No refresh token');
+    const &#123; data &#125; = await axiosInstance.post('/auth/refresh', &#123; refresh &#125;);
+    localStorage.setItem('accessToken', data.accessToken);
+    return &#123; token: data.accessToken &#125;;
+  &#125;, &#123; maxRefreshAttempts: 2 &#125;)
+);
+apiWithAuth.on('onTokenRefreshed', () =&gt; console.info('Token refreshed'));
+
+// 2. Circuit breaker
+api.use(createCircuitBreaker(&#123;
+  failureThreshold: 5,
+  openTimeout: 30_000,
+  halfOpenMax: 2,
+  successThreshold: 2,
+&#125;));
+
+// 3. Response caching (GET only, no auth-bearing responses)
+api.use(createCachePlugin(&#123;
+  timeToRevalidate: 60_000,
+  maxItems: 300,
+  skipWhenAuthPresent: true,   // Important: prevents cross-user cache pollution
+&#125;));
+
+// 4. Metrics
+api.use(createMetricsPlugin());
+api.on('onMetricsUpdated', (m) =&gt; &#123;
+  if (m.completelyFailedRequests &gt; 10) &#123;
+    analytics.track('high_api_failure_rate', &#123; count: m.completelyFailedRequests &#125;);
+  &#125;
+&#125;);
+
+// 5. Debug sanitization — safe verbose logs in staging
+if (import.meta.env.DEV) &#123;
+  api.use(createDebugSanitizationPlugin(&#123;
+    sanitizeOptions: &#123;
+      sensitiveHeaders: ['Authorization'],
+      sensitiveFields: ['password', 'token'],
+    &#125;,
+  &#125;));
+&#125;
+
+// Clean up on app teardown
+window.addEventListener('beforeunload', () =&gt; api.destroy());</code></pre>
+
+<h2>Backend Node.js service</h2>
+<p>Multi-user Node.js service calling a downstream API. Do NOT share a caching instance across users:</p>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
+import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
+
+// One shared retryer per downstream service — NOT per request
+export const downstreamApi = createRetryer(&#123;
+  retries: 3,
+  maxConcurrentRequests: 20,
+  queueDelay: 0,               // Minimal pacing for high-throughput services
+  maxQueueSize: 500,
+&#125;);
+
+// Circuit breaker protects the downstream service
+downstreamApi.use(createCircuitBreaker(&#123;
+  failureThreshold: 10,
+  openTimeout: 30_000,
+  useSlidingWindow: true,
+  slidingWindowSize: 60_000,
+&#125;));
+
+// Metrics for alerting
+downstreamApi.use(createMetricsPlugin());
+downstreamApi.on('onMetricsUpdated', (m) =&gt; &#123;
+  prometheus.gauge('downstream_api_failures').set(m.completelyFailedRequests);
+&#125;);
+
+// Graceful shutdown
+process.on('SIGTERM', () =&gt; &#123;
+  downstreamApi.destroy();
+&#125;);</code></pre>
+
+<h2>Security checklist</h2>
+<table>
+  <thead><tr><th>Item</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Set <code>skipWhenAuthPresent: true</code> on CachingPlugin</td><td>Prevents caching user-specific responses on a shared instance</td></tr>
+    <tr><td>Keep <code>storeAuthRequests: false</code> on ManualRetryPlugin</td><td>Prevents storing requests with auth headers that may have expired</td></tr>
+    <tr><td>Set <code>debug: false</code> in production</td><td>Avoids logging request/response details to stdout/stderr</td></tr>
+    <tr><td>Use <code>maxRequestsToStore</code></td><td>Bounds memory usage from ManualRetryPlugin's request store</td></tr>
+    <tr><td>Prefer one retryer per security boundary</td><td>Isolates cache and store from other users/tenants</td></tr>
+    <tr><td>Add <code>Idempotency-Key</code> to POST/PUT mutations</td><td>Makes retried mutations safe to replay</td></tr>
+    <tr><td>Call <code>destroy()</code> on shutdown</td><td>Clears timers and prevents memory leaks in long-running processes</td></tr>
+  </tbody>
+</table>
+
+<h2>Timer health monitoring</h2>
+<pre><code class="language-typescript">// Check timer health periodically in long-running services
+const healthInterval = setInterval(() =&gt; &#123;
+  const stats = downstreamApi.getTimerStats();
+  if (stats.activeTimers &gt; 200) &#123;
+    logger.warn('Elevated timer count', stats);
+  &#125;
+&#125;, 30_000);
+
+process.on('SIGTERM', () =&gt; &#123;
+  clearInterval(healthInterval);
+  downstreamApi.destroy();
+&#125;);</code></pre>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/guides/offline" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Offline Support →</a>
+</div>
+</DocsLayout>

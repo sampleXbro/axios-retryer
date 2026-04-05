@@ -57,6 +57,8 @@ Thumbs.db
 # Generated documentation
 docs/
 internal-docs/
+# Allow website docs pages (tracked Astro source)
+!website/src/pages/docs/
 
 # Local assistant settings
 .claude/settings.local.json

@@ -1,0 +1,115 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="RequestDependencyPlugin" section="Plugins" description="Block lower-priority requests until critical ones complete with axios-retryer's RequestDependencyPlugin.">
+
+<h1 class="page-title">RequestDependencyPlugin</h1>
+<p class="page-lead">Holds lower-priority requests in the queue while CRITICAL or HIGH priority requests are in flight. Ensures checkout flows, auth calls, and urgent writes always preempt background polling.</p>
+
+<h2>Install</h2>
+<pre><code class="language-typescript">import &#123; createRequestDependencyPlugin &#125; from 'axios-retryer/plugins/RequestDependencyPlugin';</code></pre>
+
+<h2>Basic usage</h2>
+<pre><code class="language-typescript">import &#123; createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES &#125; from 'axios-retryer';
+import &#123; createRequestDependencyPlugin &#125; from 'axios-retryer/plugins/RequestDependencyPlugin';
+
+const retryer = createRetryer(&#123; maxConcurrentRequests: 4 &#125;);
+
+retryer.use(
+  createRequestDependencyPlugin(&#123;
+    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+    // Any request with priority ≥ HIGH is "blocking"
+    // Lower-priority requests wait until all blocking requests complete
+    cancelPendingOnDependencyFailure: true,
+    // Cancel queued lower-priority work if a blocker fails
+  &#125;)
+);</code></pre>
+
+<h2>All options</h2>
+<pre><code class="language-typescript">&#123;
+  blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+  // Priority level at which a request becomes "blocking" (default: CRITICAL)
+
+  cancelPendingOnDependencyFailure: false,
+  // When true: cancel queued non-blocking requests if any blocker fails (default: false)
+&#125;</code></pre>
+
+<h2>Making a request blocking</h2>
+<p>Assign a priority at or above <code>blockingPriorityThreshold</code>:</p>
+<pre><code class="language-typescript">import &#123; AXIOS_RETRYER_REQUEST_PRIORITIES &#125; from 'axios-retryer';
+
+// This blocks all lower-priority requests in the queue
+await retryer.axiosInstance.post('/auth/login', creds, &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL &#125;,
+&#125;);
+
+// These are held until the CRITICAL request above completes
+retryer.axiosInstance.get('/api/recommendations', &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW &#125;,
+&#125;);
+retryer.axiosInstance.get('/api/analytics', &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW &#125;,
+&#125;);</code></pre>
+
+<h2>Request priority levels</h2>
+<table>
+  <thead><tr><th>Constant</th><th>Value</th><th>Typical use</th></tr></thead>
+  <tbody>
+    <tr><td><code>CRITICAL</code></td><td>4</td><td>Auth, checkout, payment</td></tr>
+    <tr><td><code>HIGH</code></td><td>2</td><td>User-visible data, primary content</td></tr>
+    <tr><td><code>MEDIUM</code></td><td>1</td><td>Secondary data, non-critical reads</td></tr>
+    <tr><td><code>LOW</code></td><td>0</td><td>Analytics, prefetch, background sync</td></tr>
+  </tbody>
+</table>
+
+<h2>Plugin methods</h2>
+<pre><code class="language-typescript">const dep = createRequestDependencyPlugin(&#123;
+  blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+&#125;);
+retryer.use(dep);
+
+// Check if a given config is a blocking request
+const isBlocking = dep.isBlockingRequest(config);
+
+// How many blocking requests are currently in flight
+const count = dep.getActiveBlockingRequestCount();</code></pre>
+
+<h2>Plugin events</h2>
+<pre><code class="language-typescript">const managed = retryer.use(createRequestDependencyPlugin(&#123;
+  blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+&#125;));
+
+managed.on('onBlockingRequestFailed', (config) =&gt; &#123;
+  console.error('Critical request failed:', config.url);
+  // Possibly redirect to error page or retry
+&#125;);
+
+managed.on('onAllBlockingRequestsResolved', () =&gt; &#123;
+  console.log('All critical requests done — releasing queue');
+&#125;);</code></pre>
+
+<h2>Checkout flow example</h2>
+<pre><code class="language-typescript">// Ensure payment goes first; analytics doesn't race it
+async function checkout(cartId: string) &#123;
+  // CRITICAL: Payment must complete before anything else
+  const &#123; data: order &#125; = await retryer.axiosInstance.post(
+    '/api/checkout',
+    &#123; cartId &#125;,
+    &#123; __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL &#125; &#125;
+  );
+
+  // LOW: Analytics can wait
+  retryer.axiosInstance.post(
+    '/api/analytics/checkout',
+    &#123; orderId: order.id &#125;,
+    &#123; __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW &#125; &#125;
+  );
+
+  return order;
+&#125;</code></pre>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/api-reference" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">API Reference →</a>
+  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

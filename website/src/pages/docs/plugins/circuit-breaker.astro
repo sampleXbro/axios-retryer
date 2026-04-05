@@ -1,0 +1,106 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="CircuitBreakerPlugin" section="Plugins" description="Protect failing upstreams with axios-retryer's CircuitBreakerPlugin — trip open on failures, fast-fail during recovery, probe with half-open requests.">
+
+<h1 class="page-title">CircuitBreakerPlugin</h1>
+<p class="page-lead">Prevents a failing upstream from being hammered during outages. Trips open after N failures, fast-fails all subsequent requests, and allows configurable test probes before closing again.</p>
+
+<h2>Install</h2>
+<pre><code class="language-typescript">import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';</code></pre>
+
+<h2>Basic usage</h2>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
+
+const retryer = createRetryer();
+
+retryer.use(
+  createCircuitBreaker(&#123;
+    failureThreshold: 5,      // Consecutive failures before tripping open
+    openTimeout: 30_000,      // ms to wait before testing (half-open)
+    halfOpenMax: 2,           // Probe requests allowed in half-open state
+  &#125;)
+);</code></pre>
+
+<h2>All options</h2>
+<pre><code class="language-typescript">createCircuitBreaker(&#123;
+  failureThreshold: 5,         // Failures before circuit trips (default: 5)
+  openTimeout: 30_000,         // ms in OPEN state before going HALF-OPEN (default: 30000)
+  halfOpenMax: 2,              // Test requests in HALF-OPEN before deciding (default: 1)
+  successThreshold: 2,         // Successes in HALF-OPEN to close again (default: 1)
+  useSlidingWindow: true,      // Count failures within a time window (default: false)
+  slidingWindowSize: 60_000,   // Window size in ms (default: 60000)
+  excludeUrls: [               // URL patterns that bypass the breaker
+    /\/healthcheck/,
+    '/api/status',
+  ],
+&#125;)</code></pre>
+
+<h2>Circuit states</h2>
+
+<table>
+  <thead><tr><th>State</th><th>Behaviour</th><th>Transition</th></tr></thead>
+  <tbody>
+    <tr><td><strong>CLOSED</strong></td><td>Normal operation — requests flow through</td><td>→ OPEN when failures ≥ <code>failureThreshold</code></td></tr>
+    <tr><td><strong>OPEN</strong></td><td>All requests fail fast with <code>CircuitBreakerStateError</code></td><td>→ HALF-OPEN after <code>openTimeout</code></td></tr>
+    <tr><td><strong>HALF-OPEN</strong></td><td>Up to <code>halfOpenMax</code> probe requests allowed</td><td>→ CLOSED after <code>successThreshold</code> successes; → OPEN on any failure</td></tr>
+  </tbody>
+</table>
+
+<h2>Inspecting breaker state</h2>
+<pre><code class="language-typescript">const breaker = createCircuitBreaker(&#123; failureThreshold: 5, openTimeout: 30_000 &#125;);
+retryer.use(breaker);
+
+// Current state
+const state = breaker.getState();
+console.log(state);  // 'CLOSED' | 'OPEN' | 'HALF_OPEN'
+
+// Per-URL and global metrics
+const metrics = breaker.getMetrics();
+console.log(metrics.totalFailures);
+console.log(metrics.totalSuccesses);</code></pre>
+
+<h2>Handling the open circuit</h2>
+<pre><code class="language-typescript">import &#123; CircuitBreakerStateError &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
+
+try &#123;
+  await retryer.axiosInstance.get('/api/orders');
+&#125; catch (err) &#123;
+  if (err instanceof CircuitBreakerStateError) &#123;
+    // Don't alert — this is expected circuit-breaker behaviour
+    return cachedFallback ?? &#123; orders: [] &#125;;
+  &#125;
+  throw err;  // Surface other errors normally
+&#125;</code></pre>
+
+<h2>Sliding window example</h2>
+<p>Count failures in a rolling 60-second window instead of a cumulative counter:</p>
+<pre><code class="language-typescript">createCircuitBreaker(&#123;
+  failureThreshold: 10,
+  openTimeout: 15_000,
+  useSlidingWindow: true,
+  slidingWindowSize: 60_000,  // Trip open if 10 failures occur within 60 seconds
+&#125;)</code></pre>
+
+<h2>Excluding URLs</h2>
+<p>Health-check and monitoring endpoints should bypass the breaker:</p>
+<pre><code class="language-typescript">createCircuitBreaker(&#123;
+  failureThreshold: 5,
+  openTimeout: 30_000,
+  excludeUrls: [/\/health/, '/metrics', '/ping'],
+&#125;)</code></pre>
+
+<div class="callout callout-warning">
+  <div class="callout-icon">⚠️</div>
+  <div class="callout-content">
+    <div class="callout-title">openTimeout affects both detection and recovery</div>
+    <p><code>openTimeout</code> controls how long the circuit stays open before probing. Setting it very low means faster recovery attempts but can lead to repeated trips if the upstream is still unstable.</p>
+  </div>
+</div>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/plugins/caching" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CachingPlugin →</a>
+  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

@@ -1,0 +1,116 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Quick Start" description="Get axios-retryer working in minutes with the functional and class-based API.">
+
+<h1 class="page-title">Quick Start</h1>
+<p class="page-lead">Wrap your Axios instance and start making resilient requests. The <code>axiosInstance</code> property is a drop-in replacement for direct Axios usage.</p>
+
+<h2>Functional API (recommended)</h2>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+
+const retryer = createRetryer(&#123;
+  retries: 3,
+  debug: false,
+&#125;);
+
+// Drop-in replacement for axios
+const &#123; data &#125; = await retryer.axiosInstance.get('https://api.example.com/users');
+console.log(data);</code></pre>
+
+<h2>Class-based API</h2>
+<pre><code class="language-typescript">import &#123; RetryManager &#125; from 'axios-retryer';
+
+const manager = new RetryManager(&#123; retries: 3 &#125;);
+const &#123; data &#125; = await manager.axiosInstance.get('/api/users');</code></pre>
+
+<h2>With your existing Axios instance</h2>
+<pre><code class="language-typescript">import axios from 'axios';
+import &#123; createRetryer &#125; from 'axios-retryer';
+
+const baseAxios = axios.create(&#123;
+  baseURL: 'https://api.example.com',
+  timeout: 5000,
+  headers: &#123; 'X-App-Version': '2.0' &#125;,
+&#125;);
+
+const retryer = createRetryer(&#123;
+  retries: 3,
+  axiosInstance: baseAxios,      // uses your existing instance
+&#125;);
+
+// axiosInstance is the same object — base URL, headers, interceptors all preserved
+await retryer.axiosInstance.get('/users');</code></pre>
+
+<h2>Add plugins</h2>
+<p>Start with core, then layer in plugins as your app needs them:</p>
+<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
+import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
+import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
+import &#123; createCachePlugin &#125; from 'axios-retryer/plugins/CachingPlugin';
+import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
+
+const retryer = createRetryer(&#123; retries: 3, maxConcurrentRequests: 8 &#125;);
+
+// 1. Refresh tokens on 401 automatically
+retryer.use(createTokenRefreshPlugin(async (axiosInstance) =&gt; &#123;
+  const refreshToken = localStorage.getItem('refreshToken');
+  const &#123; data &#125; = await axiosInstance.post('/auth/refresh', &#123; refreshToken &#125;);
+  localStorage.setItem('accessToken', data.accessToken);
+  return &#123; token: data.accessToken &#125;;
+&#125;));
+
+// 2. Trip circuit open after 5 consecutive failures
+retryer.use(createCircuitBreaker(&#123;
+  failureThreshold: 5,
+  openTimeout: 30_000,
+&#125;));
+
+// 3. Cache GET responses for 1 minute
+retryer.use(createCachePlugin(&#123; timeToRevalidate: 60_000, maxItems: 200 &#125;));
+
+// 4. Collect metrics
+retryer.use(createMetricsPlugin());
+retryer.on('onMetricsUpdated', (m) =&gt; console.log('retries:', m.successfulRetries));
+
+// Make requests
+const &#123; data &#125; = await retryer.axiosInstance.get('/api/products');</code></pre>
+
+<h2>Request priorities</h2>
+<pre><code class="language-typescript">import &#123; createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES &#125; from 'axios-retryer';
+
+const retryer = createRetryer(&#123; maxConcurrentRequests: 3 &#125;);
+
+// CRITICAL requests skip the queue ahead of everything else
+retryer.axiosInstance.post('/auth/login', creds, &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL &#125;,
+&#125;);
+
+// Background work is processed last
+retryer.axiosInstance.post('/analytics/event', eventData, &#123;
+  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW &#125;,
+&#125;);</code></pre>
+
+<h2>Cancellation</h2>
+<pre><code class="language-typescript">// Cancel a specific request by ID
+const config = await retryer.axiosInstance.get('/api/data', &#123;
+  __axiosRetryer: &#123; requestId: 'my-request' &#125;,
+&#125;).catch(() =&gt; &#123;&#125;);
+
+retryer.cancelRequest('my-request');
+
+// Cancel everything
+retryer.cancelAllRequests();</code></pre>
+
+<h2>Try it live</h2>
+<p>
+  <a href="https://codesandbox.io/p/sandbox/axios-retryer-demo-fppdc4" target="_blank" rel="noopener">
+    → Open in CodeSandbox ↗
+  </a>
+</p>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/configuration" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Configuration →</a>
+  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Plugins</a>
+</div>
+</DocsLayout>

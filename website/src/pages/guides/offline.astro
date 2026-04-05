@@ -1,0 +1,116 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Offline Support" section="Guides" description="Build offline-first apps with axios-retryer's ManualRetryPlugin — store failed requests, replay on reconnect.">
+
+<h1 class="page-title">Offline Support</h1>
+<p class="page-lead">Use <code>ManualRetryPlugin</code> with <code>RETRY_MODES.MANUAL</code> to queue requests while offline and replay them transparently on reconnect.</p>
+
+<h2>Complete offline-first setup</h2>
+<pre><code class="language-typescript">import &#123; createRetryer, RETRY_MODES &#125; from 'axios-retryer';
+import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';
+import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
+
+const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
+
+const manualRetry = createManualRetryPlugin(&#123;
+  maxRequestsToStore: 100,
+  manualRetryMaxAge: 10 * 60_000,    // Discard after 10 minutes
+  storeNonIdempotent: false,          // Only safe idempotent requests
+  storeAuthRequests: false,           // Don't store auth-bearing requests
+
+  // Re-attach fresh auth before replay
+  rehydrateAuth: (config) =&gt; &#123;
+    config.headers ??= &#123;&#125;;
+    config.headers['Authorization'] = `Bearer $&#123;auth.getAccessToken()&#125;`;
+    return config;
+  &#125;,
+&#125;);
+
+retryer.use(manualRetry);
+
+// Token refresh works even in MANUAL mode
+retryer.use(createTokenRefreshPlugin(async (axios) =&gt; &#123;
+  const &#123; data &#125; = await axios.post('/auth/refresh');
+  return &#123; token: data.accessToken &#125;;
+&#125;));
+
+// React to network status
+window.addEventListener('online', async () =&gt; &#123;
+  const pending = manualRetry.getStoredRequests();
+  if (pending.length === 0) return;
+
+  showBanner(`Syncing $&#123;pending.length&#125; pending changes...`);
+
+  try &#123;
+    const results = await manualRetry.retryFailedRequests();
+    showSuccess(`Synced $&#123;results.length&#125; changes`);
+  &#125; catch (err) &#123;
+    showError('Some requests failed to sync');
+  &#125;
+&#125;);
+
+window.addEventListener('offline', () =&gt; &#123;
+  showWarning('You are offline — changes will sync when reconnected');
+&#125;);</code></pre>
+
+<h2>Idempotency keys for safe mutation replay</h2>
+<p>Attach <code>Idempotency-Key</code> to mutations so they can be safely replayed without duplicate side effects:</p>
+<pre><code class="language-typescript">async function submitOrder(order: Order) &#123;
+  const idempotencyKey = crypto.randomUUID();
+
+  try &#123;
+    const &#123; data &#125; = await retryer.axiosInstance.post('/api/orders', order, &#123;
+      headers: &#123; 'Idempotency-Key': idempotencyKey &#125;,
+    &#125;);
+    showSuccess('Order placed');
+    return data;
+  &#125; catch (err) &#123;
+    showWarning('Offline — order queued for when you reconnect');
+    // manualRetry stored this request including the Idempotency-Key header
+    // so replay is safe even if the server already processed it
+  &#125;
+&#125;</code></pre>
+
+<h2>Inspecting pending requests</h2>
+<pre><code class="language-typescript">// Show user a count of pending actions
+function getPendingCount() &#123;
+  return manualRetry.getStoredRequests().length;
+&#125;
+
+// Discard everything without replaying (e.g. user signs out)
+function discardPending() &#123;
+  manualRetry.clearStoredRequests();
+&#125;</code></pre>
+
+<h2>React integration example</h2>
+<pre><code class="language-typescript">// useNetworkSync.ts
+import &#123; useEffect, useState &#125; from 'react';
+import &#123; manualRetry &#125; from './api';
+
+export function useNetworkSync() &#123;
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() =&gt; &#123;
+    async function syncOnline() &#123;
+      const pending = manualRetry.getStoredRequests().length;
+      if (!pending) return;
+      setSyncing(true);
+      try &#123;
+        await manualRetry.retryFailedRequests();
+      &#125; finally &#123;
+        setSyncing(false);
+      &#125;
+    &#125;
+    window.addEventListener('online', syncOnline);
+    return () =&gt; window.removeEventListener('online', syncOnline);
+  &#125;, []);
+
+  return &#123; syncing &#125;;
+&#125;</code></pre>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/guides/concurrency" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Concurrency & Priority →</a>
+  <a href="/docs/plugins/manual-retry" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">ManualRetryPlugin docs</a>
+</div>
+</DocsLayout>

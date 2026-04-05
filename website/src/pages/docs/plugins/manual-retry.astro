@@ -1,0 +1,125 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="ManualRetryPlugin" section="Plugins" description="Store and replay failed requests with axios-retryer's ManualRetryPlugin. Offline support, idempotency safeguards, age limits.">
+
+<h1 class="page-title">ManualRetryPlugin</h1>
+<p class="page-lead">Stores terminal failures in <code>MANUAL</code> mode and lets you replay them on demand — on reconnect, after user action, or on app resume. Built-in idempotency safeguards and age limits prevent unsafe replay.</p>
+
+<h2>Install</h2>
+<pre><code class="language-typescript">import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';</code></pre>
+
+<h2>Basic usage</h2>
+<pre><code class="language-typescript">import &#123; createRetryer, RETRY_MODES &#125; from 'axios-retryer';
+import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';
+
+const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
+
+const manualRetry = createManualRetryPlugin(&#123;
+  maxRequestsToStore: 50,
+  manualRetryMaxAge: 5 * 60_000,   // Drop requests older than 5 min
+&#125;);
+
+retryer.use(manualRetry);
+
+// Request fails in manual mode → stored
+try &#123;
+  await retryer.axiosInstance.post('/api/order', orderData);
+&#125; catch &#123;
+  showToast('Order saved — will retry when online');
+&#125;
+
+// Later — replay on reconnect
+window.addEventListener('online', async () =&gt; &#123;
+  const results = await manualRetry.retryFailedRequests();
+  console.log(`Replayed $&#123;results.length&#125; request(s)`);
+&#125;);</code></pre>
+
+<h2>All options</h2>
+<pre><code class="language-typescript">createManualRetryPlugin(&#123;
+  maxRequestsToStore: 100,       // Max stored failures (oldest evicted first; default: 100)
+  manualRetryMaxAge: 300_000,    // ms before stored requests are discarded (default: none)
+  storeNonIdempotent: false,     // Store POST/PUT/PATCH/DELETE without idempotency key (default: false)
+  storeAuthRequests: false,      // Store requests with auth headers (default: false — safer)
+  
+  // Mutate or redact a request before storing
+  prepareRequestForStore: (config) =&gt; (&#123;
+    ...config,
+    data: &#123; redacted: true &#125;,   // Strip sensitive payload
+  &#125;),
+
+  // Re-attach fresh auth before replay
+  rehydrateAuth: (config) =&gt; &#123;
+    config.headers ??= &#123;&#125;;
+    config.headers['Authorization'] = `Bearer $&#123;store.getAccessToken()&#125;`;
+    return config;
+  &#125;,
+
+  // Filter which requests to replay
+  beforeRetry: (config) =&gt; &#123;
+    if (config.url?.includes('/non-critical')) return null;  // Skip
+    return config;
+  &#125;,
+&#125;)</code></pre>
+
+<h2>Plugin methods</h2>
+<pre><code class="language-typescript">// Replay all stored failures
+const results = await manualRetry.retryFailedRequests();
+
+// Inspect what's stored without replaying
+const pending = manualRetry.getStoredRequests();
+console.log(`$&#123;pending.length} pending requests`);
+
+// Drop stored requests without replaying
+manualRetry.clearStoredRequests();</code></pre>
+
+<h2>Offline-first SPA pattern</h2>
+<pre><code class="language-typescript">const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
+
+const manualRetry = createManualRetryPlugin(&#123;
+  manualRetryMaxAge: 60_000,
+  storeNonIdempotent: false,         // Only safe idempotent requests
+  rehydrateAuth: (config) =&gt; &#123;
+    // Always use the latest token when replaying
+    config.headers ??= &#123;&#125;;
+    config.headers['Authorization'] = `Bearer $&#123;auth.getToken()&#125;`;
+    return config;
+  &#125;,
+&#125;);
+
+retryer.use(manualRetry);
+
+async function submitForm(data: FormData) &#123;
+  try &#123;
+    await retryer.axiosInstance.put('/api/profile', data, &#123;
+      headers: &#123; 'Idempotency-Key': crypto.randomUUID() &#125;,
+    &#125;);
+    showSuccess('Saved');
+  &#125; catch &#123;
+    showWarning('Offline — will sync when reconnected');
+  &#125;
+&#125;
+
+// Sync on reconnect
+navigator.connection?.addEventListener('change', async () =&gt; &#123;
+  if (navigator.onLine) &#123;
+    const synced = await manualRetry.retryFailedRequests();
+    showToast(`Synced $&#123;synced.length&#125; pending changes`);
+  &#125;
+&#125;);</code></pre>
+
+<h2>Security defaults</h2>
+<table>
+  <thead><tr><th>Default</th><th>What it prevents</th></tr></thead>
+  <tbody>
+    <tr><td><code>storeAuthRequests: false</code></td><td>Storing requests with auth headers; prevents replaying expired credentials</td></tr>
+    <tr><td><code>storeNonIdempotent: false</code></td><td>Storing POST/PUT/PATCH/DELETE without idempotency key; prevents duplicate side effects</td></tr>
+    <tr><td>No <code>rehydrateAuth</code> by default</td><td>Replayed requests carry no auth unless you explicitly provide fresh tokens</td></tr>
+  </tbody>
+</table>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/plugins/metrics" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">MetricsPlugin →</a>
+  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

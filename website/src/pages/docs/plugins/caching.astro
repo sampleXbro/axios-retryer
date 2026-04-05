@@ -1,0 +1,128 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="CachingPlugin" section="Plugins" description="Cache Axios responses with axios-retryer's CachingPlugin. TTR, exact/prefix invalidation, custom storage adapters.">
+
+<h1 class="page-title">CachingPlugin</h1>
+<p class="page-lead">Caches responses in memory with configurable time-to-revalidate, precise invalidation, per-request overrides, and a pluggable storage adapter contract for Redis or Memcached.</p>
+
+<h2>Install</h2>
+<pre><code class="language-typescript">import &#123; createCachePlugin &#125; from 'axios-retryer/plugins/CachingPlugin';</code></pre>
+
+<h2>Basic usage</h2>
+<pre><code class="language-typescript">import &#123; createRetryer, AXIOS_RETRYER_HTTP_METHODS &#125; from 'axios-retryer';
+import &#123; createCachePlugin &#125; from 'axios-retryer/plugins/CachingPlugin';
+
+const retryer = createRetryer();
+
+const cache = createCachePlugin(&#123;
+  timeToRevalidate: 60_000,                         // 1 minute TTR
+  cacheMethods: [AXIOS_RETRYER_HTTP_METHODS.GET],   // Only cache GET
+  maxItems: 200,
+  cleanupInterval: 5 * 60_000,                      // Prune expired entries every 5 min
+&#125;);
+
+retryer.use(cache);</code></pre>
+
+<h2>All options</h2>
+<pre><code class="language-typescript">createCachePlugin(&#123;
+  timeToRevalidate: 60_000,    // Cache lifetime in ms (default: 60000)
+  cacheMethods: ['get'],       // HTTP methods to cache (default: ['get'])
+  maxItems: 100,               // Max cached entries; oldest evicted first (default: Infinity)
+  cleanupInterval: 300_000,    // ms between expired-entry pruning (default: 300000)
+  compareHeaders: false,       // Include headers in cache key (default: false)
+  cacheOnlyRetriedRequests: false,  // Only cache responses from retry attempts (default: false)
+  skipWhenAuthPresent: true,   // Don't cache when Authorization header is set (default: true)
+
+  // Custom key builder — receives normalized request fields
+  cacheKeyBuilder: (&#123; method, normalizedUrl, normalizedParams &#125;) =&gt;
+    `$&#123;method&#125;|$&#123;normalizedUrl&#125;|$&#123;normalizedParams&#125;`,
+
+  // Custom storage adapter (e.g. Redis)
+  storage: myRedisAdapter,
+&#125;)</code></pre>
+
+<h2>Cache invalidation</h2>
+<pre><code class="language-typescript">// Build a canonical cache key for an exact match
+const userKey = cache.buildCacheKey(&#123; method: 'get', url: '/api/users/1' &#125;);
+
+// 1. Exact key invalidation
+cache.invalidateCache(&#123; exact: userKey &#125;);
+
+// 2. Prefix invalidation (all /api/users/* entries)
+cache.invalidateCache(&#123; prefix: 'GET|/api/users/' &#125;);
+
+// 3. RegExp invalidation
+cache.invalidateCache(&#123; pattern: /\/api\/products\/\d+/ &#125;);
+
+// 4. Clear everything
+cache.clearCache();</code></pre>
+
+<h2>Per-request overrides</h2>
+<p>Override global cache settings for a single request via <code>__cachingOptions</code>:</p>
+<pre><code class="language-typescript">// Force-cache a POST response
+await retryer.axiosInstance.post('/api/summary', payload, &#123;
+  __cachingOptions: &#123; cache: true, ttr: 30_000 &#125;,
+&#125;);
+
+// Skip caching for a specific GET
+await retryer.axiosInstance.get('/api/live-prices', &#123;
+  __cachingOptions: &#123; cache: false &#125;,
+&#125;);
+
+// Custom TTR for one request
+await retryer.axiosInstance.get('/api/config', &#123;
+  __cachingOptions: &#123; ttr: 300_000 &#125;, // 5 minutes
+&#125;);</code></pre>
+
+<h2>Cache statistics</h2>
+<pre><code class="language-typescript">const stats = cache.getCacheStats();
+console.log(stats.size);       // Number of entries
+console.log(stats.averageAge); // ms since entries were cached on average</code></pre>
+
+<h2>Custom storage adapter</h2>
+<p>Implement <code>CacheStorage</code> to back the cache with Redis, Memcached, or any persistent store:</p>
+<pre><code class="language-typescript">import type &#123;
+  CacheStorage,
+  CacheStorageEntry,
+  CachedItem,
+&#125; from 'axios-retryer/plugins/CachingPlugin';
+
+class RedisAdapter implements CacheStorage &#123;
+  async get(key: string): Promise&lt;CachedItem | undefined&gt; &#123;
+    const raw = await redis.get(key);
+    return raw ? JSON.parse(raw) : undefined;
+  &#125;
+  async set(key: string, value: CachedItem): Promise&lt;void&gt; &#123;
+    await redis.set(key, JSON.stringify(value), 'PX', value.expiresAt - Date.now());
+  &#125;
+  async delete(key: string): Promise&lt;void&gt; &#123;
+    await redis.del(key);
+  &#125;
+  async clear(): Promise&lt;void&gt; &#123;
+    await redis.flushDb();
+  &#125;
+  async entries(): Promise&lt;readonly CacheStorageEntry[]&gt; &#123;
+    // Return the index for cleanup, invalidation, and maxItems enforcement
+    const keys = await redis.keys('*');
+    return keys.map(key =&gt; [key, &#123; /* metadata */ &#125; as CachedItem]);
+  &#125;
+&#125;
+
+const cache = createCachePlugin(&#123; storage: new RedisAdapter() &#125;);
+retryer.use(cache);</code></pre>
+
+<h2>Security notes</h2>
+<div class="callout callout-warning">
+  <div class="callout-icon">⚠️</div>
+  <div class="callout-content">
+    <div class="callout-title">Do not share caching instances across users or tenants</div>
+    <p>Cache keys do not isolate principals by default. In SSR or multi-user server contexts, use separate retryer instances per user, or disable caching for personalized endpoints. The default <code>skipWhenAuthPresent: true</code> is a safety net, not a guarantee.</p>
+  </div>
+</div>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/plugins/manual-retry" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">ManualRetryPlugin →</a>
+  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

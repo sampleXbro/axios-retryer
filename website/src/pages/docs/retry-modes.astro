@@ -1,0 +1,86 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Retry Modes" description="Automatic and manual retry modes in axios-retryer — when to use each and how they work.">
+
+<h1 class="page-title">Retry Modes</h1>
+<p class="page-lead">axios-retryer supports two modes: <strong>Automatic</strong> (default) transparently retries failures; <strong>Manual</strong> stops after the first attempt and lets you decide when to replay.</p>
+
+<h2>Automatic mode</h2>
+<p>The default. Transient failures are retried up to <code>retries</code> times with configurable backoff, completely transparent to your application code.</p>
+
+<pre><code class="language-typescript">import &#123; createRetryer, RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES &#125; from 'axios-retryer';
+
+const retryer = createRetryer(&#123;
+  mode: RETRY_MODES.AUTOMATIC,     // default, can omit
+  retries: 3,
+  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
+  retryableStatuses: [408, 429, [500, 599] as const],
+&#125;);
+
+// This GET will retry up to 3 times on 5xx / 429 / timeout
+const &#123; data &#125; = await retryer.axiosInstance.get('/api/products');</code></pre>
+
+<h3>What triggers a retry</h3>
+<ul>
+  <li>Response status code matches <code>retryableStatuses</code></li>
+  <li>Request method is in <code>retryableMethods</code> (default: GET, HEAD, OPTIONS)</li>
+  <li>Network error with no response</li>
+  <li>Custom <code>retryStrategy.isRetryable()</code> returns <code>true</code></li>
+</ul>
+
+<h2>Manual mode</h2>
+<p>In manual mode the retry manager does not automatically retry. Each request either succeeds on the first attempt or fails immediately. Add <strong><code>ManualRetryPlugin</code></strong> when you want failed requests stored and replayed later — for example after reconnecting to the network.</p>
+
+<pre><code class="language-typescript">import &#123; createRetryer, RETRY_MODES &#125; from 'axios-retryer';
+import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';
+
+const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
+
+const manualRetry = createManualRetryPlugin(&#123;
+  maxRequestsToStore: 50,
+  manualRetryMaxAge: 5 * 60_000,   // Discard stored requests after 5 min
+&#125;);
+retryer.use(manualRetry);
+
+// Request fails → stored in ManualRetryPlugin
+try &#123;
+  await retryer.axiosInstance.get('/api/data');
+&#125; catch &#123;
+  console.log('Failed — stored for later replay');
+&#125;
+
+// Later — replay all stored failures
+const results = await manualRetry.retryFailedRequests();
+console.log(`$&#123;results.length} requests replayed`);</code></pre>
+
+<h3>Offline / reconnect pattern</h3>
+<pre><code class="language-typescript">window.addEventListener('online', async () =&gt; &#123;
+  const results = await manualRetry.retryFailedRequests();
+  showToast(`Synced $&#123;results.length} pending request(s)`);
+&#125;);</code></pre>
+
+<h2>Choosing a mode</h2>
+<table>
+  <thead><tr><th>Scenario</th><th>Mode</th></tr></thead>
+  <tbody>
+    <tr><td>Standard API client — just handle transient errors</td><td><code>AUTOMATIC</code></td></tr>
+    <tr><td>You want to surface errors to the user and let them retry</td><td><code>MANUAL</code></td></tr>
+    <tr><td>Offline-first SPA — queue when offline, sync on reconnect</td><td><code>MANUAL</code> + <code>ManualRetryPlugin</code></td></tr>
+    <tr><td>Background worker that should keep trying indefinitely</td><td><code>AUTOMATIC</code> with high <code>retries</code></td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-info">
+  <div class="callout-icon">ℹ️</div>
+  <div class="callout-content">
+    <div class="callout-title">Manual mode without ManualRetryPlugin</div>
+    <p><code>RETRY_MODES.MANUAL</code> alone means "don't retry automatically." You still get the concurrency queue and priority system — just no automatic replay. Add <code>ManualRetryPlugin</code> only when you need stored replay functionality.</p>
+  </div>
+</div>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/events" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Events →</a>
+  <a href="/docs/plugins/manual-retry" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">ManualRetryPlugin docs</a>
+</div>
+</DocsLayout>

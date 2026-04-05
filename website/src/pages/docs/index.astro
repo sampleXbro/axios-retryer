@@ -1,0 +1,73 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout title="Introduction" description="Get started with axios-retryer — a TypeScript-first Axios retry library.">
+
+<h1 class="page-title">Introduction</h1>
+<p class="page-lead">
+  axios-retryer is a TypeScript-first retry manager for Axios that adds concurrency control,
+  request prioritization, and an opt-in plugin layer for token refresh, response caching,
+  circuit breaking, and more.
+</p>
+
+<h2>What problem does it solve?</h2>
+<p>
+  Most Axios retry helpers stop at "try again after N milliseconds." Real production apps usually need more:
+</p>
+<ul>
+  <li><strong>Transient failures</strong> — 5xx spikes, timeouts, flaky networks, and 429 rate limits happen constantly.</li>
+  <li><strong>Authentication</strong> — Access tokens expire. Retrying correctly after a refresh, without firing multiple simultaneous refresh calls, is deceptively hard to get right.</li>
+  <li><strong>Concurrency</strong> — Browsers and Node workers can easily overwhelm an upstream if every request fires without any queue.</li>
+  <li><strong>Operational visibility</strong> — Once retries start happening, teams need metrics, events, and diagnostics to understand what the client is doing.</li>
+</ul>
+
+<p>axios-retryer is built for that broader problem. You start with a small core and add only the plugins your app actually needs.</p>
+
+<h2>Design principles</h2>
+<ul>
+  <li><strong>Small core, optional plugins</strong> — the root entry is focused on retry orchestration, queueing, and events. Everything else is an opt-in plugin with its own documented entry point.</li>
+  <li><strong>Tree-shakeable</strong> — each plugin ships as a separate entry point so unused code stays out of your bundle.</li>
+  <li><strong>TypeScript-first</strong> — all public API is typed, including plugin-specific events that widen the manager type through <code>use()</code>.</li>
+  <li><strong>Predictable behavior</strong> — strong defaults, named errors, and no hidden state.</li>
+</ul>
+
+<h2>Core vs plugin boundary</h2>
+<table>
+  <thead>
+    <tr><th>What it does</th><th>Where it lives</th><th>Entry point</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Retry orchestration, queue, concurrency</td><td>Core</td><td><code>axios-retryer</code></td></tr>
+    <tr><td>Request prioritization</td><td>Core</td><td><code>axios-retryer</code></td></tr>
+    <tr><td>Lifecycle events and hooks</td><td>Core</td><td><code>axios-retryer</code></td></tr>
+    <tr><td>Custom retry strategies</td><td>Core</td><td><code>axios-retryer</code></td></tr>
+    <tr><td>Named error classes</td><td>Core</td><td><code>axios-retryer</code></td></tr>
+    <tr><td>Token refresh</td><td>Plugin</td><td><code>axios-retryer/plugins/TokenRefreshPlugin</code></td></tr>
+    <tr><td>Response caching</td><td>Plugin</td><td><code>axios-retryer/plugins/CachingPlugin</code></td></tr>
+    <tr><td>Circuit breaking</td><td>Plugin</td><td><code>axios-retryer/plugins/CircuitBreakerPlugin</code></td></tr>
+    <tr><td>Manual retry replay</td><td>Plugin</td><td><code>axios-retryer/plugins/ManualRetryPlugin</code></td></tr>
+    <tr><td>Request dependency gating</td><td>Plugin</td><td><code>axios-retryer/plugins/RequestDependencyPlugin</code></td></tr>
+    <tr><td>Debug log sanitization</td><td>Plugin</td><td><code>axios-retryer/plugins/DebugSanitizationPlugin</code></td></tr>
+    <tr><td>Metrics collection</td><td>Plugin</td><td><code>axios-retryer/plugins/MetricsPlugin</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Good fit for</h2>
+<ul>
+  <li>Frontend apps that need retries + token refresh + predictable concurrency</li>
+  <li>Node.js services calling third-party APIs under rate limits</li>
+  <li>TypeScript projects that want a typed retry manager instead of ad hoc interceptors</li>
+  <li>Teams that want a single Axios integration point instead of scattered retry helpers</li>
+</ul>
+
+<h2>Probably not for</h2>
+<ul>
+  <li>Projects not using Axios</li>
+  <li>Apps that only need "retry a GET a few times" and nothing more — a simpler helper is fine</li>
+</ul>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href="/docs/installation" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Installation →</a>
+  <a href="/docs/quick-start" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Quick Start</a>
+</div>
+</DocsLayout>
