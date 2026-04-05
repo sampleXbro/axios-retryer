@@ -1,5 +1,10 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nconst retryer = createRetryer();\nretryer.use(createMetricsPlugin());\n\n// Chain multiple subscriptions\nretryer\n  .on('onRetryProcessStarted', () => {\n    console.log('Retry process started');\n  })\n  .on('beforeRetry', (config) => {\n    console.log(`About to retry: ${'${config.method?.toUpperCase()} ${config.url}'}`);\n  })\n  .on('afterRetry', (config, success) => {\n    console.log(`Retry attempt ${success ? 'succeeded' : 'failed'}`);\n  })\n  .on('onRetryProcessFinished', () => {\n    console.log('All retry attempts complete');\n  })\n  .on('onFailure', (error) => {\n    analytics.track('api_failure', { url: error.config?.url });\n  })\n  .on('onMetricsUpdated', (metrics) => {\n    // Requires MetricsPlugin\n    updateDashboard(metrics);\n  });";
+const _shikiCode1 = "const handler = (config: any) => console.log(config.url);\nretryer.on('beforeRetry', handler);\n\n// Later, when cleanup is needed:\nretryer.off('beforeRetry', handler);";
+const _shikiCode2 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\n// The return value of use() has the plugin's events typed\nconst retryerWithAuth = retryer.use(\n  createTokenRefreshPlugin(async (axios) => {\n    const { data } = await axios.post('/auth/refresh');\n    return { token: data.accessToken };\n  })\n);\n\nretryerWithAuth.on('onTokenRefreshed', (token) => {\n  console.log('Token refreshed:', token);\n});";
+const _shikiCode3 = "import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nretryer.use(createMetricsPlugin());\n\nretryer.on('onMetricsUpdated', (metrics) => {\n  // metrics shape:\n  // {\n  //   totalRequests: number,\n  //   successfulRetries: number,\n  //   failedRetries: number,\n  //   completelyFailedRequests: number,\n  //   totalRetryAttempts: number,\n  //   averageRetryDelay: number,\n  //   timerHealth: { activeTimers, activeRetryTimers, healthScore }\n  // }\n\n  myDashboard.update({\n    successRate: metrics.successfulRetries / (metrics.totalRequests || 1),\n    failureRate: metrics.completelyFailedRequests,\n    avgDelay: metrics.averageRetryDelay,\n  });\n});";
 ---
 <DocsLayout title="Events" description="Subscribe to lifecycle events in axios-retryer for monitoring, logging, and custom workflows.">
 
@@ -7,57 +12,15 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 <p class="page-lead">The event system lets you react to every stage of the retry lifecycle. Use it for logging, dashboards, analytics, and custom side effects — without touching request code.</p>
 
 <h2>Subscribing to events</h2>
-<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-
-const retryer = createRetryer();
-retryer.use(createMetricsPlugin());
-
-// Chain multiple subscriptions
-retryer
-  .on('onRetryProcessStarted', () =&gt; &#123;
-    console.log('Retry process started');
-  &#125;)
-  .on('beforeRetry', (config) =&gt; &#123;
-    console.log(`About to retry: $&#123;'$&#123;config.method?.toUpperCase()} $&#123;config.url}'}`);
-  &#125;)
-  .on('afterRetry', (config, success) =&gt; &#123;
-    console.log(`Retry attempt $&#123;success ? 'succeeded' : 'failed'}`);
-  &#125;)
-  .on('onRetryProcessFinished', () =&gt; &#123;
-    console.log('All retry attempts complete');
-  &#125;)
-  .on('onFailure', (error) =&gt; &#123;
-    analytics.track('api_failure', &#123; url: error.config?.url &#125;);
-  &#125;)
-  .on('onMetricsUpdated', (metrics) =&gt; &#123;
-    // Requires MetricsPlugin
-    updateDashboard(metrics);
-  &#125;);</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h2>Unsubscribing</h2>
-<pre><code class="language-typescript">const handler = (config: any) =&gt; console.log(config.url);
-retryer.on('beforeRetry', handler);
-
-// Later, when cleanup is needed:
-retryer.off('beforeRetry', handler);</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>Plugin-specific events</h2>
 <p>Plugin events become available after calling <code>use()</code>. The returned value has the widened event type:</p>
 
-<pre><code class="language-typescript">import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
-
-// The return value of use() has the plugin's events typed
-const retryerWithAuth = retryer.use(
-  createTokenRefreshPlugin(async (axios) =&gt; &#123;
-    const &#123; data &#125; = await axios.post('/auth/refresh');
-    return &#123; token: data.accessToken &#125;;
-  &#125;)
-);
-
-retryerWithAuth.on('onTokenRefreshed', (token) =&gt; &#123;
-  console.log('Token refreshed:', token);
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>Event reference</h2>
 <table>
@@ -79,28 +42,7 @@ retryerWithAuth.on('onTokenRefreshed', (token) =&gt; &#123;
 </table>
 
 <h2>Real-time metrics dashboard pattern</h2>
-<pre><code class="language-typescript">import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-
-retryer.use(createMetricsPlugin());
-
-retryer.on('onMetricsUpdated', (metrics) =&gt; &#123;
-  // metrics shape:
-  // &#123;
-  //   totalRequests: number,
-  //   successfulRetries: number,
-  //   failedRetries: number,
-  //   completelyFailedRequests: number,
-  //   totalRetryAttempts: number,
-  //   averageRetryDelay: number,
-  //   timerHealth: &#123; activeTimers, activeRetryTimers, healthScore &#125;
-  // &#125;
-
-  myDashboard.update(&#123;
-    successRate: metrics.successfulRetries / (metrics.totalRequests || 1),
-    failureRate: metrics.completelyFailedRequests,
-    avgDelay: metrics.averageRetryDelay,
-  &#125;);
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode3} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
   <a href="/docs/errors" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Error Classes →</a>

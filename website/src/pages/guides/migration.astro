@@ -1,5 +1,17 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "const retryer = createRetryer({\n  debug: true,\n  enableSanitization: true,\n  sanitizeOptions: {\n    sensitiveHeaders: ['X-API-Key'],\n  },\n});";
+const _shikiCode1 = "import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\n\nconst retryer = createRetryer({ debug: true });\nretryer.use(createDebugSanitizationPlugin({\n  sanitizeOptions: { sensitiveHeaders: ['X-API-Key'] },\n}));";
+const _shikiCode2 = "const retryer = createRetryer();\n\nretryer.on('onMetricsUpdated', (metrics) => {\n  console.log(metrics.successfulRetries);\n});";
+const _shikiCode3 = "import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nconst retryer = createRetryer();\nretryer.use(createMetricsPlugin());\n\nretryer.on('onMetricsUpdated', (metrics) => {\n  console.log(metrics.successfulRetries);\n});";
+const _shikiCode4 = "const retryer = createRetryer({\n  mode: RETRY_MODES.MANUAL,\n  maxRequestsToStore: 100,\n  hooks: {\n    beforeManualRetry: (config) => config,\n  },\n});\n\nconst responses = await retryer.retryFailedRequests();";
+const _shikiCode5 = "import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\n\nconst retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  maxRequestsToStore: 100,\n  beforeRetry: (config) => config,\n});\n\nretryer.use(manualRetry);\n\nconst responses = await manualRetry.retryFailedRequests();";
+const _shikiCode6 = "// If you relied on the old behaviour (4 attempts):\ncreateTokenRefreshPlugin(refreshFn, { maxRefreshAttempts: 4 });  // Now truly 4 attempts\n\n// If your value was already tuned:\ncreateTokenRefreshPlugin(refreshFn, { maxRefreshAttempts: 3 });  // Now truly 3 attempts (was effectively 4)\n// \u2192 decrease by 1 if you want to keep the same total attempt count";
+const _shikiCode7 = "createRetryer({\n  hooks: {\n    onTokenRefreshed: (token) => console.log(token),\n  },\n});";
+const _shikiCode8 = "const retryerWithAuth = retryer.use(createTokenRefreshPlugin(refreshFn));\nretryerWithAuth.on('onTokenRefreshed', (token) => console.log(token));";
+const _shikiCode9 = "// Inside a custom plugin's initialize():\nplugin.initialize = (retryer) => {\n  retryer.on('beforeRetry', (config) => {\n    // Custom logic\n  });\n};";
+const _shikiCode10 = "npm run build:browser\n# Output: dist/browser/";
 ---
 <DocsLayout title="Migration 1.x → 2.0" section="Guides" description="Migrate from axios-retryer 1.x to 2.0 — sanitization plugin, MetricsPlugin, ManualRetryPlugin replay, maxRefreshAttempts fix.">
 
@@ -20,107 +32,50 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 <h2>Sanitization → DebugSanitizationPlugin</h2>
 
 <h3>Before (1.x)</h3>
-<pre><code class="language-typescript">const retryer = createRetryer(&#123;
-  debug: true,
-  enableSanitization: true,
-  sanitizeOptions: &#123;
-    sensitiveHeaders: ['X-API-Key'],
-  &#125;,
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h3>After (2.0)</h3>
-<pre><code class="language-typescript">import &#123; createDebugSanitizationPlugin &#125; from 'axios-retryer/plugins/DebugSanitizationPlugin';
-
-const retryer = createRetryer(&#123; debug: true &#125;);
-retryer.use(createDebugSanitizationPlugin(&#123;
-  sanitizeOptions: &#123; sensitiveHeaders: ['X-API-Key'] &#125;,
-&#125;));</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>Metrics → MetricsPlugin</h2>
 <p>The core still exposes <code>getMetrics()</code>, but counters stay at zero without the plugin.</p>
 
 <h3>Before (1.x)</h3>
-<pre><code class="language-typescript">const retryer = createRetryer();
-
-retryer.on('onMetricsUpdated', (metrics) =&gt; &#123;
-  console.log(metrics.successfulRetries);
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h3>After (2.0)</h3>
-<pre><code class="language-typescript">import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-
-const retryer = createRetryer();
-retryer.use(createMetricsPlugin());
-
-retryer.on('onMetricsUpdated', (metrics) =&gt; &#123;
-  console.log(metrics.successfulRetries);
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode3} lang="typescript" />
 
 <h2>Manual replay → ManualRetryPlugin</h2>
 
 <h3>Before (1.x)</h3>
-<pre><code class="language-typescript">const retryer = createRetryer(&#123;
-  mode: RETRY_MODES.MANUAL,
-  maxRequestsToStore: 100,
-  hooks: &#123;
-    beforeManualRetry: (config) =&gt; config,
-  &#125;,
-&#125;);
-
-const responses = await retryer.retryFailedRequests();</code></pre>
+<CodeBlock code={_shikiCode4} lang="typescript" />
 
 <h3>After (2.0)</h3>
-<pre><code class="language-typescript">import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';
-
-const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
-
-const manualRetry = createManualRetryPlugin(&#123;
-  maxRequestsToStore: 100,
-  beforeRetry: (config) =&gt; config,
-&#125;);
-
-retryer.use(manualRetry);
-
-const responses = await manualRetry.retryFailedRequests();</code></pre>
+<CodeBlock code={_shikiCode5} lang="typescript" />
 
 <h2>maxRefreshAttempts off-by-one fix</h2>
 <p>In 1.x, <code>maxRefreshAttempts: 3</code> produced 4 total attempts due to a loop bug. In 2.0 it means exactly 3.</p>
 
-<pre><code class="language-typescript">// If you relied on the old behaviour (4 attempts):
-createTokenRefreshPlugin(refreshFn, &#123; maxRefreshAttempts: 4 &#125;);  // Now truly 4 attempts
-
-// If your value was already tuned:
-createTokenRefreshPlugin(refreshFn, &#123; maxRefreshAttempts: 3 &#125;);  // Now truly 3 attempts (was effectively 4)
-// → decrease by 1 if you want to keep the same total attempt count</code></pre>
+<CodeBlock code={_shikiCode6} lang="typescript" />
 
 <h2>Plugin event typing</h2>
 <p>Plugin events are typed through the value returned from <code>use()</code>:</p>
 
 <h3>Before (1.x)</h3>
-<pre><code class="language-typescript">createRetryer(&#123;
-  hooks: &#123;
-    onTokenRefreshed: (token) =&gt; console.log(token),
-  &#125;,
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode7} lang="typescript" />
 
 <h3>After (2.0)</h3>
-<pre><code class="language-typescript">const retryerWithAuth = retryer.use(createTokenRefreshPlugin(refreshFn));
-retryerWithAuth.on('onTokenRefreshed', (token) =&gt; console.log(token));</code></pre>
+<CodeBlock code={_shikiCode8} lang="typescript" />
 
 <h2>Legacy plugin.hooks removed</h2>
 <p>Plugins can no longer declare hooks via a <code>plugin.hooks</code> property. Use <code>retryer.on()</code> inside <code>initialize()</code>:</p>
 
-<pre><code class="language-typescript">// Inside a custom plugin's initialize():
-plugin.initialize = (retryer) =&gt; &#123;
-  retryer.on('beforeRetry', (config) =&gt; &#123;
-    // Custom logic
-  &#125;);
-&#125;;</code></pre>
+<CodeBlock code={_shikiCode9} lang="typescript" />
 
 <h2>Browser bundle</h2>
 <p>The UMD browser bundle is no longer published as a built artifact. Generate it locally:</p>
-<pre><code class="language-bash">npm run build:browser
-# Output: dist/browser/</code></pre>
+<CodeBlock code={_shikiCode10} lang="bash" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
   <a href="/docs" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Back to Docs →</a>

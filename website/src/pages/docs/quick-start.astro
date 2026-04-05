@@ -1,5 +1,12 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  retries: 3,\n  debug: false,\n});\n\n// Drop-in replacement for axios\nconst { data } = await retryer.axiosInstance.get('https://api.example.com/users');\nconsole.log(data);";
+const _shikiCode1 = "import { RetryManager } from 'axios-retryer';\n\nconst manager = new RetryManager({ retries: 3 });\nconst { data } = await manager.axiosInstance.get('/api/users');";
+const _shikiCode2 = "import axios from 'axios';\nimport { createRetryer } from 'axios-retryer';\n\nconst baseAxios = axios.create({\n  baseURL: 'https://api.example.com',\n  timeout: 5000,\n  headers: { 'X-App-Version': '2.0' },\n});\n\nconst retryer = createRetryer({\n  retries: 3,\n  axiosInstance: baseAxios,      // uses your existing instance\n});\n\n// axiosInstance is the same object \u2014 base URL, headers, interceptors all preserved\nawait retryer.axiosInstance.get('/users');";
+const _shikiCode3 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\nimport { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nconst retryer = createRetryer({ retries: 3, maxConcurrentRequests: 8 });\n\n// 1. Refresh tokens on 401 automatically\nretryer.use(createTokenRefreshPlugin(async (axiosInstance) => {\n  const refreshToken = localStorage.getItem('refreshToken');\n  const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });\n  localStorage.setItem('accessToken', data.accessToken);\n  return { token: data.accessToken };\n}));\n\n// 2. Trip circuit open after 5 consecutive failures\nretryer.use(createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeout: 30_000,\n}));\n\n// 3. Cache GET responses for 1 minute\nretryer.use(createCachePlugin({ timeToRevalidate: 60_000, maxItems: 200 }));\n\n// 4. Collect metrics\nretryer.use(createMetricsPlugin());\nretryer.on('onMetricsUpdated', (m) => console.log('retries:', m.successfulRetries));\n\n// Make requests\nconst { data } = await retryer.axiosInstance.get('/api/products');";
+const _shikiCode4 = "import { createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';\n\nconst retryer = createRetryer({ maxConcurrentRequests: 3 });\n\n// CRITICAL requests skip the queue ahead of everything else\nretryer.axiosInstance.post('/auth/login', creds, {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },\n});\n\n// Background work is processed last\nretryer.axiosInstance.post('/analytics/event', eventData, {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },\n});";
+const _shikiCode5 = "// Cancel a specific request by ID\nconst config = await retryer.axiosInstance.get('/api/data', {\n  __axiosRetryer: { requestId: 'my-request' },\n}).catch(() => {});\n\nretryer.cancelRequest('my-request');\n\n// Cancel everything\nretryer.cancelAllRequests();";
 ---
 <DocsLayout title="Quick Start" description="Get axios-retryer working in minutes with the functional and class-based API.">
 
@@ -7,100 +14,23 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 <p class="page-lead">Wrap your Axios instance and start making resilient requests. The <code>axiosInstance</code> property is a drop-in replacement for direct Axios usage.</p>
 
 <h2>Functional API (recommended)</h2>
-<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-
-const retryer = createRetryer(&#123;
-  retries: 3,
-  debug: false,
-&#125;);
-
-// Drop-in replacement for axios
-const &#123; data &#125; = await retryer.axiosInstance.get('https://api.example.com/users');
-console.log(data);</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h2>Class-based API</h2>
-<pre><code class="language-typescript">import &#123; RetryManager &#125; from 'axios-retryer';
-
-const manager = new RetryManager(&#123; retries: 3 &#125;);
-const &#123; data &#125; = await manager.axiosInstance.get('/api/users');</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>With your existing Axios instance</h2>
-<pre><code class="language-typescript">import axios from 'axios';
-import &#123; createRetryer &#125; from 'axios-retryer';
-
-const baseAxios = axios.create(&#123;
-  baseURL: 'https://api.example.com',
-  timeout: 5000,
-  headers: &#123; 'X-App-Version': '2.0' &#125;,
-&#125;);
-
-const retryer = createRetryer(&#123;
-  retries: 3,
-  axiosInstance: baseAxios,      // uses your existing instance
-&#125;);
-
-// axiosInstance is the same object — base URL, headers, interceptors all preserved
-await retryer.axiosInstance.get('/users');</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>Add plugins</h2>
 <p>Start with core, then layer in plugins as your app needs them:</p>
-<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
-import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
-import &#123; createCachePlugin &#125; from 'axios-retryer/plugins/CachingPlugin';
-import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-
-const retryer = createRetryer(&#123; retries: 3, maxConcurrentRequests: 8 &#125;);
-
-// 1. Refresh tokens on 401 automatically
-retryer.use(createTokenRefreshPlugin(async (axiosInstance) =&gt; &#123;
-  const refreshToken = localStorage.getItem('refreshToken');
-  const &#123; data &#125; = await axiosInstance.post('/auth/refresh', &#123; refreshToken &#125;);
-  localStorage.setItem('accessToken', data.accessToken);
-  return &#123; token: data.accessToken &#125;;
-&#125;));
-
-// 2. Trip circuit open after 5 consecutive failures
-retryer.use(createCircuitBreaker(&#123;
-  failureThreshold: 5,
-  openTimeout: 30_000,
-&#125;));
-
-// 3. Cache GET responses for 1 minute
-retryer.use(createCachePlugin(&#123; timeToRevalidate: 60_000, maxItems: 200 &#125;));
-
-// 4. Collect metrics
-retryer.use(createMetricsPlugin());
-retryer.on('onMetricsUpdated', (m) =&gt; console.log('retries:', m.successfulRetries));
-
-// Make requests
-const &#123; data &#125; = await retryer.axiosInstance.get('/api/products');</code></pre>
+<CodeBlock code={_shikiCode3} lang="typescript" />
 
 <h2>Request priorities</h2>
-<pre><code class="language-typescript">import &#123; createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES &#125; from 'axios-retryer';
-
-const retryer = createRetryer(&#123; maxConcurrentRequests: 3 &#125;);
-
-// CRITICAL requests skip the queue ahead of everything else
-retryer.axiosInstance.post('/auth/login', creds, &#123;
-  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL &#125;,
-&#125;);
-
-// Background work is processed last
-retryer.axiosInstance.post('/analytics/event', eventData, &#123;
-  __axiosRetryer: &#123; priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW &#125;,
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode4} lang="typescript" />
 
 <h2>Cancellation</h2>
-<pre><code class="language-typescript">// Cancel a specific request by ID
-const config = await retryer.axiosInstance.get('/api/data', &#123;
-  __axiosRetryer: &#123; requestId: 'my-request' &#125;,
-&#125;).catch(() =&gt; &#123;&#125;);
-
-retryer.cancelRequest('my-request');
-
-// Cancel everything
-retryer.cancelAllRequests();</code></pre>
+<CodeBlock code={_shikiCode5} lang="typescript" />
 
 <h2>Try it live</h2>
 <p>

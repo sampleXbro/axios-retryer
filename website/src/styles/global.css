@@ -61,7 +61,8 @@ code {
   color: var(--accent-3);
 }
 
-pre {
+/* Plain pre (not Astro/Shiki highlighted): readable monospace block */
+pre:not(.astro-code) {
   background: var(--code-bg) !important;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -72,12 +73,20 @@ pre {
   line-height: 1.6;
 }
 
-pre code {
+pre:not(.astro-code) code {
   background: none;
   border: none;
   padding: 0;
-  color: inherit;
+  color: var(--text-muted);
   font-size: inherit;
+}
+
+/* Astro Code (Shiki): token colors are on spans; reset wrapper code only */
+pre.astro-code code {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  font-size: inherit !important;
 }
 
 table {
@@ -190,8 +199,16 @@ hr {
 .code-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 .code-tabs .code-tab-content { display: none; }
 .code-tabs .code-tab-content.active { display: block; }
-.code-tabs .code-tab-content pre {
+.code-tabs .code-tab-content pre:not(.astro-code),
+.code-tabs .code-tab-content .code-block-shiki {
   margin: 0;
+}
+.code-tabs .code-tab-content .code-block-shiki :global(pre.astro-code) {
+  border-radius: 0 0 8px 8px;
+  border-top: none !important;
+  margin: 0 !important;
+}
+.code-tabs .code-tab-content pre:not(.astro-code) {
   border-radius: 0 0 8px 8px;
   border-top: none;
 }

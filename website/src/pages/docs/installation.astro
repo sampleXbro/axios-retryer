@@ -1,5 +1,11 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "npm install axios-retryer axios";
+const _shikiCode1 = "yarn add axios-retryer axios";
+const _shikiCode2 = "pnpm add axios-retryer axios";
+const _shikiCode3 = "// Core \u2014 retry manager, types, constants, error classes\nimport { createRetryer, RETRY_MODES, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';\n\n// Plugins \u2014 import only what you use\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\nimport { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';\nimport { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\nimport { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\nimport { createRequestDependencyPlugin } from 'axios-retryer/plugins/RequestDependencyPlugin';\n\n// Convenience barrel (imports all plugins \u2014 loses tree-shaking)\nimport { createTokenRefreshPlugin, createMetricsPlugin } from 'axios-retryer/plugins';";
+const _shikiCode4 = "// tsconfig.json \u2014 recommended minimum\n{\n  \"compilerOptions\": {\n    \"target\": \"ES2019\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",  // or \"node16\" / \"nodenext\"\n    \"strict\": true\n  }\n}";
 ---
 <DocsLayout title="Installation" description="Install axios-retryer via npm, yarn, or pnpm. Peer dependency is axios >= 1.7.4.">
 
@@ -23,33 +29,20 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
     <button class="code-tab-btn">pnpm</button>
   </div>
   <div class="code-tab-content active">
-    <pre><code>npm install axios-retryer axios</code></pre>
+    <CodeBlock code={_shikiCode0} lang="bash" />
   </div>
   <div class="code-tab-content">
-    <pre><code>yarn add axios-retryer axios</code></pre>
+    <CodeBlock code={_shikiCode1} lang="bash" />
   </div>
   <div class="code-tab-content">
-    <pre><code>pnpm add axios-retryer axios</code></pre>
+    <CodeBlock code={_shikiCode2} lang="bash" />
   </div>
 </div>
 
 <h2>Entry points</h2>
 <p>The library ships a compact core and one entry point per plugin:</p>
 
-<pre><code class="language-typescript">// Core — retry manager, types, constants, error classes
-import &#123; createRetryer, RETRY_MODES, AXIOS_RETRYER_REQUEST_PRIORITIES &#125; from 'axios-retryer';
-
-// Plugins — import only what you use
-import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
-import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
-import &#123; createCachePlugin &#125; from 'axios-retryer/plugins/CachingPlugin';
-import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';
-import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-import &#123; createDebugSanitizationPlugin &#125; from 'axios-retryer/plugins/DebugSanitizationPlugin';
-import &#123; createRequestDependencyPlugin &#125; from 'axios-retryer/plugins/RequestDependencyPlugin';
-
-// Convenience barrel (imports all plugins — loses tree-shaking)
-import &#123; createTokenRefreshPlugin, createMetricsPlugin &#125; from 'axios-retryer/plugins';</code></pre>
+<CodeBlock code={_shikiCode3} lang="typescript" />
 
 <div class="callout callout-tip">
   <div class="callout-icon">💡</div>
@@ -75,15 +68,7 @@ import &#123; createTokenRefreshPlugin, createMetricsPlugin &#125; from 'axios-r
 <h2>TypeScript</h2>
 <p>TypeScript 4.0+ is supported. All public APIs ship with types. No <code>@types/</code> package is needed.</p>
 
-<pre><code class="language-typescript">// tsconfig.json — recommended minimum
-&#123;
-  "compilerOptions": &#123;
-    "target": "ES2019",
-    "module": "ESNext",
-    "moduleResolution": "bundler",  // or "node16" / "nodenext"
-    "strict": true
-  &#125;
-&#125;</code></pre>
+<CodeBlock code={_shikiCode4} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
   <a href="/docs/quick-start" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Quick Start →</a>

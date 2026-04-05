@@ -1,5 +1,11 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
+const _shikiCode0 = "import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';";
+const _shikiCode1 = "import { createRetryer, RETRY_MODES } from 'axios-retryer';\nimport { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\n\nconst retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  maxRequestsToStore: 50,\n  manualRetryMaxAge: 5 * 60_000,   // Drop requests older than 5 min\n});\n\nretryer.use(manualRetry);\n\n// Request fails in manual mode \u2192 stored\ntry {\n  await retryer.axiosInstance.post('/api/order', orderData);\n} catch {\n  showToast('Order saved \u2014 will retry when online');\n}\n\n// Later \u2014 replay on reconnect\nwindow.addEventListener('online', async () => {\n  const results = await manualRetry.retryFailedRequests();\n  console.log(`Replayed ${results.length} request(s)`);\n});";
+const _shikiCode2 = "createManualRetryPlugin({\n  maxRequestsToStore: 100,       // Max stored failures (oldest evicted first; default: 100)\n  manualRetryMaxAge: 300_000,    // ms before stored requests are discarded (default: none)\n  storeNonIdempotent: false,     // Store POST/PUT/PATCH/DELETE without idempotency key (default: false)\n  storeAuthRequests: false,      // Store requests with auth headers (default: false \u2014 safer)\n  \n  // Mutate or redact a request before storing\n  prepareRequestForStore: (config) => ({\n    ...config,\n    data: { redacted: true },   // Strip sensitive payload\n  }),\n\n  // Re-attach fresh auth before replay\n  rehydrateAuth: (config) => {\n    config.headers ??= {};\n    config.headers['Authorization'] = `Bearer ${store.getAccessToken()}`;\n    return config;\n  },\n\n  // Filter which requests to replay\n  beforeRetry: (config) => {\n    if (config.url?.includes('/non-critical')) return null;  // Skip\n    return config;\n  },\n})";
+const _shikiCode3 = "// Replay all stored failures\nconst results = await manualRetry.retryFailedRequests();\n\n// Inspect what's stored without replaying\nconst pending = manualRetry.getStoredRequests();\nconsole.log(`${pending.length} pending requests`);\n\n// Drop stored requests without replaying\nmanualRetry.clearStoredRequests();";
+const _shikiCode4 = "const retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  manualRetryMaxAge: 60_000,\n  storeNonIdempotent: false,         // Only safe idempotent requests\n  rehydrateAuth: (config) => {\n    // Always use the latest token when replaying\n    config.headers ??= {};\n    config.headers['Authorization'] = `Bearer ${auth.getToken()}`;\n    return config;\n  },\n});\n\nretryer.use(manualRetry);\n\nasync function submitForm(data: FormData) {\n  try {\n    await retryer.axiosInstance.put('/api/profile', data, {\n      headers: { 'Idempotency-Key': crypto.randomUUID() },\n    });\n    showSuccess('Saved');\n  } catch {\n    showWarning('Offline \u2014 will sync when reconnected');\n  }\n}\n\n// Sync on reconnect\nnavigator.connection?.addEventListener('change', async () => {\n  if (navigator.onLine) {\n    const synced = await manualRetry.retryFailedRequests();\n    showToast(`Synced ${synced.length} pending changes`);\n  }\n});";
 ---
 <DocsLayout title="ManualRetryPlugin" section="Plugins" description="Store and replay failed requests with axios-retryer's ManualRetryPlugin. Offline support, idempotency safeguards, age limits.">
 
@@ -7,106 +13,19 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
 <p class="page-lead">Stores terminal failures in <code>MANUAL</code> mode and lets you replay them on demand — on reconnect, after user action, or on app resume. Built-in idempotency safeguards and age limits prevent unsafe replay.</p>
 
 <h2>Install</h2>
-<pre><code class="language-typescript">import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h2>Basic usage</h2>
-<pre><code class="language-typescript">import &#123; createRetryer, RETRY_MODES &#125; from 'axios-retryer';
-import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';
-
-const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
-
-const manualRetry = createManualRetryPlugin(&#123;
-  maxRequestsToStore: 50,
-  manualRetryMaxAge: 5 * 60_000,   // Drop requests older than 5 min
-&#125;);
-
-retryer.use(manualRetry);
-
-// Request fails in manual mode → stored
-try &#123;
-  await retryer.axiosInstance.post('/api/order', orderData);
-&#125; catch &#123;
-  showToast('Order saved — will retry when online');
-&#125;
-
-// Later — replay on reconnect
-window.addEventListener('online', async () =&gt; &#123;
-  const results = await manualRetry.retryFailedRequests();
-  console.log(`Replayed $&#123;results.length&#125; request(s)`);
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>All options</h2>
-<pre><code class="language-typescript">createManualRetryPlugin(&#123;
-  maxRequestsToStore: 100,       // Max stored failures (oldest evicted first; default: 100)
-  manualRetryMaxAge: 300_000,    // ms before stored requests are discarded (default: none)
-  storeNonIdempotent: false,     // Store POST/PUT/PATCH/DELETE without idempotency key (default: false)
-  storeAuthRequests: false,      // Store requests with auth headers (default: false — safer)
-  
-  // Mutate or redact a request before storing
-  prepareRequestForStore: (config) =&gt; (&#123;
-    ...config,
-    data: &#123; redacted: true &#125;,   // Strip sensitive payload
-  &#125;),
-
-  // Re-attach fresh auth before replay
-  rehydrateAuth: (config) =&gt; &#123;
-    config.headers ??= &#123;&#125;;
-    config.headers['Authorization'] = `Bearer $&#123;store.getAccessToken()&#125;`;
-    return config;
-  &#125;,
-
-  // Filter which requests to replay
-  beforeRetry: (config) =&gt; &#123;
-    if (config.url?.includes('/non-critical')) return null;  // Skip
-    return config;
-  &#125;,
-&#125;)</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>Plugin methods</h2>
-<pre><code class="language-typescript">// Replay all stored failures
-const results = await manualRetry.retryFailedRequests();
-
-// Inspect what's stored without replaying
-const pending = manualRetry.getStoredRequests();
-console.log(`$&#123;pending.length} pending requests`);
-
-// Drop stored requests without replaying
-manualRetry.clearStoredRequests();</code></pre>
+<CodeBlock code={_shikiCode3} lang="typescript" />
 
 <h2>Offline-first SPA pattern</h2>
-<pre><code class="language-typescript">const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
-
-const manualRetry = createManualRetryPlugin(&#123;
-  manualRetryMaxAge: 60_000,
-  storeNonIdempotent: false,         // Only safe idempotent requests
-  rehydrateAuth: (config) =&gt; &#123;
-    // Always use the latest token when replaying
-    config.headers ??= &#123;&#125;;
-    config.headers['Authorization'] = `Bearer $&#123;auth.getToken()&#125;`;
-    return config;
-  &#125;,
-&#125;);
-
-retryer.use(manualRetry);
-
-async function submitForm(data: FormData) &#123;
-  try &#123;
-    await retryer.axiosInstance.put('/api/profile', data, &#123;
-      headers: &#123; 'Idempotency-Key': crypto.randomUUID() &#125;,
-    &#125;);
-    showSuccess('Saved');
-  &#125; catch &#123;
-    showWarning('Offline — will sync when reconnected');
-  &#125;
-&#125;
-
-// Sync on reconnect
-navigator.connection?.addEventListener('change', async () =&gt; &#123;
-  if (navigator.onLine) &#123;
-    const synced = await manualRetry.retryFailedRequests();
-    showToast(`Synced $&#123;synced.length&#125; pending changes`);
-  &#125;
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode4} lang="typescript" />
 
 <h2>Security defaults</h2>
 <table>

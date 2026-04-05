@@ -1,5 +1,9 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "import {\n  RetryerConfigError,        // Invalid RetryManager configuration\n  PluginRegistrationError,   // Duplicate or invalid plugin registration\n  QueueFullError,            // maxQueueSize exceeded\n  QueuedRequestCanceledError, // Request was in queue when cancelled\n  QueueClearedError,         // Queue was cleared (e.g. destroy())\n  QueueDestroyedError,       // Manager was destroyed before request processed\n  RequestAbortedError,       // Request aborted via AbortController\n} from 'axios-retryer';";
+const _shikiCode1 = "// CachingPlugin\nimport { InvalidCacheKeyError } from 'axios-retryer/plugins/CachingPlugin';\n\n// CircuitBreakerPlugin\nimport { CircuitBreakerStateError } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\n// TokenRefreshPlugin\nimport {\n  MissingTokenRefreshHandlerError,\n  TokenRefreshAbortError,\n  TokenRefreshFailedError,\n  TokenRefreshTimeoutError,\n} from 'axios-retryer/plugins/TokenRefreshPlugin';";
+const _shikiCode2 = "import {\n  QueueFullError,\n  RetryerConfigError,\n  PluginRegistrationError,\n} from 'axios-retryer';\nimport {\n  TokenRefreshAbortError,\n  TokenRefreshTimeoutError,\n} from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { CircuitBreakerStateError } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\ntry {\n  await retryer.axiosInstance.get('/api/data');\n} catch (error) {\n  if (error instanceof QueueFullError) {\n    // Show backpressure UI\n    showToast('Server busy \u2014 please try again shortly');\n  } else if (error instanceof CircuitBreakerStateError) {\n    // Circuit tripped open\n    showBanner('Service temporarily unavailable');\n  } else if (error instanceof TokenRefreshAbortError) {\n    // Auth refresh failed fatally\n    redirectToLogin();\n  } else if (error instanceof TokenRefreshTimeoutError) {\n    // Refresh request took too long\n    scheduleRetry();\n  } else {\n    throw error;  // Re-throw unrecognized errors\n  }\n}";
 ---
 <DocsLayout title="Error Classes" description="Named error classes exported by axios-retryer for type-safe error handling.">
 
@@ -8,63 +12,14 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
 <h2>Core errors</h2>
 <p>Exported from <code>axios-retryer</code>:</p>
-<pre><code class="language-typescript">import &#123;
-  RetryerConfigError,        // Invalid RetryManager configuration
-  PluginRegistrationError,   // Duplicate or invalid plugin registration
-  QueueFullError,            // maxQueueSize exceeded
-  QueuedRequestCanceledError, // Request was in queue when cancelled
-  QueueClearedError,         // Queue was cleared (e.g. destroy())
-  QueueDestroyedError,       // Manager was destroyed before request processed
-  RequestAbortedError,       // Request aborted via AbortController
-&#125; from 'axios-retryer';</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h2>Plugin errors</h2>
 <p>Exported from their respective plugin entry points:</p>
-<pre><code class="language-typescript">// CachingPlugin
-import &#123; InvalidCacheKeyError &#125; from 'axios-retryer/plugins/CachingPlugin';
-
-// CircuitBreakerPlugin
-import &#123; CircuitBreakerStateError &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
-
-// TokenRefreshPlugin
-import &#123;
-  MissingTokenRefreshHandlerError,
-  TokenRefreshAbortError,
-  TokenRefreshFailedError,
-  TokenRefreshTimeoutError,
-&#125; from 'axios-retryer/plugins/TokenRefreshPlugin';</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>Handling errors by type</h2>
-<pre><code class="language-typescript">import &#123;
-  QueueFullError,
-  RetryerConfigError,
-  PluginRegistrationError,
-&#125; from 'axios-retryer';
-import &#123;
-  TokenRefreshAbortError,
-  TokenRefreshTimeoutError,
-&#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
-import &#123; CircuitBreakerStateError &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
-
-try &#123;
-  await retryer.axiosInstance.get('/api/data');
-&#125; catch (error) &#123;
-  if (error instanceof QueueFullError) &#123;
-    // Show backpressure UI
-    showToast('Server busy — please try again shortly');
-  &#125; else if (error instanceof CircuitBreakerStateError) &#123;
-    // Circuit tripped open
-    showBanner('Service temporarily unavailable');
-  &#125; else if (error instanceof TokenRefreshAbortError) &#123;
-    // Auth refresh failed fatally
-    redirectToLogin();
-  &#125; else if (error instanceof TokenRefreshTimeoutError) &#123;
-    // Refresh request took too long
-    scheduleRetry();
-  &#125; else &#123;
-    throw error;  // Re-throw unrecognized errors
-  &#125;
-&#125;</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>Error reference</h2>
 <table>

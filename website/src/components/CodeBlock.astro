@@ -1,0 +1,59 @@
+---
+import { Code } from 'astro/components';
+
+interface Props {
+  code: string;
+  /** Shiki language id: https://shiki.style/languages */
+  lang?: string;
+}
+
+const LANG_ALIASES: Record<string, string> = {
+  typescript: 'typescript',
+  ts: 'typescript',
+  bash: 'bash',
+  shell: 'bash',
+  sh: 'bash',
+  json: 'json',
+  plaintext: 'plaintext',
+  text: 'plaintext',
+};
+
+const { code, lang = 'typescript' } = Astro.props;
+const shikiLang = LANG_ALIASES[lang] ?? lang;
+---
+
+<div class="code-block-shiki">
+  <Code
+    code={code.replace(/\n$/, '')}
+    lang={shikiLang as never}
+    theme="one-dark-pro"
+    wrap
+  />
+</div>
+
+<style>
+  .code-block-shiki {
+    margin: 1.25rem 0;
+  }
+  .code-block-shiki :global(pre.astro-code) {
+    margin: 0 !important;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem !important;
+    overflow-x: auto;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+  .code-block-shiki :global(pre.astro-code code) {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+  }
+  .code-block-shiki :global(pre.astro-code code .line) {
+    min-height: 1.6em;
+  }
+</style>

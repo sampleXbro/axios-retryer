@@ -1,6 +1,8 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import '../styles/global.css';
+import CodeBlock from '../components/CodeBlock.astro';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\nconst retryer = createRetryer({\n  retries: 3,\n  maxConcurrentRequests: 10,\n});\n\nretryer.use(createTokenRefreshPlugin(async (axios) => {\n  const { data } = await axios.post('/auth/refresh');\n  return { token: data.accessToken };\n}));\n\nretryer.use(createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeout: 30_000,\n}));\n\n// Use exactly like Axios\nconst { data } = await retryer.axiosInstance.get('/api/users');";
 ---
 <BaseLayout
   title="axios-retryer — Resilient Axios Retry Library"
@@ -285,27 +287,7 @@ import '../styles/global.css';
       <a href="/docs/quick-start" class="btn btn-primary">Read full guide →</a>
     </div>
     <div class="quickstart-code">
-      <pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
-import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
-
-const retryer = createRetryer(&#123;
-  retries: 3,
-  maxConcurrentRequests: 10,
-&#125;);
-
-retryer.use(createTokenRefreshPlugin(async (axios) =&gt; &#123;
-  const &#123; data &#125; = await axios.post('/auth/refresh');
-  return &#123; token: data.accessToken &#125;;
-&#125;));
-
-retryer.use(createCircuitBreaker(&#123;
-  failureThreshold: 5,
-  openTimeout: 30_000,
-&#125;));
-
-// Use exactly like Axios
-const &#123; data &#125; = await retryer.axiosInstance.get('/api/users');</code></pre>
+      <CodeBlock code={_shikiCode0} lang="typescript" />
     </div>
   </div>
 </div>

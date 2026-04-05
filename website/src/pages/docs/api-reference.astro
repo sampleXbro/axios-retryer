@@ -1,5 +1,12 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nconst retryer = createRetryer({ retries: 3 });";
+const _shikiCode1 = "import { createRetryStrategy } from 'axios-retryer';\nconst strategy = createRetryStrategy({\n  isRetryable: (error) => error.response?.status === 503,\n  shouldRetry: (error, attempt, max) => attempt <= max,\n  getDelay: (attempt) => attempt * 500,\n});";
+const _shikiCode2 = "interface RetryMetrics {\n  totalRequests: number;\n  successfulRetries: number;\n  failedRetries: number;\n  completelyFailedRequests: number;\n  completelyFailedCriticalRequests: number;\n  totalRetryAttempts: number;\n  averageRetryDelay: number;\n  timerHealth: {\n    activeTimers: number;\n    activeRetryTimers: number;\n    healthScore: number;          // 0 = excellent, 100+ = potential leak\n  };\n}";
+const _shikiCode3 = "interface TimerStats {\n  activeTimers: number;\n  activeRetryTimers: number;\n}";
+const _shikiCode4 = "interface AxiosRetryerRequestConfig {\n  priority?: AXIOS_RETRYER_REQUEST_PRIORITIES;  // Queue priority\n  requestId?: string;                           // Stable ID for cancellation\n  retries?: number;                             // Override global retry count\n  backoffType?: AXIOS_RETRYER_BACKOFF_TYPES;\n  retryableStatuses?: RetryableStatuses;\n}\n\n// Usage:\nretryer.axiosInstance.get('/api', {\n  __axiosRetryer: {\n    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,\n    requestId: 'auth-check',\n  },\n});";
+const _shikiCode5 = "import {\n  RETRY_MODES,                        // AUTOMATIC | MANUAL\n  AXIOS_RETRYER_REQUEST_PRIORITIES,   // CRITICAL=4, HIGH=2, MEDIUM=1, LOW=0\n  AXIOS_RETRYER_BACKOFF_TYPES,        // STATIC | LINEAR | EXPONENTIAL\n  AXIOS_RETRYER_HTTP_METHODS,         // GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS\n} from 'axios-retryer';";
 ---
 <DocsLayout title="API Reference" description="Complete API reference for the RetryManager class and all public methods in axios-retryer.">
 
@@ -10,17 +17,11 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
 <h3><code>createRetryer(options?)</code></h3>
 <p>Creates and returns a <code>RetryManager</code> instance. Equivalent to <code>new RetryManager(options)</code>.</p>
-<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-const retryer = createRetryer(&#123; retries: 3 &#125;);</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h3><code>createRetryStrategy(config)</code></h3>
 <p>Creates a custom <code>IRetryStrategy</code> from a plain config object.</p>
-<pre><code class="language-typescript">import &#123; createRetryStrategy &#125; from 'axios-retryer';
-const strategy = createRetryStrategy(&#123;
-  isRetryable: (error) =&gt; error.response?.status === 503,
-  shouldRetry: (error, attempt, max) =&gt; attempt &lt;= max,
-  getDelay: (attempt) =&gt; attempt * 500,
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>RetryManager instance</h2>
 
@@ -80,52 +81,17 @@ const strategy = createRetryStrategy(&#123;
 </table>
 
 <h2>RetryMetrics shape</h2>
-<pre><code class="language-typescript">interface RetryMetrics &#123;
-  totalRequests: number;
-  successfulRetries: number;
-  failedRetries: number;
-  completelyFailedRequests: number;
-  completelyFailedCriticalRequests: number;
-  totalRetryAttempts: number;
-  averageRetryDelay: number;
-  timerHealth: &#123;
-    activeTimers: number;
-    activeRetryTimers: number;
-    healthScore: number;          // 0 = excellent, 100+ = potential leak
-  &#125;;
-&#125;</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>TimerStats shape</h2>
-<pre><code class="language-typescript">interface TimerStats &#123;
-  activeTimers: number;
-  activeRetryTimers: number;
-&#125;</code></pre>
+<CodeBlock code={_shikiCode3} lang="typescript" />
 
 <h2>Request config extension</h2>
 <p>The <code>__axiosRetryer</code> field on <code>AxiosRequestConfig</code> carries per-request options:</p>
-<pre><code class="language-typescript">interface AxiosRetryerRequestConfig &#123;
-  priority?: AXIOS_RETRYER_REQUEST_PRIORITIES;  // Queue priority
-  requestId?: string;                           // Stable ID for cancellation
-  retries?: number;                             // Override global retry count
-  backoffType?: AXIOS_RETRYER_BACKOFF_TYPES;
-  retryableStatuses?: RetryableStatuses;
-&#125;
-
-// Usage:
-retryer.axiosInstance.get('/api', &#123;
-  __axiosRetryer: &#123;
-    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
-    requestId: 'auth-check',
-  &#125;,
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode4} lang="typescript" />
 
 <h2>Constants</h2>
-<pre><code class="language-typescript">import &#123;
-  RETRY_MODES,                        // AUTOMATIC | MANUAL
-  AXIOS_RETRYER_REQUEST_PRIORITIES,   // CRITICAL=4, HIGH=2, MEDIUM=1, LOW=0
-  AXIOS_RETRYER_BACKOFF_TYPES,        // STATIC | LINEAR | EXPONENTIAL
-  AXIOS_RETRYER_HTTP_METHODS,         // GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
-&#125; from 'axios-retryer';</code></pre>
+<CodeBlock code={_shikiCode5} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
   <a href="/docs/plugins" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Plugins →</a>

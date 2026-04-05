@@ -1,5 +1,9 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "import {\n  createRetryer,\n  RETRY_MODES,\n  AXIOS_RETRYER_BACKOFF_TYPES,\n  AXIOS_RETRYER_HTTP_METHODS,\n} from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\nimport { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\nimport { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\nimport axios from 'axios';\n\nexport const api = createRetryer({\n  axiosInstance: axios.create({\n    baseURL: import.meta.env.VITE_API_URL,\n    timeout: 10_000,\n  }),\n  mode: RETRY_MODES.AUTOMATIC,\n  retries: 3,\n  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,\n  maxConcurrentRequests: 8,\n  retryableStatuses: [408, 429, [500, 599] as const],\n  retryableMethods: [\n    AXIOS_RETRYER_HTTP_METHODS.GET,\n    AXIOS_RETRYER_HTTP_METHODS.HEAD,\n    AXIOS_RETRYER_HTTP_METHODS.OPTIONS,\n  ],\n  debug: import.meta.env.DEV,   // Verbose logs in dev only\n});\n\n// 1. Token refresh\nexport const apiWithAuth = api.use(\n  createTokenRefreshPlugin(async (axiosInstance) => {\n    const refresh = localStorage.getItem('refreshToken');\n    if (!refresh) throw new Error('No refresh token');\n    const { data } = await axiosInstance.post('/auth/refresh', { refresh });\n    localStorage.setItem('accessToken', data.accessToken);\n    return { token: data.accessToken };\n  }, { maxRefreshAttempts: 2 })\n);\napiWithAuth.on('onTokenRefreshed', () => console.info('Token refreshed'));\n\n// 2. Circuit breaker\napi.use(createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeout: 30_000,\n  halfOpenMax: 2,\n  successThreshold: 2,\n}));\n\n// 3. Response caching (GET only, no auth-bearing responses)\napi.use(createCachePlugin({\n  timeToRevalidate: 60_000,\n  maxItems: 300,\n  skipWhenAuthPresent: true,   // Important: prevents cross-user cache pollution\n}));\n\n// 4. Metrics\napi.use(createMetricsPlugin());\napi.on('onMetricsUpdated', (m) => {\n  if (m.completelyFailedRequests > 10) {\n    analytics.track('high_api_failure_rate', { count: m.completelyFailedRequests });\n  }\n});\n\n// 5. Debug sanitization \u2014 safe verbose logs in staging\nif (import.meta.env.DEV) {\n  api.use(createDebugSanitizationPlugin({\n    sanitizeOptions: {\n      sensitiveHeaders: ['Authorization'],\n      sensitiveFields: ['password', 'token'],\n    },\n  }));\n}\n\n// Clean up on app teardown\nwindow.addEventListener('beforeunload', () => api.destroy());";
+const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\n// One shared retryer per downstream service \u2014 NOT per request\nexport const downstreamApi = createRetryer({\n  retries: 3,\n  maxConcurrentRequests: 20,\n  queueDelay: 0,               // Minimal pacing for high-throughput services\n  maxQueueSize: 500,\n});\n\n// Circuit breaker protects the downstream service\ndownstreamApi.use(createCircuitBreaker({\n  failureThreshold: 10,\n  openTimeout: 30_000,\n  useSlidingWindow: true,\n  slidingWindowSize: 60_000,\n}));\n\n// Metrics for alerting\ndownstreamApi.use(createMetricsPlugin());\ndownstreamApi.on('onMetricsUpdated', (m) => {\n  prometheus.gauge('downstream_api_failures').set(m.completelyFailedRequests);\n});\n\n// Graceful shutdown\nprocess.on('SIGTERM', () => {\n  downstreamApi.destroy();\n});";
+const _shikiCode2 = "// Check timer health periodically in long-running services\nconst healthInterval = setInterval(() => {\n  const stats = downstreamApi.getTimerStats();\n  if (stats.activeTimers > 200) {\n    logger.warn('Elevated timer count', stats);\n  }\n}, 30_000);\n\nprocess.on('SIGTERM', () => {\n  clearInterval(healthInterval);\n  downstreamApi.destroy();\n});";
 ---
 <DocsLayout title="Production Setup" section="Guides" description="Production-ready axios-retryer setup guide — recommended plugin combinations, security defaults, and monitoring.">
 
@@ -8,117 +12,11 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
 <h2>Frontend single-user client</h2>
 <p>Typical SPA or mobile app calling one backend service:</p>
-<pre><code class="language-typescript">import &#123;
-  createRetryer,
-  RETRY_MODES,
-  AXIOS_RETRYER_BACKOFF_TYPES,
-  AXIOS_RETRYER_HTTP_METHODS,
-&#125; from 'axios-retryer';
-import &#123; createTokenRefreshPlugin &#125; from 'axios-retryer/plugins/TokenRefreshPlugin';
-import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
-import &#123; createCachePlugin &#125; from 'axios-retryer/plugins/CachingPlugin';
-import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-import &#123; createDebugSanitizationPlugin &#125; from 'axios-retryer/plugins/DebugSanitizationPlugin';
-import axios from 'axios';
-
-export const api = createRetryer(&#123;
-  axiosInstance: axios.create(&#123;
-    baseURL: import.meta.env.VITE_API_URL,
-    timeout: 10_000,
-  &#125;),
-  mode: RETRY_MODES.AUTOMATIC,
-  retries: 3,
-  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
-  maxConcurrentRequests: 8,
-  retryableStatuses: [408, 429, [500, 599] as const],
-  retryableMethods: [
-    AXIOS_RETRYER_HTTP_METHODS.GET,
-    AXIOS_RETRYER_HTTP_METHODS.HEAD,
-    AXIOS_RETRYER_HTTP_METHODS.OPTIONS,
-  ],
-  debug: import.meta.env.DEV,   // Verbose logs in dev only
-&#125;);
-
-// 1. Token refresh
-export const apiWithAuth = api.use(
-  createTokenRefreshPlugin(async (axiosInstance) =&gt; &#123;
-    const refresh = localStorage.getItem('refreshToken');
-    if (!refresh) throw new Error('No refresh token');
-    const &#123; data &#125; = await axiosInstance.post('/auth/refresh', &#123; refresh &#125;);
-    localStorage.setItem('accessToken', data.accessToken);
-    return &#123; token: data.accessToken &#125;;
-  &#125;, &#123; maxRefreshAttempts: 2 &#125;)
-);
-apiWithAuth.on('onTokenRefreshed', () =&gt; console.info('Token refreshed'));
-
-// 2. Circuit breaker
-api.use(createCircuitBreaker(&#123;
-  failureThreshold: 5,
-  openTimeout: 30_000,
-  halfOpenMax: 2,
-  successThreshold: 2,
-&#125;));
-
-// 3. Response caching (GET only, no auth-bearing responses)
-api.use(createCachePlugin(&#123;
-  timeToRevalidate: 60_000,
-  maxItems: 300,
-  skipWhenAuthPresent: true,   // Important: prevents cross-user cache pollution
-&#125;));
-
-// 4. Metrics
-api.use(createMetricsPlugin());
-api.on('onMetricsUpdated', (m) =&gt; &#123;
-  if (m.completelyFailedRequests &gt; 10) &#123;
-    analytics.track('high_api_failure_rate', &#123; count: m.completelyFailedRequests &#125;);
-  &#125;
-&#125;);
-
-// 5. Debug sanitization — safe verbose logs in staging
-if (import.meta.env.DEV) &#123;
-  api.use(createDebugSanitizationPlugin(&#123;
-    sanitizeOptions: &#123;
-      sensitiveHeaders: ['Authorization'],
-      sensitiveFields: ['password', 'token'],
-    &#125;,
-  &#125;));
-&#125;
-
-// Clean up on app teardown
-window.addEventListener('beforeunload', () =&gt; api.destroy());</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h2>Backend Node.js service</h2>
 <p>Multi-user Node.js service calling a downstream API. Do NOT share a caching instance across users:</p>
-<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-import &#123; createCircuitBreaker &#125; from 'axios-retryer/plugins/CircuitBreakerPlugin';
-import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-
-// One shared retryer per downstream service — NOT per request
-export const downstreamApi = createRetryer(&#123;
-  retries: 3,
-  maxConcurrentRequests: 20,
-  queueDelay: 0,               // Minimal pacing for high-throughput services
-  maxQueueSize: 500,
-&#125;);
-
-// Circuit breaker protects the downstream service
-downstreamApi.use(createCircuitBreaker(&#123;
-  failureThreshold: 10,
-  openTimeout: 30_000,
-  useSlidingWindow: true,
-  slidingWindowSize: 60_000,
-&#125;));
-
-// Metrics for alerting
-downstreamApi.use(createMetricsPlugin());
-downstreamApi.on('onMetricsUpdated', (m) =&gt; &#123;
-  prometheus.gauge('downstream_api_failures').set(m.completelyFailedRequests);
-&#125;);
-
-// Graceful shutdown
-process.on('SIGTERM', () =&gt; &#123;
-  downstreamApi.destroy();
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>Security checklist</h2>
 <table>
@@ -135,18 +33,7 @@ process.on('SIGTERM', () =&gt; &#123;
 </table>
 
 <h2>Timer health monitoring</h2>
-<pre><code class="language-typescript">// Check timer health periodically in long-running services
-const healthInterval = setInterval(() =&gt; &#123;
-  const stats = downstreamApi.getTimerStats();
-  if (stats.activeTimers &gt; 200) &#123;
-    logger.warn('Elevated timer count', stats);
-  &#125;
-&#125;, 30_000);
-
-process.on('SIGTERM', () =&gt; &#123;
-  clearInterval(healthInterval);
-  downstreamApi.destroy();
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
   <a href="/guides/offline" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Offline Support →</a>

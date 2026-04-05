@@ -1,5 +1,11 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
+const _shikiCode0 = "import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';";
+const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nconst retryer = createRetryer({ retries: 3 });\nretryer.use(createMetricsPlugin());\n\n// Subscribe to live updates\nretryer.on('onMetricsUpdated', (metrics) => {\n  console.log('Total requests:  ', metrics.totalRequests);\n  console.log('Successful retries:', metrics.successfulRetries);\n  console.log('Failed completely: ', metrics.completelyFailedRequests);\n  console.log('Timer health:    ', metrics.timerHealth.healthScore);\n});\n\n// Get a snapshot at any time\nconst snapshot = retryer.getMetrics();\nconsole.log(snapshot);";
+const _shikiCode2 = "interface RetryMetrics {\n  totalRequests: number;                   // All requests dispatched\n  successfulRetries: number;               // Requests that succeeded after \u22651 retry\n  failedRetries: number;                   // Individual retry attempts that failed\n  completelyFailedRequests: number;        // Requests that exhausted all retries\n  completelyFailedCriticalRequests: number; // Failed CRITICAL priority requests\n  totalRetryAttempts: number;              // Sum of all retry attempts made\n  averageRetryDelay: number;               // ms average delay between retries\n\n  timerHealth: {\n    activeTimers: number;        // Total active internal timers\n    activeRetryTimers: number;   // Active retry-delay timers\n    healthScore: number;         // 0 = excellent, 50+ = investigate, 100+ = likely leak\n  };\n}";
+const _shikiCode3 = "retryer.on('onMetricsUpdated', (metrics) => {\n  // Push to your metrics backend (Datadog, Prometheus, custom)\n  metricsClient.gauge('api.retries.success', metrics.successfulRetries);\n  metricsClient.gauge('api.retries.failed', metrics.completelyFailedRequests);\n  metricsClient.gauge('api.retry.avg_delay', metrics.averageRetryDelay);\n\n  // Alert on timer accumulation\n  if (metrics.timerHealth.healthScore > 50) {\n    alerting.warn('High timer count detected in RetryManager');\n  }\n});";
+const _shikiCode4 = "setInterval(() => {\n  const { timerHealth } = retryer.getMetrics();\n  const stats = retryer.getTimerStats();\n\n  if (stats.activeTimers > 100) {\n    console.warn(`High timer count: ${stats.activeTimers} active timers`);\n  }\n}, 10_000);\n\n// Always clean up\nprocess.on('SIGTERM', () => retryer.destroy());";
 ---
 <DocsLayout title="MetricsPlugin" section="Plugins" description="Activate live retry metrics with axios-retryer's MetricsPlugin — counters, timer health, onMetricsUpdated events.">
 
@@ -7,69 +13,19 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
 <p class="page-lead">Activates live retry counters and the <code>onMetricsUpdated</code> event. Without this plugin, <code>getMetrics()</code> still works but always returns a zeroed snapshot — keeping the core overhead-free.</p>
 
 <h2>Install</h2>
-<pre><code class="language-typescript">import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h2>Basic usage</h2>
-<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-import &#123; createMetricsPlugin &#125; from 'axios-retryer/plugins/MetricsPlugin';
-
-const retryer = createRetryer(&#123; retries: 3 &#125;);
-retryer.use(createMetricsPlugin());
-
-// Subscribe to live updates
-retryer.on('onMetricsUpdated', (metrics) =&gt; &#123;
-  console.log('Total requests:  ', metrics.totalRequests);
-  console.log('Successful retries:', metrics.successfulRetries);
-  console.log('Failed completely: ', metrics.completelyFailedRequests);
-  console.log('Timer health:    ', metrics.timerHealth.healthScore);
-&#125;);
-
-// Get a snapshot at any time
-const snapshot = retryer.getMetrics();
-console.log(snapshot);</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>Metrics shape</h2>
-<pre><code class="language-typescript">interface RetryMetrics &#123;
-  totalRequests: number;                   // All requests dispatched
-  successfulRetries: number;               // Requests that succeeded after ≥1 retry
-  failedRetries: number;                   // Individual retry attempts that failed
-  completelyFailedRequests: number;        // Requests that exhausted all retries
-  completelyFailedCriticalRequests: number; // Failed CRITICAL priority requests
-  totalRetryAttempts: number;              // Sum of all retry attempts made
-  averageRetryDelay: number;               // ms average delay between retries
-
-  timerHealth: &#123;
-    activeTimers: number;        // Total active internal timers
-    activeRetryTimers: number;   // Active retry-delay timers
-    healthScore: number;         // 0 = excellent, 50+ = investigate, 100+ = likely leak
-  &#125;;
-&#125;</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>Dashboard integration</h2>
-<pre><code class="language-typescript">retryer.on('onMetricsUpdated', (metrics) =&gt; &#123;
-  // Push to your metrics backend (Datadog, Prometheus, custom)
-  metricsClient.gauge('api.retries.success', metrics.successfulRetries);
-  metricsClient.gauge('api.retries.failed', metrics.completelyFailedRequests);
-  metricsClient.gauge('api.retry.avg_delay', metrics.averageRetryDelay);
-
-  // Alert on timer accumulation
-  if (metrics.timerHealth.healthScore &gt; 50) &#123;
-    alerting.warn('High timer count detected in RetryManager');
-  &#125;
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode3} lang="typescript" />
 
 <h2>Periodic health check</h2>
-<pre><code class="language-typescript">setInterval(() =&gt; &#123;
-  const &#123; timerHealth &#125; = retryer.getMetrics();
-  const stats = retryer.getTimerStats();
-
-  if (stats.activeTimers &gt; 100) &#123;
-    console.warn(`High timer count: $&#123;stats.activeTimers&#125; active timers`);
-  &#125;
-&#125;, 10_000);
-
-// Always clean up
-process.on('SIGTERM', () =&gt; retryer.destroy());</code></pre>
+<CodeBlock code={_shikiCode4} lang="typescript" />
 
 <div class="callout callout-info">
   <div class="callout-icon">ℹ️</div>

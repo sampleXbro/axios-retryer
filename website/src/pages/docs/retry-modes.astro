@@ -1,5 +1,9 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+const _shikiCode0 = "import { createRetryer, RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  mode: RETRY_MODES.AUTOMATIC,     // default, can omit\n  retries: 3,\n  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,\n  retryableStatuses: [408, 429, [500, 599] as const],\n});\n\n// This GET will retry up to 3 times on 5xx / 429 / timeout\nconst { data } = await retryer.axiosInstance.get('/api/products');";
+const _shikiCode1 = "import { createRetryer, RETRY_MODES } from 'axios-retryer';\nimport { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\n\nconst retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  maxRequestsToStore: 50,\n  manualRetryMaxAge: 5 * 60_000,   // Discard stored requests after 5 min\n});\nretryer.use(manualRetry);\n\n// Request fails \u2192 stored in ManualRetryPlugin\ntry {\n  await retryer.axiosInstance.get('/api/data');\n} catch {\n  console.log('Failed \u2014 stored for later replay');\n}\n\n// Later \u2014 replay all stored failures\nconst results = await manualRetry.retryFailedRequests();\nconsole.log(`${results.length} requests replayed`);";
+const _shikiCode2 = "window.addEventListener('online', async () => {\n  const results = await manualRetry.retryFailedRequests();\n  showToast(`Synced ${results.length} pending request(s)`);\n});";
 ---
 <DocsLayout title="Retry Modes" description="Automatic and manual retry modes in axios-retryer — when to use each and how they work.">
 
@@ -9,17 +13,7 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 <h2>Automatic mode</h2>
 <p>The default. Transient failures are retried up to <code>retries</code> times with configurable backoff, completely transparent to your application code.</p>
 
-<pre><code class="language-typescript">import &#123; createRetryer, RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES &#125; from 'axios-retryer';
-
-const retryer = createRetryer(&#123;
-  mode: RETRY_MODES.AUTOMATIC,     // default, can omit
-  retries: 3,
-  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
-  retryableStatuses: [408, 429, [500, 599] as const],
-&#125;);
-
-// This GET will retry up to 3 times on 5xx / 429 / timeout
-const &#123; data &#125; = await retryer.axiosInstance.get('/api/products');</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h3>What triggers a retry</h3>
 <ul>
@@ -32,33 +26,10 @@ const &#123; data &#125; = await retryer.axiosInstance.get('/api/products');</co
 <h2>Manual mode</h2>
 <p>In manual mode the retry manager does not automatically retry. Each request either succeeds on the first attempt or fails immediately. Add <strong><code>ManualRetryPlugin</code></strong> when you want failed requests stored and replayed later — for example after reconnecting to the network.</p>
 
-<pre><code class="language-typescript">import &#123; createRetryer, RETRY_MODES &#125; from 'axios-retryer';
-import &#123; createManualRetryPlugin &#125; from 'axios-retryer/plugins/ManualRetryPlugin';
-
-const retryer = createRetryer(&#123; mode: RETRY_MODES.MANUAL &#125;);
-
-const manualRetry = createManualRetryPlugin(&#123;
-  maxRequestsToStore: 50,
-  manualRetryMaxAge: 5 * 60_000,   // Discard stored requests after 5 min
-&#125;);
-retryer.use(manualRetry);
-
-// Request fails → stored in ManualRetryPlugin
-try &#123;
-  await retryer.axiosInstance.get('/api/data');
-&#125; catch &#123;
-  console.log('Failed — stored for later replay');
-&#125;
-
-// Later — replay all stored failures
-const results = await manualRetry.retryFailedRequests();
-console.log(`$&#123;results.length} requests replayed`);</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h3>Offline / reconnect pattern</h3>
-<pre><code class="language-typescript">window.addEventListener('online', async () =&gt; &#123;
-  const results = await manualRetry.retryFailedRequests();
-  showToast(`Synced $&#123;results.length} pending request(s)`);
-&#125;);</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>Choosing a mode</h2>
 <table>

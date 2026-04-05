@@ -1,5 +1,9 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
+const _shikiCode0 = "import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';";
+const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\n\nconst retryer = createRetryer({ debug: true });  // Enable verbose logs\n\nretryer.use(\n  createDebugSanitizationPlugin({\n    sanitizeOptions: {\n      sensitiveHeaders: ['Authorization', 'X-API-Key', 'Session-Token'],\n      sensitiveFields: ['password', 'creditCard', 'ssn', 'token'],\n      sensitiveParams: ['api_key', 'secret'],\n      redactionChar: '\u2588',          // Character used to replace sensitive values\n      sanitizeRequestData: true,   // Redact request body in logs\n      sanitizeResponseData: false, // Keep response body in logs (opt-in)\n      sanitizeUrlParams: true,     // Redact URL query params\n    },\n  })\n);";
+const _shikiCode2 = "{\n  sanitizeOptions: {\n    sensitiveHeaders: string[];      // Header names to redact (case-insensitive)\n    sensitiveFields: string[];       // Body field names to redact (nested paths supported)\n    sensitiveParams: string[];       // URL query param names to redact\n    redactionChar: string;           // Character to replace values (default: '*')\n    sanitizeRequestData: boolean;    // Sanitize request bodies in logs (default: true)\n    sanitizeResponseData: boolean;   // Sanitize response bodies in logs (default: false)\n    sanitizeUrlParams: boolean;      // Sanitize URL query params (default: true)\n  }\n}";
 ---
 <DocsLayout title="DebugSanitizationPlugin" section="Plugins" description="Redact sensitive data from axios-retryer debug logs with DebugSanitizationPlugin.">
 
@@ -7,40 +11,13 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
 <p class="page-lead">Moves sensitive-data redaction out of the core into an explicit plugin. Safe <code>debug: true</code> in staging and CI environments without risking credential leaks in shipped log pipelines.</p>
 
 <h2>Install</h2>
-<pre><code class="language-typescript">import &#123; createDebugSanitizationPlugin &#125; from 'axios-retryer/plugins/DebugSanitizationPlugin';</code></pre>
+<CodeBlock code={_shikiCode0} lang="typescript" />
 
 <h2>Basic usage</h2>
-<pre><code class="language-typescript">import &#123; createRetryer &#125; from 'axios-retryer';
-import &#123; createDebugSanitizationPlugin &#125; from 'axios-retryer/plugins/DebugSanitizationPlugin';
-
-const retryer = createRetryer(&#123; debug: true &#125;);  // Enable verbose logs
-
-retryer.use(
-  createDebugSanitizationPlugin(&#123;
-    sanitizeOptions: &#123;
-      sensitiveHeaders: ['Authorization', 'X-API-Key', 'Session-Token'],
-      sensitiveFields: ['password', 'creditCard', 'ssn', 'token'],
-      sensitiveParams: ['api_key', 'secret'],
-      redactionChar: '█',          // Character used to replace sensitive values
-      sanitizeRequestData: true,   // Redact request body in logs
-      sanitizeResponseData: false, // Keep response body in logs (opt-in)
-      sanitizeUrlParams: true,     // Redact URL query params
-    &#125;,
-  &#125;)
-);</code></pre>
+<CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>All options</h2>
-<pre><code class="language-typescript">&#123;
-  sanitizeOptions: &#123;
-    sensitiveHeaders: string[];      // Header names to redact (case-insensitive)
-    sensitiveFields: string[];       // Body field names to redact (nested paths supported)
-    sensitiveParams: string[];       // URL query param names to redact
-    redactionChar: string;           // Character to replace values (default: '*')
-    sanitizeRequestData: boolean;    // Sanitize request bodies in logs (default: true)
-    sanitizeResponseData: boolean;   // Sanitize response bodies in logs (default: false)
-    sanitizeUrlParams: boolean;      // Sanitize URL query params (default: true)
-  &#125;
-&#125;</code></pre>
+<CodeBlock code={_shikiCode2} lang="typescript" />
 
 <h2>What gets redacted</h2>
 <p>The plugin intercepts the library's internal log calls and replaces sensitive values before they reach your logger:</p>
