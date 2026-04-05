@@ -2,10 +2,9 @@
 
 import type { AxiosError, AxiosRequestConfig } from 'axios';
 
-import type { RetryPlugin } from '../../types';
-import type { RetryManager } from '../../core/RetryManager';
+import type { PluginContext, RetryPlugin } from '../../types';
 import { getRequestMetadata } from '../../utils/requestMetadata';
-import { sanitizeData, sanitizeHeaders, sanitizeUrl, type SanitizeOptions } from '../../utils/sanitize';
+import { sanitizeData, sanitizeHeaders, sanitizeUrl, type SanitizeOptions } from './sanitize';
 
 /**
  * Options for the DebugSanitizationPlugin.
@@ -46,7 +45,7 @@ export class DebugSanitizationPlugin implements RetryPlugin {
   public name = 'DebugSanitizationPlugin';
   public version = '1.0.0';
 
-  private manager!: RetryManager;
+  private context!: PluginContext;
   private interceptorIdReq: number | null = null;
   private interceptorIdRes: number | null = null;
   private readonly sanitizeOptions: SanitizeOptions;
@@ -55,17 +54,17 @@ export class DebugSanitizationPlugin implements RetryPlugin {
     this.sanitizeOptions = options.sanitizeOptions ?? {};
   }
 
-  public initialize(manager: RetryManager): void {
-    this.manager = manager;
+  public initialize(context: PluginContext): void {
+    this.context = context;
 
-    this.interceptorIdReq = manager.axiosInstance.interceptors.request.use(
+    this.interceptorIdReq = context.axiosInstance.interceptors.request.use(
       (config) => {
         this.logSanitizedRequest(config);
         return config;
       },
     );
 
-    this.interceptorIdRes = manager.axiosInstance.interceptors.response.use(
+    this.interceptorIdRes = context.axiosInstance.interceptors.response.use(
       undefined,
       (error: AxiosError) => {
         if (error.config) {
@@ -76,18 +75,18 @@ export class DebugSanitizationPlugin implements RetryPlugin {
     );
   }
 
-  public onBeforeDestroyed(manager: RetryManager): void {
+  public onBeforeDestroyed(context: PluginContext): void {
     if (this.interceptorIdReq !== null) {
-      manager.axiosInstance.interceptors.request.eject(this.interceptorIdReq);
+      context.axiosInstance.interceptors.request.eject(this.interceptorIdReq);
     }
     if (this.interceptorIdRes !== null) {
-      manager.axiosInstance.interceptors.response.eject(this.interceptorIdRes);
+      context.axiosInstance.interceptors.response.eject(this.interceptorIdRes);
     }
   }
 
   private logSanitizedRequest(config: AxiosRequestConfig): void {
     const metadata = getRequestMetadata(config);
-    this.manager.getLogger()?.debug('[DebugSanitizationPlugin] Sanitized request', {
+    this.context.getLogger()?.debug('[DebugSanitizationPlugin] Sanitized request', {
       requestId: metadata?.requestId,
       url: sanitizeUrl(config.url || '', this.sanitizeOptions),
       method: config.method?.toUpperCase(),
@@ -98,7 +97,7 @@ export class DebugSanitizationPlugin implements RetryPlugin {
 
   private logSanitizedError(config: AxiosRequestConfig, error: AxiosError): void {
     const metadata = getRequestMetadata(config);
-    this.manager.getLogger()?.debug('[DebugSanitizationPlugin] Sanitized error', {
+    this.context.getLogger()?.debug('[DebugSanitizationPlugin] Sanitized error', {
       requestId: metadata?.requestId,
       url: sanitizeUrl(config.url || '', this.sanitizeOptions),
       method: config.method?.toUpperCase(),

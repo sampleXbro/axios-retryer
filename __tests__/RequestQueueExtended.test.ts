@@ -16,30 +16,26 @@ describe('RequestQueue Extended Tests', () => {
   });
 
   // Test for queue maxQueueSize functionality with debugging
-  it('should handle maxQueueSize limits and throw appropriate errors', () => {
+  it('should handle maxQueueSize limits and reject with appropriate errors', async () => {
     // Create a queue with maxQueueSize=1 and maxConcurrent=1
     // This means 1 request will start processing immediately, and only 1 can be waiting
-    const q = new RequestQueue(1, 0, () => false, () => false, 1);
-    
+    const q = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, maxQueueSize: 1 });
+
     // First request - will be processed immediately
     const req1 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'));
     expect(req1).toBeInstanceOf(Promise);
-    
+
     // Check that processing count is correct
     expect(q.getWaitingCount()).toBe(1); // One in waiting
-    
-    // Second request - should throw QueueFullError
-    try {
-      q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'));
-      // Test should fail if we get here
-      expect(true).toBe(false); // Will fail the test if we get here
-    } catch (error) {
-      // Check that it's the right type of error
-      expect(error).toBeInstanceOf(QueueFullError);
-      expect(error.name).toBe('QueueFullError');
-      expect(error.message).toBe('Request queue is full. The maximum queue size has been reached.');
-    }
-    
+
+    // Second request - should reject with QueueFullError
+    const req2 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'));
+    await expect(req2).rejects.toBeInstanceOf(QueueFullError);
+    await expect(req2).rejects.toMatchObject({
+      name: 'QueueFullError',
+      message: 'Request queue is full. The maximum queue size has been reached.',
+    });
+
     // Clean up
     req1.catch(() => {}); // Avoid unhandled promise rejection
   });
@@ -47,7 +43,7 @@ describe('RequestQueue Extended Tests', () => {
   // Add a test for queue capacity after a request is cancelled
   it('should have space in queue after cancelling a request', () => {
     // Create a queue with maxConcurrent=1 and maxQueueSize=1
-    const q = new RequestQueue(1, 0, () => false, () => false, 1);
+    const q = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, maxQueueSize: 1 });
     
     // Add a request with an ID
     q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'))
@@ -75,15 +71,11 @@ describe('RequestQueue Extended Tests', () => {
     let criticalInProgress = false;
     
     // Create a queue with 1 concurrent request to test blocking behavior
-    const criticalQueue = new RequestQueue(
-      1, // maxConcurrent
-      0, // queueDelay - set to 0 to speed up test
-      // Mock function to check if there are active critical requests
-      () => criticalInProgress,
-      // Mock function to identify critical requests
-      (config) => config.__axiosRetryer?.requestId?.startsWith('crit'),
-      undefined // No maxQueueSize
-    );
+    const criticalQueue = new RequestQueue({
+      maxConcurrent: 1,
+      queueDelay: 0,
+      canProcess: (config) => config.__axiosRetryer?.requestId?.startsWith('crit') || !criticalInProgress,
+    });
 
     const processed = [];
 

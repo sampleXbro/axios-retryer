@@ -23,7 +23,7 @@ describe('RequestQueue Edge Cases', () => {
   beforeEach(() => {
     mockIsCriticalRequest.mockReset();
     mockHasActiveCriticalRequests.mockReset();
-    queue = new RequestQueue(2, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    queue = new RequestQueue({ maxConcurrent: 2, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
   });
 
   it('should maintain correct order with multiple completions and new requests', async () => {
@@ -116,20 +116,16 @@ describe('RequestQueue Edge Cases', () => {
 
   it('should handle queue full error gracefully', async () => {
     // Create a queue with max size 1
-    const tinyQueue = new RequestQueue(1, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, 1);
-    
+    const tinyQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(), maxQueueSize: 1 });
+
     // First request should succeed
     const req1 = tinyQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'));
-    
-    // Second request should throw QueueFullError
-    try {
-      tinyQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'));
-      fail('Should have thrown QueueFullError');
-    } catch (error) {
-      expect(error).toBeInstanceOf(QueueFullError);
-      expect(error.config.__axiosRetryer?.requestId).toBe('req2');
-    }
-    
+
+    // Second request should reject with QueueFullError
+    const req2 = tinyQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'));
+    await expect(req2).rejects.toBeInstanceOf(QueueFullError);
+    await expect(req2).rejects.toMatchObject({ config: expect.objectContaining({ __axiosRetryer: expect.objectContaining({ requestId: 'req2' }) }) });
+
     // Clean up
     req1.catch(() => {});
   });
@@ -166,7 +162,7 @@ describe('RequestQueue Edge Cases', () => {
     mockHasActiveCriticalRequests.mockReturnValue(false);
     
     // Create a queue with just 1 concurrent request to test strict ordering
-    const priorityQueue = new RequestQueue(1, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    const priorityQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
     
     const processed = [];
     
@@ -207,7 +203,7 @@ describe('RequestQueue Edge Cases', () => {
     mockHasActiveCriticalRequests.mockReturnValue(false);
     
     // Create a queue with 1 concurrent limit to test cancellation
-    const cancelQueue = new RequestQueue(1, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    const cancelQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
     
     const results: string[] = [];
     const errors: { id: string, message: string }[] = [];

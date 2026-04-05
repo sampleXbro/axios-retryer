@@ -56,8 +56,9 @@ describe('P1 Improvements', () => {
         const refreshDefaults = capturedRefreshAxios!.defaults;
         expect(refreshDefaults.headers?.common?.['Authorization']).toBeUndefined();
         expect(refreshDefaults.headers?.common?.['X-Custom-Header']).toBeUndefined();
-        // But it should have the baseURL
+        // But it should keep transport defaults needed to reach the refresh endpoint
         expect(refreshDefaults.baseURL).toBe('http://test.local');
+        expect(refreshDefaults.adapter).toBe(axiosInstance.defaults.adapter);
         manager.destroy();
       });
     });

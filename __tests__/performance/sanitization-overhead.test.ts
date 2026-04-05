@@ -1,6 +1,6 @@
 import { RetryManager } from '../../src';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { SanitizeOptions } from '../../src/utils/sanitize';
+import type { SanitizeOptions } from '../../src/plugins/DebugSanitizationPlugin/sanitize';
 import { DebugSanitizationPlugin } from '../../src/plugins/DebugSanitizationPlugin';
 
 describe('Sanitization Performance Tests', () => {

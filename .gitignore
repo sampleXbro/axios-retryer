@@ -20,6 +20,8 @@ build/
 
 # TypeScript files
 *.tsbuildinfo
+.cache/
+.rts2_cache*
 *.d.ts.map
 *.d.ts
 

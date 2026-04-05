@@ -75,7 +75,7 @@ Current release benchmarks for the standard profile show:
 - **Peak burst throughput:** `4012.74 req/sec`
 - **Caching hot-read hit rate:** `100%`
 - **Release benchmark suite:** `7/7` benchmark runs passing
-- **Test suite:** `55/55` suites and `519/519` tests passing
+- **Test suite:** `63/63` suites and `630/630` tests passing
 
 These numbers come from the included local benchmark suite and are best used as a relative guide for this library's behavior, not as a universal guarantee for every app or network.
 
@@ -118,7 +118,7 @@ yarn add axios-retryer
 pnpm add axios-retryer
 ```
 
-The plugin layer currently includes `TokenRefreshPlugin`, `CircuitBreakerPlugin`, `CachingPlugin`, `ManualRetryPlugin`, `DebugSanitizationPlugin`, `CriticalRequestPlugin`, and `MetricsPlugin`.
+The plugin layer currently includes `TokenRefreshPlugin`, `CircuitBreakerPlugin`, `CachingPlugin`, `ManualRetryPlugin`, `DebugSanitizationPlugin`, `RequestDependencyPlugin`, and `MetricsPlugin`.
 
 ## ⚡ Quick Start
 
@@ -160,6 +160,32 @@ Try it now:
 └─────────────────────┴─────────────────────┴─────────────────────┘
 ```
 
+### Core vs Plugin Boundary
+
+The library is intentionally split into a small core and optional plugins:
+
+| Responsibility | Owner | Entry point |
+|---|---|---|
+| Retry orchestration (auto/manual), queue, concurrency | **Core** | `axios-retryer` |
+| Request prioritization and scheduling | **Core** | `axios-retryer` |
+| Lifecycle events and hook system | **Core** | `axios-retryer` |
+| Custom retry strategies | **Core** | `axios-retryer` |
+| Error types and constants | **Core** | `axios-retryer` |
+| Injectable logger | **Core** | `axios-retryer` |
+| Token refresh flow | **Plugin** | `axios-retryer/plugins/TokenRefreshPlugin` |
+| Response caching | **Plugin** | `axios-retryer/plugins/CachingPlugin` |
+| Circuit breaking | **Plugin** | `axios-retryer/plugins/CircuitBreakerPlugin` |
+| Manual retry storage and replay | **Plugin** | `axios-retryer/plugins/ManualRetryPlugin` |
+| Request dependency gating | **Plugin** | `axios-retryer/plugins/RequestDependencyPlugin` |
+| Debug log sanitization | **Plugin** | `axios-retryer/plugins/DebugSanitizationPlugin` |
+| Metrics collection | **Plugin** | `axios-retryer/plugins/MetricsPlugin` |
+
+**Rules of thumb:**
+- Features that every retry user needs belong in core.
+- Features that only some users need belong in a plugin.
+- Plugin-specific types are exported from the plugin entry point, not the root.
+- New behavior should grow an existing plugin before creating a new one.
+
 <details>
 <summary>📑 <b>Detailed Table of Contents</b></summary>
 
@@ -176,7 +202,7 @@ Try it now:
   - [CachingPlugin](#cachingplugin)
   - [ManualRetryPlugin](#manualretryplugin)
   - [DebugSanitizationPlugin](#debugsanitizationplugin)
-  - [CriticalRequestPlugin](#criticalrequestplugin)
+  - [RequestDependencyPlugin](#requestdependencyplugin)
   - [MetricsPlugin](#metricsplugin)
 - [Import Only What You Need](#-import-only-what-you-need)
 - [Environment Support](#-environment-support)
@@ -203,7 +229,7 @@ Try it now:
 
 ## 🔑 Key Features
 
-- **Dual Retry Modes**: Choose between automatic retries based on error types or manual queue-and-retry.
+- **Dual Retry Modes**: Choose between automatic retries based on error types or manual failure handling, and pair manual mode with `ManualRetryPlugin` when you want stored replay.
 - **Priority Queue**: Assign different priorities (CRITICAL to LOW) to ensure important requests go first.
 - **Concurrency Control**: Limit the number of concurrent requests to prevent overwhelming servers.
 - **Rich Event System**: Subscribe to lifecycle events for monitoring and customization.
@@ -219,13 +245,73 @@ Try it now:
 
 axios-retryer offers redaction through `DebugSanitizationPlugin`, but it is not a security boundary by itself.
 
-- **Failed requests can stay in memory**: In manual retry mode, failed `AxiosRequestConfig` objects are kept in memory so they can be replayed later.
-- **Cached responses stay in memory too**: If you enable the `CachingPlugin`, cached responses and related request metadata are held in process memory until eviction or cleanup.
+- **Failed requests can stay in memory**: When `ManualRetryPlugin` is installed, failed `AxiosRequestConfig` objects can be kept in memory so they can be replayed later.
+- **Cached responses stay in memory by default**: The built-in `CachingPlugin` storage keeps cached responses in process memory until eviction or cleanup. Custom cache adapters can persist that data elsewhere, but cached payloads should still be treated as sensitive application data.
 - **Do not assume storage is redacted**: `DebugSanitizationPlugin` only protects plugin-managed logs. Replayable request storage and cached responses may still contain raw tokens, headers, or payload data.
 - **Avoid sharing one retryer across users or tenants**: This is especially important in SSR, backend, or worker environments when caching is enabled.
 - **Be careful with debug mode**: Debug logging is useful in development, but production environments handling sensitive data should keep it off unless logs are tightly controlled.
 
 For a fuller breakdown, see [SECURITY.md](./SECURITY.md).
+
+## 🛡️ Production Safe Defaults and Sharp Edges
+
+This section summarises the most important decisions to make before going to production.
+
+### Safe defaults
+
+| Plugin | Secure default | What it prevents |
+|--------|---------------|-----------------|
+| `CachingPlugin` | `skipWhenAuthPresent: true` | Caching responses to authenticated requests; prevents cross-user cache collisions on a shared retryer instance. |
+| `ManualRetryPlugin` | `storeAuthRequests: false` | Storing requests that carry auth headers or `config.auth`; prevents replaying credentials that may have expired. |
+| `ManualRetryPlugin` | No `rehydrateAuth` by default | Replayed requests carry no auth headers unless you explicitly supply a `rehydrateAuth` hook, preventing cross-principal replay. |
+
+### When to avoid caching
+
+- **Authenticated or personalised responses**: Even with `skipWhenAuthPresent: true`, if you turn it off (`false`), use `varyHeaders` to bind cache entries to the correct identity rather than sharing them across principals.
+- **Short-lived or real-time data**: A `timeToRevalidate: 0` (never expires) cache for frequently changing data will serve stale content. Set a sensible TTR or use `invalidateCache()` after mutations.
+- **Large response bodies in high-throughput services**: The in-memory adapter holds snapshots of every cached response. Use `maxItems` and `cleanupInterval` to cap memory usage, or supply a custom storage adapter backed by Redis/Memcached.
+
+### When to avoid ManualRetryPlugin
+
+- **Mutations (POST/PUT/PATCH/DELETE) without idempotency keys**: Non-idempotent requests are not stored by default (`storeNonIdempotent: false`). Enabling this for non-idempotent operations risks duplicate side effects on replay.
+- **Shared retryer instances across users**: `retryFailedRequests()` replays all stored failures. If requests from different users share one instance, replay could mix data. Use one retryer per user/session boundary, or filter carefully with `beforeRetry`.
+
+### Recommended plugin combinations for common scenarios
+
+**Resilient API client (single-user, frontend)**
+```ts
+const retryer = createRetryer({ retries: 3, backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL });
+retryer.use(new TokenRefreshPlugin(refreshFn));
+retryer.use(new CachingPlugin({ timeToRevalidate: 30_000, maxItems: 500 }));
+retryer.use(new CircuitBreakerPlugin({ failureThreshold: 5, openTimeout: 10_000 }));
+```
+
+**Backend service calling downstream APIs (multi-user)**
+```ts
+// One retryer per downstream service — do NOT share across tenants.
+const retryer = createRetryer({ retries: 3, maxConcurrentRequests: 20 });
+// No CachingPlugin — downstream responses are user-specific.
+// No ManualRetryPlugin — replay semantics are complex in multi-tenant code.
+retryer.use(new CircuitBreakerPlugin({ failureThreshold: 10, openTimeout: 30_000 }));
+retryer.use(new MetricsPlugin());
+```
+
+**Offline-capable SPA with manual retry**
+```ts
+const retryer = createRetryer({ mode: RETRY_MODES.MANUAL });
+const manualRetry = new ManualRetryPlugin({
+  manualRetryMaxAge: 60_000,
+  rehydrateAuth: (config) => {
+    config.headers = config.headers || {};
+    config.headers['Authorization'] = `Bearer ${store.getAccessToken()}`;
+    return config;
+  },
+});
+retryer.use(manualRetry);
+
+// Reconnect handler:
+window.addEventListener('online', () => manualRetry.retryFailedRequests());
+```
 
 ## 🧰 Class-based vs Functional API
 
@@ -249,7 +335,7 @@ manager.axiosInstance.get('/api/data')
 
 ```typescript
 import { createRetryer, createRetryStrategy } from 'axios-retryer';
-import { createTokenRefreshPlugin } from 'axios-retryer/plugins';
+import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
 
 // Create retry manager
 const retryer = createRetryer({
@@ -298,8 +384,6 @@ const retryer = createRetryer({
   // Concurrency settings
   maxConcurrentRequests: 5,                 // Limit parallel requests
   queueDelay: 100,                          // Conservative default pacing for queued requests
-  blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, // Priority threshold
-  maxRequestsToStore: 100,                  // Max requests in memory store
   
   // Retry behavior
   retryableStatuses: [408, 429, [500, 599] as const], // Status codes to retry
@@ -319,7 +403,7 @@ const retryer = createRetryer({
 Use `DebugSanitizationPlugin` when you want redacted request and error diagnostics:
 
 ```typescript
-import { createDebugSanitizationPlugin } from 'axios-retryer/plugins';
+import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';
 
 retryer.use(createDebugSanitizationPlugin());
 ```
@@ -343,19 +427,23 @@ retryer.axiosInstance.get('/api/data');
 
 ### Manual Mode
 
-Use this when you want failed requests to be stored and replayed later, for example after reconnecting or after a user action:
+Use this when you want failures to stop after the first attempt. Add `ManualRetryPlugin` when you also want failed requests stored and replayed later, for example after reconnecting or after a user action:
 
 ```typescript
 import { createRetryer, RETRY_MODES } from 'axios-retryer';
+import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';
 
 const retryer = createRetryer({ mode: RETRY_MODES.MANUAL });
+const manualRetry = createManualRetryPlugin();
+
+retryer.use(manualRetry);
 
 // Initial request - no automatic retries
 retryer.axiosInstance.get('/api/data')
   .catch(() => console.log('Request failed'));
 
 // Later - perhaps when back online or after user action
-retryer.retryFailedRequests()
+manualRetry.retryFailedRequests()
   .then(responses => console.log('Retried successfully:', responses));
 ```
 
@@ -367,7 +455,7 @@ Plugin-specific events become available in the `on()`/`off()` typings on the `Re
 
 ```typescript
 import { createRetryer } from 'axios-retryer';
-import { createMetricsPlugin } from 'axios-retryer/plugins';
+import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';
 
 const retryer = createRetryer();
 retryer.use(createMetricsPlugin());
@@ -382,8 +470,8 @@ retryer
   .on('afterRetry', (config, success) => {
     console.log(`Retry ${success ? 'succeeded' : 'failed'} for ${config.url}`);
   })
-  .on('onRetryProcessFinished', (metrics) => {
-    console.log('All retries completed, metrics:', metrics);
+  .on('onRetryProcessFinished', () => {
+    console.log('All retries completed');
   })
   .on('onMetricsUpdated', (metrics) => {
     updateDashboard(metrics); // Requires MetricsPlugin
@@ -402,7 +490,9 @@ Start with the core retry manager, then add plugins only where they make sense f
 ```typescript
 import { createRetryer } from 'axios-retryer';
 import { AXIOS_RETRYER_HTTP_METHODS } from 'axios-retryer';
-import { createTokenRefreshPlugin, createCircuitBreaker, createCachePlugin } from 'axios-retryer/plugins';
+import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
+import { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';
+import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
 
 const retryer = createRetryer();
 
@@ -460,7 +550,7 @@ All documented plugin entry points are first-class public API:
 | `CachingPlugin` | `createCachePlugin` | repeated reads should be deduped or served from memory |
 | `ManualRetryPlugin` | `createManualRetryPlugin` | terminal failures should be stored and replayed later |
 | `DebugSanitizationPlugin` | `createDebugSanitizationPlugin` | debug logs must redact auth headers, params, and payload fields |
-| `CriticalRequestPlugin` | `createCriticalRequestPlugin` | high-priority traffic should block lower-priority work |
+| `RequestDependencyPlugin` | `createRequestDependencyPlugin` | higher-priority or dependency-gated traffic should block lower-priority work |
 | `MetricsPlugin` | `createMetricsPlugin` | `getMetrics()` and `onMetricsUpdated` should report real retry data |
 
 ### TokenRefreshPlugin
@@ -468,7 +558,7 @@ All documented plugin entry points are first-class public API:
 Automatically refreshes authentication tokens when protected requests fail with `401`:
 
 ```typescript
-import { createTokenRefreshPlugin } from 'axios-retryer/plugins';
+import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
 
 retryer.use(
   createTokenRefreshPlugin(
@@ -516,7 +606,7 @@ If the refresh callback throws a regular error before making the refresh request
 Prevents a failing upstream from being hammered over and over again:
 
 ```typescript
-import { createCircuitBreaker } from 'axios-retryer/plugins';
+import { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';
 
 retryer.use(
   createCircuitBreaker({
@@ -535,7 +625,7 @@ retryer.use(
 Caches responses to reduce network traffic and improve perceived performance:
 
 ```typescript
-import { createCachePlugin } from 'axios-retryer/plugins';
+import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
 import { AXIOS_RETRYER_HTTP_METHODS } from 'axios-retryer';
 
 const cachePlugin = createCachePlugin({
@@ -544,7 +634,9 @@ const cachePlugin = createCachePlugin({
   cleanupInterval: 300000,   // Cleanup every 5 minutes
   maxItems: 100,             // Maximum cache entries
   compareHeaders: false,     // Whether to include headers in cache key
-  cacheOnlyRetriedRequests: false // Whether to cache only retry attempts
+  cacheOnlyRetriedRequests: false, // Whether to cache only retry attempts
+  cacheKeyBuilder: ({ method, normalizedUrl, normalizedParams }) =>
+    `${method}|${normalizedUrl}|${normalizedParams}` // Optional custom key contract
 });
 
 // Register the plugin
@@ -552,15 +644,63 @@ retryer.use(cachePlugin);
 
 // Later, you can:
 
-// 1. Invalidate specific cache entries by key pattern
-cachePlugin.invalidateCache('/api/users');  // Invalidates exact or partial matches
+// 1. Invalidate one exact cache entry
+const userOneKey = cachePlugin.buildCacheKey({ method: 'get', url: '/api/users/1' });
+cachePlugin.invalidateCache({ exact: userOneKey });
 
-// 2. Clear the entire cache
+// 2. Invalidate a whole prefix scope
+cachePlugin.invalidateCache({ prefix: 'GET|/api/users/' });
+
+// 3. Clear the entire cache
 cachePlugin.clearCache();
 
-// 3. Get cache statistics
+// 4. Get cache statistics
 const stats = cachePlugin.getCacheStats();
 console.log(`Cache size: ${stats.size}, Average age: ${stats.averageAge}ms`);
+```
+
+#### Custom Cache Storage
+
+Custom cache adapters are now an indexed contract. In addition to `get`, `set`, `delete`, and `clear`, they must implement `entries()` and return the adapter's current cache index.
+
+That index is what powers:
+
+- periodic cleanup
+- `maxAge` and `maxItems` enforcement
+- prefix and `RegExp` invalidation
+- restart-safe cache management with persistent or distributed stores
+
+Minimal adapter shape:
+
+```typescript
+import type {
+  CacheStorage,
+  CacheStorageEntry,
+  CachedItem,
+} from 'axios-retryer/plugins/CachingPlugin';
+
+class RedisBackedCacheStorage implements CacheStorage {
+  async get(key: string): Promise<CachedItem | undefined> {
+    // ...
+  }
+
+  async set(key: string, value: CachedItem): Promise<void> {
+    // ...
+  }
+
+  async delete(key: string): Promise<void> {
+    // ...
+  }
+
+  async clear(): Promise<void> {
+    // ...
+  }
+
+  async entries(): Promise<readonly CacheStorageEntry[]> {
+    // Return the adapter's full index for cleanup and invalidation scans.
+    // ...
+  }
+}
 ```
 
 #### Per-Request Cache Configuration
@@ -593,8 +733,9 @@ retryer.axiosInstance.get('/api/semi-static-data', {
 
 The CachingPlugin provides smart cache invalidation:
 
-- **Precise Invalidation**: Invalidate specific cache entries by exact key or pattern
-- **Bulk Invalidation**: Clear multiple related cache entries at once
+- **Precise Invalidation**: Invalidate specific cache entries by exact key
+- **Scoped Bulk Invalidation**: Invalidate whole cache-key prefixes when you mean a family of entries
+- **Stable Cache Keys**: Canonical request-derived keys reduce property-order surprises
 - **Cache Statistics**: Monitor cache size and performance
 - **Per-Request Control**: Override global cache settings for individual requests
 
@@ -616,12 +757,17 @@ Security guidance for caching:
 Stores terminal failures and replays them later with optional age limits and idempotency safeguards:
 
 ```typescript
-import { createManualRetryPlugin } from 'axios-retryer/plugins';
+import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';
 
 const manualRetry = createManualRetryPlugin({
   manualRetryMaxAge: 5 * 60 * 1000,
   maxRequestsToStore: 100,
   storeNonIdempotent: false,
+  storeAuthRequests: false,
+  prepareRequestForStore: (config) => ({
+    ...config,
+    data: { redacted: true },
+  }),
 });
 
 retryer.use(manualRetry);
@@ -629,14 +775,18 @@ retryer.use(manualRetry);
 const responses = await manualRetry.retryFailedRequests();
 ```
 
-By default, the plugin stores idempotent requests and strips auth headers before persistence. On replay it re-applies auth defaults from the managed Axios instance.
+This is the manual replay path in `2.x`.
+
+By default, the plugin stores idempotent requests only, skips auth-bearing requests, and strips sensitive auth headers before persistence. If you intentionally need to replay auth-bearing requests, opt in with `storeAuthRequests: true` and use `prepareRequestForStore` to redact or filter stored payloads.
+
+On replay it re-applies auth defaults from the managed Axios instance when those defaults are available.
 
 ### DebugSanitizationPlugin
 
 Moves sensitive-data redaction out of the core manager and into an explicit plugin:
 
 ```typescript
-import { createDebugSanitizationPlugin } from 'axios-retryer/plugins';
+import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';
 
 retryer.use(
   createDebugSanitizationPlugin({
@@ -651,30 +801,30 @@ retryer.use(
 
 This plugin sanitizes request URLs, headers, request payloads, and response payloads in plugin-managed debug logs only. It does not redact what stays in memory stores or caches.
 
-### CriticalRequestPlugin
+### RequestDependencyPlugin
 
-Lets critical traffic block lower-priority queue work until the critical request resolves:
+Lets blocking traffic hold lower-priority queue work until the blocking request resolves:
 
 ```typescript
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';
-import { createCriticalRequestPlugin } from 'axios-retryer/plugins';
+import { createRequestDependencyPlugin } from 'axios-retryer/plugins/RequestDependencyPlugin';
 
 retryer.use(
-  createCriticalRequestPlugin({
-    blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
-    cancelQueuedOnCriticalFailure: true,
+  createRequestDependencyPlugin({
+    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+    cancelPendingOnDependencyFailure: true,
   }),
 );
 ```
 
-Use this when a checkout, write path, or other urgent workflow should take precedence over background traffic.
+Use this when a checkout, write path, or other urgent workflow should take precedence over background traffic, or when dependent requests must wait for a blocker to finish.
 
 ### MetricsPlugin
 
 Metrics collection is optional in v2 so the core stays smaller and cheaper by default:
 
 ```typescript
-import { createMetricsPlugin } from 'axios-retryer/plugins';
+import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';
 
 retryer.use(createMetricsPlugin());
 
@@ -691,17 +841,19 @@ axios-retryer ships a compact core entry point plus documented plugin entry poin
 
 - **Tree-Shaking Support**: The library supports modern tree-shaking techniques, allowing bundlers to eliminate unused code from your final bundle.
 
-- **Convenient plugin barrel**: Import documented plugins from one place when that reads better:
+- **Preferred for application code**: Import plugin factories from focused subpaths so bundlers and readers both see exactly what you use:
 
 ```typescript
 // Core functionality only
 import { createRetryer } from 'axios-retryer';
 
 // Add plugin factories only when needed
-import { createTokenRefreshPlugin, createCircuitBreaker, createCachePlugin } from 'axios-retryer/plugins';
+import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
+import { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';
+import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
 ```
 
-- **Dedicated plugin subpaths still work**: Keep using `axios-retryer/plugins/TokenRefreshPlugin` and similar paths if you prefer per-plugin entry points.
+- **Convenience barrel**: `axios-retryer/plugins` also works when a single import line reads better, but the focused subpaths are the primary documented path because they make plugin ownership and bundle intent explicit.
 
 - **Build targets**:
   - **ES Modules**: Best for modern applications with bundlers (Webpack, Rollup, etc.)
@@ -745,7 +897,8 @@ To keep plugin usage predictable across a larger app:
 
 ```typescript
 import { createRetryer } from 'axios-retryer';
-import { createCachePlugin, createTokenRefreshPlugin } from 'axios-retryer/plugins';
+import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
+import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
 
 // 1. Create a single RetryManager instance for your application
 const retryer = createRetryer({ retries: 3 });
@@ -788,29 +941,41 @@ import { retryer, cachePlugin } from './shared';
 Control request flow with priorities and concurrency limits:
 
 ```typescript
-import { 
-  createRetryer, 
-  AXIOS_RETRYER_REQUEST_PRIORITIES 
+import {
+  createRetryer,
+  AXIOS_RETRYER_REQUEST_PRIORITIES
 } from 'axios-retryer';
+import { createRequestDependencyPlugin } from 'axios-retryer/plugins/RequestDependencyPlugin';
 
 const retryer = createRetryer({
   maxConcurrentRequests: 3,
-  blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH
 });
+
+retryer.use(
+  createRequestDependencyPlugin({
+    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+  }),
+);
 
 // Critical auth request (blocks lower priority requests)
 retryer.axiosInstance.post('/auth/login', credentials, {
-  __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL // 4
+  __axiosRetryer: {
+    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL // 4
+  }
 });
 
 // Important user data (blocks medium/low priority)
 retryer.axiosInstance.get('/api/user-profile', {
-  __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH // 2
+  __axiosRetryer: {
+    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH // 2
+  }
 });
 
 // Background analytics (processed last)
 retryer.axiosInstance.post('/api/analytics', eventData, {
-  __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW // 0
+  __axiosRetryer: {
+    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW // 0
+  }
 });
 ```
 
@@ -857,7 +1022,7 @@ const retryer = createRetryer({
 Protect sensitive information in plugin-managed debug logs and error reporting:
 
 ```typescript
-import { createDebugSanitizationPlugin } from 'axios-retryer/plugins';
+import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';
 
 const retryer = createRetryer({ debug: true });
 
@@ -877,7 +1042,7 @@ Important caveat:
 
 - This redaction support is best understood as a logging safeguard.
 - It does not guarantee that replayable failed-request storage or cached responses are fully sanitized in memory.
-- If your requests carry high-sensitivity data, prefer automatic mode, shorter cache retention, smaller `maxRequestsToStore`, and separate retryer instances per security boundary.
+- If your requests carry high-sensitivity data, prefer automatic mode, shorter cache retention, smaller `ManualRetryPlugin.maxRequestsToStore` values, and separate retryer instances per security boundary.
 
 ### Handling Queue Overflow
 
@@ -904,6 +1069,25 @@ try {
 }
 ```
 
+### Standardized Library Errors
+
+Library-thrown errors now use named classes so you can handle them with `instanceof` instead of string matching.
+
+```typescript
+import {
+  createRetryer,
+  PluginRegistrationError,
+  QueueFullError,
+  RetryerConfigError,
+} from 'axios-retryer';
+import {
+  TokenRefreshAbortError,
+  TokenRefreshTimeoutError,
+} from 'axios-retryer/plugins/TokenRefreshPlugin';
+```
+
+Core errors such as invalid configuration, duplicate plugin registration, queue overflow, queue cancellation, and request aborts are exported from the root entry. Plugin-specific errors stay on their plugin entry points, such as `InvalidCacheKeyError`, `CircuitBreakerStateError`, `MissingTokenRefreshHandlerError`, `TokenRefreshAbortError`, `TokenRefreshFailedError`, and `TokenRefreshTimeoutError`.
+
 ## 📋 Examples
 
 ### Basic Usage with Automatic Retries
@@ -925,10 +1109,14 @@ retryer.axiosInstance.get('https://api.example.com/data')
 
 ```typescript
 import { createRetryer, RETRY_MODES } from 'axios-retryer';
+import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';
 
 const retryer = createRetryer({
   mode: RETRY_MODES.MANUAL
 });
+const manualRetry = createManualRetryPlugin();
+
+retryer.use(manualRetry);
 
 // When offline, requests will fail but be stored
 async function submitForm(data) {
@@ -946,7 +1134,7 @@ async function submitForm(data) {
 window.addEventListener('online', async () => {
   if (localStorage.getItem('hasPendingSubmissions') === 'true') {
     try {
-      const results = await retryer.retryFailedRequests();
+      const results = await manualRetry.retryFailedRequests();
       // set results to your stores
       showSuccess('Pending submissions completed');
       localStorage.removeItem('hasPendingSubmissions');
@@ -966,7 +1154,10 @@ import {
   AXIOS_RETRYER_HTTP_METHODS,
   AXIOS_RETRYER_REQUEST_PRIORITIES 
 } from 'axios-retryer';
-import { createTokenRefreshPlugin, createCircuitBreaker, createCachePlugin } from 'axios-retryer/plugins';
+import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';
+import { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';
+import { createRequestDependencyPlugin } from 'axios-retryer/plugins/RequestDependencyPlugin';
+import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
 import axios from 'axios';
 
 // Create the base axios instance
@@ -984,7 +1175,6 @@ const api = createRetryer({
   
   // Concurrency settings
   maxConcurrentRequests: 8,
-  blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
   
   // Status codes and methods to retry
   retryableStatuses: [408, 429, [500, 599] as const],
@@ -995,6 +1185,12 @@ const api = createRetryer({
     AXIOS_RETRYER_HTTP_METHODS.PUT,
   ]
 });
+
+api.use(
+  createRequestDependencyPlugin({
+    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+  }),
+);
 
 // Add token refresh capabilities
 const apiWithTokenRefresh = api.use(
@@ -1031,8 +1227,8 @@ api
   .on('onRetryProcessStarted', () => {
     logEvent('api_retry_started');
   })
-  .on('onRetryProcessFinished', (metrics) => {
-    logEvent('api_retry_finished', metrics);
+  .on('onRetryProcessFinished', () => {
+    logEvent('api_retry_finished');
   });
 
 apiWithTokenRefresh.on('onTokenRefreshed', () => {
@@ -1043,22 +1239,30 @@ apiWithTokenRefresh.on('onTokenRefreshed', () => {
 export const apiService = {
   fetchCriticalData: () => 
     api.axiosInstance.get('/critical-endpoint', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL
+      __axiosRetryer: {
+        priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL
+      }
     }),
     
   fetchUserProfile: (userId) => 
     api.axiosInstance.get(`/users/${userId}`, {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH
+      __axiosRetryer: {
+        priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH
+      }
     }),
     
   updateUserData: (userId, data) => 
     api.axiosInstance.put(`/users/${userId}`, data, {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH
+      __axiosRetryer: {
+        priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH
+      }
     }),
     
   fetchRecommendations: () => 
     api.axiosInstance.get('/recommendations', {
-      __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW
+      __axiosRetryer: {
+        priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW
+      }
     }),
     
   logout: () => {
@@ -1089,7 +1293,7 @@ For a comprehensive list of known issues, unexpected behaviors, and workarounds,
 - Use the `QueueFullError` to detect when the queue is at capacity
 
 #### Memory usage concerns
-- Set a reasonable `maxRequestsToStore` to limit how many requests are kept in memory
+- If you use `ManualRetryPlugin`, set a reasonable `maxRequestsToStore` to limit how many requests are kept in memory
 - Install `DebugSanitizationPlugin` if you need redacted debug logs during troubleshooting
 
 #### Performance issues
@@ -1109,7 +1313,7 @@ When debugging, enable debug mode for detailed logs:
 
 ```typescript
 import { createRetryer } from 'axios-retryer';
-import { createMetricsPlugin } from 'axios-retryer/plugins';
+import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';
 
 const retryer = createRetryer({ debug: true });
 retryer.use(createMetricsPlugin());
@@ -1185,13 +1389,14 @@ Bundle size depends on which entry points you import and how your bundler handle
 - `createCachePlugin(options?)`: Creates a response caching plugin
 - `createManualRetryPlugin(options?)`: Creates a manual replay plugin for terminal failures
 - `createDebugSanitizationPlugin(options?)`: Creates a redacted debug logging plugin
-- `createCriticalRequestPlugin(options)`: Creates a critical-request queue control plugin
+- `createRequestDependencyPlugin(options)`: Creates a request dependency and queue-gating plugin
 - `createMetricsPlugin()`: Creates the optional metrics recorder plugin
 
 ### Plugin Methods
 - **CachingPlugin**:
   - `clearCache()`: Clears all cached responses
-  - `invalidateCache(keyPattern)`: Invalidates specific cache entries by key pattern
+  - `buildCacheKey(config)`: Builds the canonical cache key for an exact-match invalidation target
+  - `invalidateCache(matcher)`: Invalidates specific cache entries by exact key, prefix, or `RegExp` across the configured indexed storage backend
   - `getCacheStats()`: Returns statistics about the cache (size, age, etc.)
 - **CircuitBreakerPlugin**:
   - `getState()`: Returns the current state of the circuit breaker
@@ -1200,9 +1405,9 @@ Bundle size depends on which entry points you import and how your bundler handle
   - `retryFailedRequests()`: Replays stored failed requests
   - `getStoredRequests()`: Returns a copy of currently stored requests
   - `clearStoredRequests()`: Drops stored requests without replaying them
-- **CriticalRequestPlugin**:
-  - `isCritical(config)`: Checks whether a request meets the critical threshold
-  - `getActiveCriticalRequestCount()`: Returns the number of active critical requests
+- **RequestDependencyPlugin**:
+  - `isBlockingRequest(config)`: Checks whether a request meets the blocking threshold
+  - `getActiveBlockingRequestCount()`: Returns the number of active blocking requests
 - **MetricsPlugin**:
   - Install it, then use `retryer.getMetrics()` and `onMetricsUpdated` on the manager
 
@@ -1214,7 +1419,6 @@ The main class for managing retries with comprehensive timer management:
 - `axiosInstance`: The wrapped axios instance to use for requests
 
 #### Request Management Methods
-- `retryFailedRequests()`: Manually retry all failed requests stored in the request store
 - `cancelRequest(requestId: string)`: Cancel a specific request by ID (includes timer cleanup)
 - `cancelAllRequests()`: Cancel all ongoing requests and timers
 
@@ -1269,13 +1473,13 @@ Subscribe to these events to monitor retry behavior:
 - `afterRetry`: After each retry attempt  
 - `onFailure`: When a retry attempt fails
 - `onRetryProcessFinished`: When all retries complete
-- `onMetricsUpdated`: When metrics are updated
+- `onMetricsUpdated`: When metrics are updated (MetricsPlugin)
 - `onTokenRefreshed`: When a token is refreshed (TokenRefreshPlugin)
 - `onRequestCancelled`: When a request is cancelled
 - `onInternetConnectionError`: When a network error occurs
-- `onCriticalRequestFailed`: When a critical priority request fails
-- `onAllCriticalRequestsResolved`: When all critical requests complete
-- `onManualRetryProcessStarted`: When manual retry process begins
+- `onBlockingRequestFailed`: When a blocking request fails (RequestDependencyPlugin)
+- `onAllBlockingRequestsResolved`: When all blocking requests complete (RequestDependencyPlugin)
+- `onManualRetryProcessStarted`: When manual retry process begins (ManualRetryPlugin)
 
 ### Timer Health Monitoring
 

@@ -32,13 +32,12 @@ describe('RequestQueue Comprehensive Tests', () => {
   beforeEach(() => {
     mockIsCriticalRequest = jest.fn();
     mockHasActiveCriticalRequests = jest.fn();
-    queue = new RequestQueue(
-      2, // maxConcurrent
-      0, // queueDelay
-      mockHasActiveCriticalRequests,
-      mockIsCriticalRequest,
-      100 // maxQueueSize - increased to avoid queue full errors in tests
-    );
+    queue = new RequestQueue({
+      maxConcurrent: 2,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+      maxQueueSize: 100,
+    });
   });
 
   afterEach(() => {
@@ -48,13 +47,9 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test edge cases with missing or invalid parameters
   it('should handle undefined parameters and use default values', () => {
     // Create with all parameters undefined (using casting to avoid TypeScript errors)
-    const defaultQueue = new RequestQueue(
-      undefined as unknown as number,
-      undefined as unknown as number,
-      mockHasActiveCriticalRequests,
-      mockIsCriticalRequest,
-      undefined
-    );
+    const defaultQueue = new RequestQueue({
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+    });
 
     // Should use default values
     expect(defaultQueue['maxConcurrent']).toBe(5); // Default maxConcurrent
@@ -68,13 +63,12 @@ describe('RequestQueue Comprehensive Tests', () => {
     mockHasActiveCriticalRequests.mockReturnValue(false);
     
     // Create a queue with max 1 concurrent to ensure requests wait
-    const queueWithLimit = new RequestQueue(
-      1, // Only 1 concurrent request
-      0, // No delay
-      mockHasActiveCriticalRequests,
-      mockIsCriticalRequest,
-      100 
-    );
+    const queueWithLimit = new RequestQueue({
+      maxConcurrent: 1,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+      maxQueueSize: 100,
+    });
     
     const results: string[] = [];
     
@@ -113,13 +107,12 @@ describe('RequestQueue Comprehensive Tests', () => {
     mockHasActiveCriticalRequests.mockReturnValue(false);
 
     // Create a queue with slower processing to ensure order
-    const orderedQueue = new RequestQueue(
-      1, // Only 1 concurrent for predictable order
-      0, // No delay
-      mockHasActiveCriticalRequests,
-      mockIsCriticalRequest,
-      100
-    );
+    const orderedQueue = new RequestQueue({
+      maxConcurrent: 1,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+      maxQueueSize: 100,
+    });
 
     const results: string[] = [];
     const startTime = Date.now();
@@ -257,7 +250,7 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test queue full error with actual queue filling
   it('should throw QueueFullError when queue is actually full', async () => {
     // Create a queue with small size
-    const smallQueue = new RequestQueue(1, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, 3);
+    const smallQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(), maxQueueSize: 3 });
     
     // Fill the queue to capacity
     for (let i = 0; i < 3; i++) {
@@ -291,7 +284,7 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test what happens when the queue is empty
   it('should not throw when tryDequeue is called on an empty queue', async () => {
     // Create a fresh queue
-    const emptyQueue = new RequestQueue(1, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest);
+    const emptyQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
     
     // Mark complete on an empty queue should not throw
     expect(() => emptyQueue.markComplete()).not.toThrow();
@@ -346,7 +339,7 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test queue with extremely small delay
   it('should respect the queue delay setting', async () => {
     // Create a queue with a 10ms delay for more reliable timing
-    const delayedQueue = new RequestQueue(2, 10, mockHasActiveCriticalRequests, mockIsCriticalRequest);
+    const delayedQueue = new RequestQueue({ maxConcurrent: 2, queueDelay: 10, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
     
     const startTime = Date.now();
     const results: { id: string, time: number }[] = [];
@@ -413,4 +406,70 @@ describe('RequestQueue Comprehensive Tests', () => {
       }
     }
   });
-}); 
+
+  describe('head-of-line blocking', () => {
+    it('stops draining when the head item cannot be processed', async () => {
+      let gateOpen = false;
+      const queue = new RequestQueue({
+        maxConcurrent: 5,
+        queueDelay: 0,
+        canProcess: () => gateOpen,
+      });
+      const makeConfig = (id: string) => ({
+        __axiosRetryer: { priority: 5, timestamp: Date.now(), requestId: id },
+      });
+
+      const p1 = queue.enqueue(makeConfig('r1'));
+      const p2 = queue.enqueue(makeConfig('r2'));
+
+      // Both should still be waiting because gate is closed
+      await new Promise(r => setTimeout(r, 20));
+      expect(queue.getWaitingCount()).toBe(2);
+
+      // Open the gate and refresh
+      gateOpen = true;
+      queue.refresh();
+
+      await new Promise(r => setTimeout(r, 20));
+      expect(queue.getWaitingCount()).toBe(0);
+
+      await expect(p1).resolves.toBeDefined();
+      await expect(p2).resolves.toBeDefined();
+
+      queue.markComplete();
+      queue.markComplete();
+    });
+
+    it('does not process lower-priority items when the head is blocked', async () => {
+      let allowId = '';
+      const queue = new RequestQueue({
+        maxConcurrent: 5,
+        queueDelay: 0,
+        canProcess: (cfg) => cfg.__axiosRetryer?.requestId === allowId,
+      });
+      const makeConfig = (id: string, priority: number) => ({
+        __axiosRetryer: { priority, timestamp: Date.now(), requestId: id },
+      });
+
+      // High priority request comes first but is blocked
+      allowId = 'r2';
+      const p1 = queue.enqueue(makeConfig('r1', 10)); // high priority, blocked
+      const p2 = queue.enqueue(makeConfig('r2', 5));  // low priority, would be allowed but blocked by r1
+
+      await new Promise(r => setTimeout(r, 20));
+      // Neither processed - r1 blocks, drain stops
+      expect(queue.getWaitingCount()).toBe(2);
+
+      // Now allow r1 as well
+      allowId = ''; // no match — still blocked
+      queue.refresh();
+
+      await new Promise(r => setTimeout(r, 20));
+      expect(queue.getWaitingCount()).toBe(2);
+
+      queue.destroy();
+      await expect(p1).rejects.toBeDefined();
+      await expect(p2).rejects.toBeDefined();
+    });
+  });
+});

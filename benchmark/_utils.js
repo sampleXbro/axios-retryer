@@ -60,6 +60,16 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function withPriority(priority, config = {}) {
+  return {
+    ...config,
+    __axiosRetryer: {
+      ...(config.__axiosRetryer || {}),
+      priority,
+    },
+  };
+}
+
 function deterministicUnit(seed, ...parts) {
   const input = [seed, ...parts].join('|');
   let hash = 2166136261;
@@ -266,12 +276,7 @@ function createScenarioSummary({
   const durationMs = finishedAt - startedAt;
   const throughput = durationMs > 0 ? round((requestCount / durationMs) * 1000) : 0;
   const metrics = manager.getMetrics();
-  const timerStats = manager.getTimerStats();
-  const timerHealth = metrics.timerHealth || {
-    healthScore: timerStats.activeTimers + timerStats.activeRetryTimers * 2,
-    activeTimers: timerStats.activeTimers,
-    activeRetryTimers: timerStats.activeRetryTimers,
-  };
+  const timerHealth = metrics.timerHealth;
 
   return {
     name,
@@ -346,4 +351,5 @@ module.exports = {
   silenceManager,
   sleep,
   summarizeLatency,
+  withPriority,
 };

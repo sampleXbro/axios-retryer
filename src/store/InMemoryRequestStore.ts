@@ -2,10 +2,15 @@
 
 import type { AxiosRequestConfig } from 'axios';
 
-import type { CoreRetryEvents, RequestStore, RetryEventArgs } from '../types';
+import type { RequestStore } from '../types';
 import { ensureRequestMetadata, getRequestMetadata } from '../utils/requestMetadata';
 
-type StoreEvents = Pick<CoreRetryEvents, 'onRequestRemovedFromStore'>;
+type StoreEvents = {
+  onRequestRemovedFromStore?: (request: AxiosRequestConfig) => void;
+};
+
+type StoreEventArgs<K extends keyof StoreEvents> =
+  NonNullable<StoreEvents[K]> extends (...args: infer TArgs) => unknown ? TArgs : never;
 
 /**
  * A simple in-memory store for Axios request configurations.
@@ -22,7 +27,7 @@ export class InMemoryRequestStore implements RequestStore {
     private readonly maxStoreSize = 200,
     private readonly emit: <K extends keyof StoreEvents>(
       event: K,
-      ...args: RetryEventArgs<StoreEvents, K>
+      ...args: StoreEventArgs<K>
     ) => void,
   ) {}
 

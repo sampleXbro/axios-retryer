@@ -5,6 +5,8 @@ import { DefaultRetryStrategy } from '../src/core/strategies/DefaultRetryStrateg
 import { RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES } from '../src/types';
 import { AxiosError } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
+import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
+import { MetricsPlugin } from '../src/plugins/MetricsPlugin';
 
 describe('Coverage Improvement - Critical Edge Cases', () => {
   describe('QueueFullError Edge Cases', () => {
@@ -180,12 +182,12 @@ describe('Coverage Improvement - Critical Edge Cases', () => {
       retryManager.destroy();
     });
 
-    test('should handle timer stats access', () => {
-      const stats = retryManager.getTimerStats();
-      expect(stats).toHaveProperty('activeTimers');
-      expect(stats).toHaveProperty('activeRetryTimers');
-      expect(typeof stats.activeTimers).toBe('number');
-      expect(typeof stats.activeRetryTimers).toBe('number');
+    test('should handle timer stats access via getMetrics', () => {
+      const metrics = retryManager.getMetrics();
+      expect(metrics.timerHealth).toHaveProperty('activeTimers');
+      expect(metrics.timerHealth).toHaveProperty('activeRetryTimers');
+      expect(typeof metrics.timerHealth.activeTimers).toBe('number');
+      expect(typeof metrics.timerHealth.activeRetryTimers).toBe('number');
     });
 
     test('should handle getLogger method', () => {
@@ -196,6 +198,7 @@ describe('Coverage Improvement - Critical Edge Cases', () => {
 
     test('should handle triggerAndEmit method', () => {
       const events = [];
+      retryManager.use(new MetricsPlugin());
       retryManager.on('onMetricsUpdated', (metrics) => {
         events.push('metrics-updated');
       });
@@ -224,7 +227,9 @@ describe('Coverage Improvement - Critical Edge Cases', () => {
         mode: RETRY_MODES.MANUAL,
         debug: false
       });
+      const manualRetry = new ManualRetryPlugin();
       const manualMockAdapter = new MockAdapter(manualManager.axiosInstance);
+      manualManager.use(manualRetry);
 
       try {
         // Setup failing request
@@ -241,7 +246,7 @@ describe('Coverage Improvement - Critical Edge Cases', () => {
         manualMockAdapter.onGet('/api/data').reply(200, { data: 'success' });
 
         // Manual retry should work
-        const results = await manualManager.retryFailedRequests();
+        const results = await manualRetry.retryFailedRequests();
         expect(Array.isArray(results)).toBe(true);
       } finally {
         manualMockAdapter.restore();

@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-04-04T06:16:35.532Z",
+  "generatedAt": "2026-04-05T17:15:05.215Z",
   "profile": "standard",
   "executions": [
     {
       "name": "Core RetryManager",
       "file": "local-mock-server.js",
       "success": true,
-      "durationMs": 3269.85,
+      "durationMs": 3250.33,
       "error": null,
       "result": {
         "benchmark": "local-mock-server",
         "title": "Core RetryManager Benchmarks",
-        "generatedAt": "2026-04-04T06:15:21.243Z",
+        "generatedAt": "2026-04-05T17:13:48.853Z",
         "profile": "standard",
         "scenarios": [
           {
@@ -19,19 +19,19 @@
             "description": "Measures RetryManager overhead against plain axios when every request succeeds on the first attempt.",
             "requestCount": 600,
             "concurrency": 32,
-            "durationMs": 226.71,
-            "throughputPerSec": 2646.58,
+            "durationMs": 224.79,
+            "throughputPerSec": 2669.21,
             "successCount": 600,
             "failureCount": 0,
             "successRate": 100,
             "latencyMs": {
               "count": 600,
-              "minMs": 7.22,
-              "maxMs": 18.74,
-              "avgMs": 11.69,
-              "p50Ms": 11.77,
-              "p95Ms": 14.95,
-              "p99Ms": 18.17
+              "minMs": 7.43,
+              "maxMs": 17.01,
+              "avgMs": 11.58,
+              "p50Ms": 11.55,
+              "p95Ms": 14.56,
+              "p99Ms": 16.71
             },
             "upstreamCalls": 600,
             "upstreamCallsPerRequest": 1,
@@ -47,11 +47,11 @@
               "activeTimers": 0,
               "activeRetryTimers": 0
             },
-            "memoryDeltaMb": 8.23,
+            "memoryDeltaMb": 3.25,
             "extras": {
-              "baselineThroughputPerSec": 2680.09,
-              "baselineP95Ms": 14.48,
-              "managerOverheadPct": 1.26
+              "baselineThroughputPerSec": 2687.6,
+              "baselineP95Ms": 14.36,
+              "managerOverheadPct": 0.68
             }
           },
           {
@@ -59,28 +59,28 @@
             "description": "Simulates a flaky upstream where some requests fail once with 503 and should succeed on retry.",
             "requestCount": 500,
             "concurrency": 24,
-            "durationMs": 495.49,
-            "throughputPerSec": 1009.11,
+            "durationMs": 492.25,
+            "throughputPerSec": 1015.74,
             "successCount": 500,
             "failureCount": 0,
             "successRate": 100,
             "latencyMs": {
               "count": 500,
-              "minMs": 9.57,
-              "maxMs": 66.06,
-              "avgMs": 23.34,
-              "p50Ms": 18.14,
-              "p95Ms": 57.89,
-              "p99Ms": 63.98
+              "minMs": 9.62,
+              "maxMs": 65.47,
+              "avgMs": 23.18,
+              "p50Ms": 17.82,
+              "p95Ms": 57.77,
+              "p99Ms": 62.79
             },
             "upstreamCalls": 597,
             "upstreamCallsPerRequest": 1.19,
             "retryMetrics": {
-              "successfulRetries": 97,
+              "successfulRetries": 0,
               "failedRetries": 0,
               "completelyFailedRequests": 0,
               "avgQueueWaitMs": 0,
-              "avgRetryDelayMs": 0.02
+              "avgRetryDelayMs": 0
             },
             "timerHealth": {
               "healthScore": 0,
@@ -98,28 +98,28 @@
             "description": "Simulates brief 429 responses to show recovery cost and tail latency under backoff.",
             "requestCount": 220,
             "concurrency": 16,
-            "durationMs": 1153.78,
-            "throughputPerSec": 190.68,
+            "durationMs": 1152.12,
+            "throughputPerSec": 190.95,
             "successCount": 220,
             "failureCount": 0,
             "successRate": 100,
             "latencyMs": {
               "count": 220,
-              "minMs": 13.64,
-              "maxMs": 1049.43,
-              "avgMs": 61.19,
-              "p50Ms": 19.66,
-              "p95Ms": 24.98,
-              "p99Ms": 1043.6
+              "minMs": 13.6,
+              "maxMs": 1047.32,
+              "avgMs": 61.1,
+              "p50Ms": 19.65,
+              "p95Ms": 25.09,
+              "p99Ms": 1042.31
             },
             "upstreamCalls": 229,
             "upstreamCallsPerRequest": 1.04,
             "retryMetrics": {
-              "successfulRetries": 9,
+              "successfulRetries": 0,
               "failedRetries": 0,
               "completelyFailedRequests": 0,
               "avgQueueWaitMs": 0,
-              "avgRetryDelayMs": 1
+              "avgRetryDelayMs": 0
             },
             "timerHealth": {
               "healthScore": 0,
@@ -137,19 +137,19 @@
             "description": "Floods the queue with low-priority work before high-priority requests arrive, showing tail latency separation.",
             "requestCount": 180,
             "concurrency": 6,
-            "durationMs": 698.35,
-            "throughputPerSec": 257.75,
+            "durationMs": 689.74,
+            "throughputPerSec": 260.97,
             "successCount": 180,
             "failureCount": 0,
             "successRate": 100,
             "latencyMs": {
               "count": 180,
-              "minMs": 25.52,
-              "maxMs": 697.58,
-              "avgMs": 357.46,
-              "p50Ms": 355.2,
-              "p95Ms": 661.39,
-              "p99Ms": 696.35
+              "minMs": 20.89,
+              "maxMs": 688.86,
+              "avgMs": 350.63,
+              "p50Ms": 351.59,
+              "p95Ms": 652.04,
+              "p99Ms": 688.84
             },
             "upstreamCalls": 180,
             "upstreamCallsPerRequest": 1,
@@ -157,7 +157,7 @@
               "successfulRetries": 0,
               "failedRetries": 0,
               "completelyFailedRequests": 0,
-              "avgQueueWaitMs": 0.33,
+              "avgQueueWaitMs": 0,
               "avgRetryDelayMs": 0
             },
             "timerHealth": {
@@ -169,16 +169,16 @@
             "extras": {
               "latencyByTier": {
                 "high": {
-                  "p50Ms": 71.82,
-                  "p95Ms": 116.73
+                  "p50Ms": 65.21,
+                  "p95Ms": 111.04
                 },
                 "medium": {
-                  "p50Ms": 207.43,
-                  "p95Ms": 279.86
+                  "p50Ms": 201.7,
+                  "p95Ms": 273.25
                 },
                 "low": {
-                  "p50Ms": 496.8,
-                  "p95Ms": 674.61
+                  "p50Ms": 489.89,
+                  "p95Ms": 668.18
                 }
               }
             }
@@ -186,15 +186,15 @@
         ],
         "summary": {
           "profile": "standard",
-          "avgThroughputPerSec": 1026.03,
-          "slowestP95Ms": 661.39,
+          "avgThroughputPerSec": 1034.22,
+          "slowestP95Ms": 652.04,
           "highestSuccessRate": 100,
           "memory": {
             "cycles": 5,
             "requestsPerCycle": 120,
-            "startHeapMb": 7,
-            "endHeapMb": 7.07,
-            "totalGrowthMb": 0.07
+            "startHeapMb": 6.59,
+            "endHeapMb": 6.67,
+            "totalGrowthMb": 0.08
           }
         }
       }
@@ -203,12 +203,12 @@
       "name": "Stress",
       "file": "stress-testing.js",
       "success": true,
-      "durationMs": 46565.93,
+      "durationMs": 46293.4,
       "error": null,
       "result": {
         "benchmark": "stress-testing",
         "title": "Stress Benchmarks",
-        "generatedAt": "2026-04-04T06:16:07.801Z",
+        "generatedAt": "2026-04-05T17:14:35.145Z",
         "profile": "standard",
         "scenarios": [
           {
@@ -216,19 +216,19 @@
             "description": "Measures how the manager behaves when concurrency ramps up in larger spikes with transient 503s.",
             "requestCount": 1020,
             "concurrency": 48,
-            "durationMs": 254.19,
-            "throughputPerSec": 4012.74,
+            "durationMs": 240.6,
+            "throughputPerSec": 4239.44,
             "successCount": 1020,
             "failureCount": 0,
             "successRate": 100,
             "latencyMs": {
               "count": 1020,
-              "minMs": 6.39,
-              "maxMs": 22.66,
-              "avgMs": 10.89,
-              "p50Ms": 10.27,
-              "p95Ms": 17.23,
-              "p99Ms": 21.58
+              "minMs": 6.27,
+              "maxMs": 18.35,
+              "avgMs": 10.28,
+              "p50Ms": 10.03,
+              "p95Ms": 13.81,
+              "p99Ms": 17.4
             },
             "upstreamCalls": 1020,
             "upstreamCallsPerRequest": 1,
@@ -250,23 +250,23 @@
                 {
                   "burst": 1,
                   "requestCount": 120,
-                  "throughputPerSec": 2685.44,
+                  "throughputPerSec": 3053.05,
                   "successRate": 100,
-                  "p95Ms": 21.8
+                  "p95Ms": 17.62
                 },
                 {
                   "burst": 2,
                   "requestCount": 300,
-                  "throughputPerSec": 4112.93,
+                  "throughputPerSec": 4312.81,
                   "successRate": 100,
-                  "p95Ms": 15.48
+                  "p95Ms": 13.59
                 },
                 {
                   "burst": 3,
                   "requestCount": 600,
-                  "throughputPerSec": 4398.72,
+                  "throughputPerSec": 4560.3,
                   "successRate": 100,
-                  "p95Ms": 13.47
+                  "p95Ms": 12.44
                 }
               ]
             }
@@ -274,30 +274,30 @@
           {
             "name": "Sustained Load",
             "description": "Sends a paced stream for a fixed duration to surface queue growth, timer pressure, and long-run throughput.",
-            "requestCount": 1808,
+            "requestCount": 1800,
             "concurrency": 32,
-            "durationMs": 45190.51,
-            "throughputPerSec": 40.01,
-            "successCount": 1808,
+            "durationMs": 45000.67,
+            "throughputPerSec": 40,
+            "successCount": 1800,
             "failureCount": 0,
             "successRate": 100,
             "latencyMs": {
-              "count": 1808,
-              "minMs": 10.33,
-              "maxMs": 64.51,
-              "avgMs": 17.86,
-              "p50Ms": 14.67,
-              "p95Ms": 49.45,
-              "p99Ms": 55.87
+              "count": 1800,
+              "minMs": 9.49,
+              "maxMs": 57.01,
+              "avgMs": 17.11,
+              "p50Ms": 13.98,
+              "p95Ms": 48.61,
+              "p99Ms": 54.47
             },
-            "upstreamCalls": 1972,
+            "upstreamCalls": 1963,
             "upstreamCallsPerRequest": 1.09,
             "retryMetrics": {
-              "successfulRetries": 164,
+              "successfulRetries": 0,
               "failedRetries": 0,
               "completelyFailedRequests": 0,
               "avgQueueWaitMs": 0,
-              "avgRetryDelayMs": 0.02
+              "avgRetryDelayMs": 0
             },
             "timerHealth": {
               "healthScore": 0,
@@ -309,44 +309,44 @@
               "durationMs": 45000,
               "snapshots": [
                 {
-                  "elapsedMs": 0.11,
+                  "elapsedMs": 0.09,
                   "totalRequests": 0,
                   "avgQueueWaitMs": 0,
                   "activeTimers": 0,
                   "activeRetryTimers": 0,
-                  "memoryMb": 23.71
+                  "memoryMb": 11.34
                 },
                 {
-                  "elapsedMs": 10003.47,
-                  "totalRequests": 436,
+                  "elapsedMs": 10199.29,
+                  "totalRequests": 0,
                   "avgQueueWaitMs": 0,
                   "activeTimers": 0,
                   "activeRetryTimers": 0,
-                  "memoryMb": 7.18
+                  "memoryMb": 7.44
                 },
                 {
-                  "elapsedMs": 20196.72,
-                  "totalRequests": 881,
+                  "elapsedMs": 20000.77,
+                  "totalRequests": 0,
                   "avgQueueWaitMs": 0,
                   "activeTimers": 0,
                   "activeRetryTimers": 0,
-                  "memoryMb": 10.3
+                  "memoryMb": 8.61
                 },
                 {
-                  "elapsedMs": 30192.87,
-                  "totalRequests": 1317,
+                  "elapsedMs": 30004.88,
+                  "totalRequests": 0,
                   "avgQueueWaitMs": 0,
                   "activeTimers": 0,
                   "activeRetryTimers": 0,
-                  "memoryMb": 12.37
+                  "memoryMb": 11.42
                 },
                 {
-                  "elapsedMs": 40191.74,
-                  "totalRequests": 1754,
+                  "elapsedMs": 40003.08,
+                  "totalRequests": 0,
                   "avgQueueWaitMs": 0,
                   "activeTimers": 0,
                   "activeRetryTimers": 0,
-                  "memoryMb": 12.35
+                  "memoryMb": 9.74
                 }
               ]
             }
@@ -356,28 +356,28 @@
             "description": "Runs healthy traffic into a hard outage and then a partial recovery window to show recovery cost and residual failures.",
             "requestCount": 540,
             "concurrency": 24,
-            "durationMs": 901.36,
-            "throughputPerSec": 599.09,
+            "durationMs": 852.33,
+            "throughputPerSec": 633.56,
             "successCount": 362,
             "failureCount": 178,
             "successRate": 67.04,
             "latencyMs": {
               "count": 540,
-              "minMs": 7.79,
-              "maxMs": 84.32,
-              "avgMs": 38.62,
-              "p50Ms": 38.3,
-              "p95Ms": 79.07,
-              "p99Ms": 82.02
+              "minMs": 7.43,
+              "maxMs": 81.64,
+              "avgMs": 36.62,
+              "p50Ms": 14.54,
+              "p95Ms": 78.44,
+              "p99Ms": 80.8
             },
             "upstreamCalls": 988,
             "upstreamCallsPerRequest": 1.83,
             "retryMetrics": {
-              "successfulRetries": 92,
-              "failedRetries": 356,
-              "completelyFailedRequests": 178,
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
               "avgQueueWaitMs": 0,
-              "avgRetryDelayMs": 0.02
+              "avgRetryDelayMs": 0
             },
             "timerHealth": {
               "healthScore": 0,
@@ -386,14 +386,14 @@
             },
             "memoryDeltaMb": 0,
             "extras": {
-              "terminalFailureRate": 32.96
+              "terminalFailureRate": 0
             }
           }
         ],
         "summary": {
           "profile": "standard",
-          "peakThroughputPerSec": 4012.74,
-          "slowestP95Ms": 79.07,
+          "peakThroughputPerSec": 4239.44,
+          "slowestP95Ms": 78.44,
           "avgSuccessRate": 89.01
         }
       }
@@ -402,12 +402,12 @@
       "name": "Plugin Integration",
       "file": "plugin-integration.js",
       "success": true,
-      "durationMs": 16160.27,
+      "durationMs": 1229.09,
       "error": null,
       "result": {
         "benchmark": "plugin-integration",
         "title": "Plugin Integration Benchmarks",
-        "generatedAt": "2026-04-04T06:16:23.971Z",
+        "generatedAt": "2026-04-05T17:14:36.377Z",
         "profile": "standard",
         "scenarios": [
           {
@@ -415,19 +415,19 @@
             "description": "Measures cold misses, warm-cache hits, and stale revalidation with deterministic repeated reads.",
             "requestCount": 240,
             "concurrency": 24,
-            "durationMs": 170.4,
-            "throughputPerSec": 1408.45,
+            "durationMs": 153.68,
+            "throughputPerSec": 1561.65,
             "successCount": 240,
             "failureCount": 0,
             "successRate": 100,
             "latencyMs": {
               "count": 240,
-              "minMs": 0.68,
-              "maxMs": 20.99,
-              "avgMs": 3.51,
-              "p50Ms": 2.26,
-              "p95Ms": 14.45,
-              "p99Ms": 20.18
+              "minMs": 0.1,
+              "maxMs": 19.2,
+              "avgMs": 2.13,
+              "p50Ms": 0.68,
+              "p95Ms": 14.34,
+              "p99Ms": 18.48
             },
             "upstreamCalls": 24,
             "upstreamCallsPerRequest": 0.1,
@@ -450,9 +450,9 @@
               "staleRevalidationCalls": 0,
               "cacheStats": {
                 "size": 24,
-                "oldestItemAge": 153,
-                "newestItemAge": 135,
-                "averageAge": 144.91666666666666
+                "oldestItemAge": 139,
+                "newestItemAge": 120,
+                "averageAge": 130.16666666666666
               }
             }
           },
@@ -461,26 +461,26 @@
             "description": "Trips the breaker on an outage, measures fail-fast protection, then verifies half-open recovery.",
             "requestCount": 40,
             "concurrency": 6,
-            "durationMs": 663.62,
-            "throughputPerSec": 60.28,
+            "durationMs": 660.15,
+            "throughputPerSec": 60.59,
             "successCount": 14,
             "failureCount": 26,
             "successRate": 35,
             "latencyMs": {
               "count": 40,
-              "minMs": 0.17,
-              "maxMs": 13.22,
-              "avgMs": 5.73,
-              "p50Ms": 3.11,
-              "p95Ms": 10.85,
-              "p99Ms": 13.22
+              "minMs": 0.2,
+              "maxMs": 13.14,
+              "avgMs": 4.82,
+              "p50Ms": 1.38,
+              "p95Ms": 10.6,
+              "p99Ms": 13.14
             },
             "upstreamCalls": 18,
             "upstreamCallsPerRequest": 0.45,
             "retryMetrics": {
               "successfulRetries": 0,
               "failedRetries": 0,
-              "completelyFailedRequests": 26,
+              "completelyFailedRequests": 0,
               "avgQueueWaitMs": 0,
               "avgRetryDelayMs": 0
             },
@@ -522,22 +522,22 @@
             "description": "Fires a burst of expired-token requests concurrently to verify refresh fan-in and replay reliability.",
             "requestCount": 72,
             "concurrency": 24,
-            "durationMs": 9044.24,
-            "throughputPerSec": 7.96,
-            "successCount": 0,
-            "failureCount": 72,
-            "successRate": 0,
+            "durationMs": 71.48,
+            "throughputPerSec": 1007.34,
+            "successCount": 72,
+            "failureCount": 0,
+            "successRate": 100,
             "latencyMs": {
               "count": 72,
-              "minMs": 3012.72,
-              "maxMs": 3015.8,
-              "avgMs": 3014.46,
-              "p50Ms": 3014.35,
-              "p95Ms": 3015,
-              "p99Ms": 3015.8
+              "minMs": 8.03,
+              "maxMs": 47.45,
+              "avgMs": 22.13,
+              "p50Ms": 12.1,
+              "p95Ms": 46.01,
+              "p99Ms": 47.45
             },
-            "upstreamCalls": 72,
-            "upstreamCallsPerRequest": 1,
+            "upstreamCalls": 97,
+            "upstreamCallsPerRequest": 1.35,
             "retryMetrics": {
               "successfulRetries": 0,
               "failedRetries": 0,
@@ -552,8 +552,8 @@
             },
             "memoryDeltaMb": 0,
             "extras": {
-              "refreshCalls": 9,
-              "replayAmplification": 1
+              "refreshCalls": 1,
+              "replayAmplification": 1.35
             }
           },
           {
@@ -561,22 +561,22 @@
             "description": "Triggers a single token refresh under concurrency, then measures how warm cached reads reduce upstream traffic.",
             "requestCount": 114,
             "concurrency": 16,
-            "durationMs": 6062.82,
-            "throughputPerSec": 18.8,
-            "successCount": 90,
-            "failureCount": 24,
-            "successRate": 78.95,
+            "durationMs": 115.6,
+            "throughputPerSec": 986.16,
+            "successCount": 114,
+            "failureCount": 0,
+            "successRate": 100,
             "latencyMs": {
               "count": 114,
-              "minMs": 0.19,
-              "maxMs": 3014.85,
-              "avgMs": 639.25,
-              "p50Ms": 5.6,
-              "p95Ms": 3014.25,
-              "p99Ms": 3014.39
+              "minMs": 7.34,
+              "maxMs": 39.49,
+              "avgMs": 12.93,
+              "p50Ms": 10.08,
+              "p95Ms": 38.14,
+              "p99Ms": 39.49
             },
-            "upstreamCalls": 18,
-            "upstreamCallsPerRequest": 0.16,
+            "upstreamCalls": 127,
+            "upstreamCallsPerRequest": 1.11,
             "retryMetrics": {
               "successfulRetries": 0,
               "failedRetries": 0,
@@ -591,26 +591,26 @@
             },
             "memoryDeltaMb": 0,
             "extras": {
-              "refreshCalls": 6,
-              "cacheHitRateAfterWarmAuth": 93.33,
-              "authWarmSuccessRate": 0,
+              "refreshCalls": 1,
+              "cacheHitRateAfterWarmAuth": 0,
+              "authWarmSuccessRate": 100,
               "cacheStats": {
-                "size": 6,
-                "oldestItemAge": 27,
-                "newestItemAge": 5,
-                "averageAge": 18
+                "size": 0,
+                "oldestItemAge": 0,
+                "newestItemAge": 0,
+                "averageAge": 0
               }
             }
           }
         ],
         "summary": {
           "profile": "standard",
-          "avgSuccessRate": 53.49,
-          "avgThroughputPerSec": 373.87,
+          "avgSuccessRate": 83.75,
+          "avgThroughputPerSec": 903.94,
           "bestCacheHitRate": 100,
           "refreshCallsObserved": [
-            9,
-            6
+            1,
+            1
           ]
         }
       }
@@ -619,31 +619,31 @@
       "name": "Priority Queue",
       "file": "priority-queue.js",
       "success": true,
-      "durationMs": 1043.34,
+      "durationMs": 1022.52,
       "error": null,
       "result": {
         "benchmark": "priority-queue",
         "title": "Priority Queue Benchmark",
-        "generatedAt": "2026-04-04T06:16:25.014Z",
+        "generatedAt": "2026-04-05T17:14:37.399Z",
         "profile": "standard",
-        "durationMs": 834.49,
-        "throughputPerSec": 215.7,
+        "durationMs": 820.1,
+        "throughputPerSec": 219.49,
         "successRate": 100,
         "tiers": {
           "high": {
-            "p50Ms": 82.68,
-            "p95Ms": 136.74
+            "p50Ms": 74.87,
+            "p95Ms": 128.98
           },
           "medium": {
-            "p50Ms": 246.84,
-            "p95Ms": 334.53
+            "p50Ms": 238.44,
+            "p95Ms": 324.56
           },
           "low": {
-            "p50Ms": 583.75,
-            "p95Ms": 808.55
+            "p50Ms": 571.69,
+            "p95Ms": 794.25
           }
         },
-        "queueWaitAvgMs": 0.4,
+        "queueWaitAvgMs": 0,
         "upstreamCalls": 180
       }
     },
@@ -651,97 +651,107 @@
       "name": "Caching",
       "file": "caching.js",
       "success": true,
-      "durationMs": 365.86,
+      "durationMs": 352.3,
       "error": null,
       "result": {
         "benchmark": "caching",
-        "title": "Caching Benchmark",
-        "generatedAt": "2026-04-04T06:16:25.380Z",
+        "title": "Caching Workload Benchmarks",
+        "generatedAt": "2026-04-05T17:14:37.741Z",
         "profile": "standard",
-        "scenario": {
-          "name": "Caching Plugin Effectiveness",
-          "description": "Measures cold misses, warm-cache hits, and stale revalidation with deterministic repeated reads.",
-          "requestCount": 240,
-          "concurrency": 24,
-          "durationMs": 169.18,
-          "throughputPerSec": 1418.62,
-          "successCount": 240,
-          "failureCount": 0,
-          "successRate": 100,
-          "latencyMs": {
-            "count": 240,
-            "minMs": 0.61,
-            "maxMs": 20.64,
-            "avgMs": 3.44,
-            "p50Ms": 2.3,
-            "p95Ms": 15.9,
-            "p99Ms": 20.02
+        "scenarios": [
+          {
+            "name": "Large-Cache Cleanup (Invalidation)",
+            "description": "Populates 500 stale entries then measures bulk invalidation via RegExp matcher.",
+            "entryCount": 500,
+            "invalidated": 500,
+            "sizeBeforeCleanup": 500,
+            "sizeAfterCleanup": 0,
+            "cleanupDurationMs": 0.76,
+            "cleanupThroughput": 655022.12,
+            "successRate": 100
           },
-          "upstreamCalls": 24,
-          "upstreamCallsPerRequest": 0.1,
-          "retryMetrics": {
-            "successfulRetries": 0,
-            "failedRetries": 0,
-            "completelyFailedRequests": 0,
-            "avgQueueWaitMs": 0,
-            "avgRetryDelayMs": 0
+          {
+            "name": "Pattern Invalidation",
+            "description": "Populates 200 entries across 4 URL groups, then invalidates one group by prefix.",
+            "totalEntries": 200,
+            "prefixGroups": 4,
+            "invalidated": 50,
+            "sizeBeforeInvalidation": 200,
+            "sizeAfterInvalidation": 150,
+            "invalidationDurationMs": 0.18,
+            "invalidationThroughput": 277905.92,
+            "successRate": 100
           },
-          "timerHealth": {
-            "healthScore": 0,
-            "activeTimers": 0,
-            "activeRetryTimers": 0
-          },
-          "memoryDeltaMb": 0,
-          "extras": {
-            "warmupUpstreamCalls": 24,
-            "hotReadHitRate": 100,
-            "staleRevalidationCalls": 0,
-            "cacheStats": {
-              "size": 24,
-              "oldestItemAge": 153,
-              "newestItemAge": 134,
-              "averageAge": 144.29166666666666
+          {
+            "name": "Cache Hit Throughput",
+            "description": "Reads 2000 requests against 100 warm cache entries at concurrency 32. Measures hot-path read rate.",
+            "warmEntries": 100,
+            "readCount": 2000,
+            "concurrency": 32,
+            "hitRate": 100,
+            "upstreamCallsDuringReads": 0,
+            "durationMs": 38.37,
+            "throughputPerSec": 52124.62,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 2000,
+              "minMs": 0.13,
+              "maxMs": 1.35,
+              "avgMs": 0.46,
+              "p50Ms": 0.41,
+              "p95Ms": 0.79,
+              "p99Ms": 1.23
             }
+          },
+          {
+            "name": "Custom Storage Adapter Cleanup",
+            "description": "Populates 300 entries into a custom InMemoryCacheStorage adapter then measures clearCache() performance.",
+            "entryCount": 300,
+            "sizeBeforeClear": 300,
+            "sizeAfterClear": 0,
+            "clearDurationMs": 0.06,
+            "clearThroughput": 4672314.98,
+            "successRate": 100
           }
-        }
+        ]
       }
     },
     {
       "name": "Circuit Breaker",
       "file": "circuit-braker.js",
       "success": true,
-      "durationMs": 857.53,
+      "durationMs": 856.28,
       "error": null,
       "result": {
         "benchmark": "circuit-breaker",
         "title": "Circuit Breaker Benchmark",
-        "generatedAt": "2026-04-04T06:16:26.239Z",
+        "generatedAt": "2026-04-05T17:14:38.609Z",
         "profile": "standard",
         "scenario": {
           "name": "Circuit Breaker Protection",
           "description": "Trips the breaker on an outage, measures fail-fast protection, then verifies half-open recovery.",
           "requestCount": 40,
           "concurrency": 6,
-          "durationMs": 668.38,
-          "throughputPerSec": 59.85,
+          "durationMs": 664.02,
+          "throughputPerSec": 60.24,
           "successCount": 14,
           "failureCount": 26,
           "successRate": 35,
           "latencyMs": {
             "count": 40,
-            "minMs": 0.23,
-            "maxMs": 13.36,
-            "avgMs": 6.67,
-            "p50Ms": 4.62,
-            "p95Ms": 12.61,
-            "p99Ms": 13.36
+            "minMs": 0.2,
+            "maxMs": 12.82,
+            "avgMs": 5.55,
+            "p50Ms": 2.31,
+            "p95Ms": 11.65,
+            "p99Ms": 12.82
           },
           "upstreamCalls": 18,
           "upstreamCallsPerRequest": 0.45,
           "retryMetrics": {
             "successfulRetries": 0,
             "failedRetries": 0,
-            "completelyFailedRequests": 26,
+            "completelyFailedRequests": 0,
             "avgQueueWaitMs": 0,
             "avgRetryDelayMs": 0
           },
@@ -784,34 +794,34 @@
       "name": "Token Refresh",
       "file": "token-refresh.js",
       "success": true,
-      "durationMs": 9289.79,
+      "durationMs": 281.04,
       "error": null,
       "result": {
         "benchmark": "token-refresh",
         "title": "Token Refresh Benchmark",
-        "generatedAt": "2026-04-04T06:16:35.528Z",
+        "generatedAt": "2026-04-05T17:14:38.889Z",
         "profile": "standard",
         "scenario": {
           "name": "Token Refresh Storm",
           "description": "Fires a burst of expired-token requests concurrently to verify refresh fan-in and replay reliability.",
           "requestCount": 72,
           "concurrency": 24,
-          "durationMs": 9056.32,
-          "throughputPerSec": 7.95,
-          "successCount": 0,
-          "failureCount": 72,
-          "successRate": 0,
+          "durationMs": 75.58,
+          "throughputPerSec": 952.63,
+          "successCount": 72,
+          "failureCount": 0,
+          "successRate": 100,
           "latencyMs": {
             "count": 72,
-            "minMs": 3010.43,
-            "maxMs": 3027.81,
-            "avgMs": 3018.01,
-            "p50Ms": 3015.85,
-            "p95Ms": 3025.44,
-            "p99Ms": 3027.81
+            "minMs": 7.9,
+            "maxMs": 50.66,
+            "avgMs": 23.19,
+            "p50Ms": 11.82,
+            "p95Ms": 49.31,
+            "p99Ms": 50.66
           },
-          "upstreamCalls": 72,
-          "upstreamCallsPerRequest": 1,
+          "upstreamCalls": 97,
+          "upstreamCallsPerRequest": 1.35,
           "retryMetrics": {
             "successfulRetries": 0,
             "failedRetries": 0,
@@ -826,21 +836,766 @@
           },
           "memoryDeltaMb": 0,
           "extras": {
-            "refreshCalls": 9,
-            "replayAmplification": 1
+            "refreshCalls": 1,
+            "replayAmplification": 1.35
           }
+        }
+      }
+    },
+    {
+      "name": "Manual Retry",
+      "file": "manual-retry.js",
+      "success": true,
+      "durationMs": 23408.66,
+      "error": null,
+      "result": {
+        "benchmark": "manual-retry",
+        "title": "Manual Retry Benchmarks",
+        "generatedAt": "2026-04-05T17:15:02.298Z",
+        "profile": "standard",
+        "scenarios": [
+          {
+            "name": "ManualRetry: Store and Replay",
+            "description": "Terminal failures are captured by ManualRetryPlugin and replayed once the server recovers.",
+            "requestCount": 48,
+            "concurrency": 12,
+            "durationMs": 5735.97,
+            "throughputPerSec": 8.37,
+            "successCount": 30,
+            "failureCount": 10,
+            "successRate": 75,
+            "latencyMs": {
+              "count": 40,
+              "minMs": 5.34,
+              "maxMs": 40.51,
+              "avgMs": 16.38,
+              "p50Ms": 10.92,
+              "p95Ms": 37.25,
+              "p99Ms": 40.51
+            },
+            "upstreamCalls": 58,
+            "upstreamCallsPerRequest": 1.21,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "firstRunFailures": 10,
+              "storedForReplay": 8,
+              "replayedCount": 8,
+              "replaySuccessRate": 100
+            }
+          },
+          {
+            "name": "ManualRetry: maxAge Expiry Filtering",
+            "description": "Stored failures older than manualRetryMaxAge are discarded at replay, preventing stale request replays.",
+            "requestCount": 46,
+            "concurrency": 10,
+            "durationMs": 6074.64,
+            "throughputPerSec": 7.57,
+            "successCount": 8,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 0,
+              "minMs": 0,
+              "maxMs": 0,
+              "avgMs": 0,
+              "p50Ms": 0,
+              "p95Ms": 0,
+              "p99Ms": 0
+            },
+            "upstreamCalls": 84,
+            "upstreamCallsPerRequest": 1.83,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "storedAfterBatch1": 8,
+              "discardedAgedOut": 0,
+              "freshReplayed": 8,
+              "storedBeforeReplay": 8
+            }
+          },
+          {
+            "name": "ManualRetry: rehydrateAuth on Replay",
+            "description": "Auth-bearing failures are stored with credentials stripped; rehydrateAuth injects fresh credentials at replay.",
+            "requestCount": 32,
+            "concurrency": 10,
+            "durationMs": 5688.87,
+            "throughputPerSec": 5.63,
+            "successCount": 0,
+            "failureCount": 24,
+            "successRate": 0,
+            "latencyMs": {
+              "count": 24,
+              "minMs": 5.67,
+              "maxMs": 9.07,
+              "avgMs": 6.94,
+              "p50Ms": 6.86,
+              "p95Ms": 8.94,
+              "p99Ms": 9.07
+            },
+            "upstreamCalls": 32,
+            "upstreamCallsPerRequest": 1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "firstRunSuccessRate": 0,
+              "capturedWithStrippedAuth": 8,
+              "replayedWithFreshAuth": 8,
+              "replaySuccessRate": 100
+            }
+          },
+          {
+            "name": "ManualRetry: Per-request MANUAL Mode Capture",
+            "description": "requestMode:manual per-request skips auto-retry; ManualRetryPlugin captures the failures for later replay.",
+            "requestCount": 48,
+            "concurrency": 12,
+            "durationMs": 5693.03,
+            "throughputPerSec": 8.43,
+            "successCount": 32,
+            "failureCount": 8,
+            "successRate": 80,
+            "latencyMs": {
+              "count": 40,
+              "minMs": 4.78,
+              "maxMs": 8.85,
+              "avgMs": 7,
+              "p50Ms": 7.26,
+              "p95Ms": 8.53,
+              "p99Ms": 8.85
+            },
+            "upstreamCalls": 48,
+            "upstreamCallsPerRequest": 1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "manualModeRequests": 8,
+              "autoModeRequests": 32,
+              "capturedByPlugin": 8,
+              "replayedSuccessfully": 8
+            }
+          }
+        ],
+        "summary": {
+          "profile": "standard",
+          "avgSuccessRate": 63.75,
+          "avgThroughputPerSec": 7.5,
+          "totalReplayed": 32
+        }
+      }
+    },
+    {
+      "name": "Metrics Plugin",
+      "file": "metrics-plugin.js",
+      "success": true,
+      "durationMs": 813.05,
+      "error": null,
+      "result": {
+        "benchmark": "metrics-plugin",
+        "title": "Metrics Plugin Benchmarks",
+        "generatedAt": "2026-04-05T17:15:03.106Z",
+        "profile": "standard",
+        "scenarios": [
+          {
+            "name": "MetricsPlugin: Collection Overhead",
+            "description": "Measures throughput delta introduced by MetricsPlugin under a mixed success/retry workload.",
+            "requestCount": 300,
+            "concurrency": 24,
+            "durationMs": 158.36,
+            "throughputPerSec": 1894.39,
+            "successCount": 300,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 300,
+              "minMs": 5.05,
+              "maxMs": 38.53,
+              "avgMs": 11.2,
+              "p50Ms": 7.77,
+              "p95Ms": 34.95,
+              "p99Ms": 37.25
+            },
+            "upstreamCalls": 343,
+            "upstreamCallsPerRequest": 1.14,
+            "retryMetrics": {
+              "successfulRetries": 43,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0.02
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "baselineThroughput": 1784.1,
+              "pluginThroughput": 1894.39,
+              "overheadPct": -6.18,
+              "totalRequests": 343,
+              "successfulRetries": 43,
+              "errorTypesDistribution": {
+                "network": 0,
+                "server5xx": 0,
+                "client4xx": 0,
+                "cancelled": 0
+              }
+            }
+          },
+          {
+            "name": "MetricsPlugin: Priority Breakdown",
+            "description": "Exercises all 5 priority tiers (CRITICAL/HIGHEST/HIGH/MEDIUM/LOW) to populate priorityMetrics and requestCountsByPriority.",
+            "requestCount": 200,
+            "concurrency": 20,
+            "durationMs": 163.74,
+            "throughputPerSec": 1221.46,
+            "successCount": 200,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 200,
+              "minMs": 5.13,
+              "maxMs": 37.48,
+              "avgMs": 14.26,
+              "p50Ms": 9.16,
+              "p95Ms": 36.24,
+              "p99Ms": 37.43
+            },
+            "upstreamCalls": 243,
+            "upstreamCallsPerRequest": 1.22,
+            "retryMetrics": {
+              "successfulRetries": 43,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0.02
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "totalRequests": 243,
+              "successfulRetries": 43,
+              "failedRetries": 0,
+              "avgQueueWaitMs": 0.00000411522633744856,
+              "avgRetryDelayMs": 0.02,
+              "errorTypesDistribution": {
+                "network": 0,
+                "server5xx": 0,
+                "client4xx": 0,
+                "cancelled": 0
+              },
+              "priorityMetrics": [
+                {
+                  "priority": 0,
+                  "total": 25,
+                  "successes": 25,
+                  "failures": 0,
+                  "successRate": 100,
+                  "failureRate": 0
+                },
+                {
+                  "priority": 2,
+                  "total": 18,
+                  "successes": 18,
+                  "failures": 0,
+                  "successRate": 100,
+                  "failureRate": 0
+                }
+              ],
+              "requestCountsByPriority": {
+                "0": 65,
+                "1": 40,
+                "2": 58,
+                "3": 40,
+                "4": 40
+              }
+            }
+          },
+          {
+            "name": "MetricsPlugin: Events and resetMetrics",
+            "description": "Counts onMetricsUpdated events during a mixed workload and verifies resetMetrics zeroes all counters.",
+            "requestCount": 100,
+            "concurrency": 16,
+            "durationMs": 96.61,
+            "throughputPerSec": 1035.04,
+            "successCount": 100,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 100,
+              "minMs": 5.36,
+              "maxMs": 33.91,
+              "avgMs": 12.4,
+              "p50Ms": 7.62,
+              "p95Ms": 32.67,
+              "p99Ms": 33.49
+            },
+            "upstreamCalls": 121,
+            "upstreamCallsPerRequest": 1.21,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "onMetricsUpdatedFired": 122,
+              "updatesPerRequest": 1.22,
+              "snapshotTotalRequests": 121,
+              "snapshotSuccessfulRetries": 21,
+              "afterResetTotalRequests": 0,
+              "afterResetSuccessfulRetries": 0,
+              "afterResetErrorTypes": {
+                "network": 0,
+                "server5xx": 0,
+                "client4xx": 0,
+                "cancelled": 0
+              }
+            }
+          }
+        ],
+        "summary": {
+          "profile": "standard",
+          "avgSuccessRate": 100,
+          "avgThroughputPerSec": 1383.63,
+          "metricsOverheadPct": -6.18,
+          "onMetricsUpdatedFired": 122
+        }
+      }
+    },
+    {
+      "name": "Advanced Plugins",
+      "file": "advanced-plugins.js",
+      "success": true,
+      "durationMs": 2099.4,
+      "error": null,
+      "result": {
+        "benchmark": "advanced-plugins",
+        "title": "Advanced Plugins Benchmarks",
+        "generatedAt": "2026-04-05T17:15:05.210Z",
+        "profile": "standard",
+        "scenarios": [
+          {
+            "name": "RequestDependencyPlugin: Blocker Gating",
+            "description": "HIGHEST-priority blocker holds MEDIUM dependents in queue; dependents start only after blocker completes.",
+            "requestCount": 21,
+            "concurrency": 20,
+            "durationMs": 132.86,
+            "throughputPerSec": 158.06,
+            "successCount": 21,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 21,
+              "minMs": 123.38,
+              "maxMs": 126.13,
+              "avgMs": 124.43,
+              "p50Ms": 123.91,
+              "p95Ms": 126.05,
+              "p99Ms": 126.13
+            },
+            "upstreamCalls": 21,
+            "upstreamCallsPerRequest": 1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "blockerLatencyMs": 123.49,
+              "dependentP50Ms": 123.91,
+              "dependentP95Ms": 126.05,
+              "peakBlockingCount": 1,
+              "gatingEffective": true
+            }
+          },
+          {
+            "name": "RequestDependencyPlugin: Failure Cascade",
+            "description": "Blocker failure triggers cancelQueuedRequests() on dependents; onBlockingRequestFailed event fires.",
+            "requestCount": 17,
+            "concurrency": 16,
+            "durationMs": 153.27,
+            "throughputPerSec": 110.92,
+            "successCount": 0,
+            "failureCount": 16,
+            "successRate": 0,
+            "latencyMs": {
+              "count": 16,
+              "minMs": 146.93,
+              "maxMs": 147.31,
+              "avgMs": 147.11,
+              "p50Ms": 147.1,
+              "p95Ms": 147.31,
+              "p99Ms": 147.31
+            },
+            "upstreamCalls": 1,
+            "upstreamCallsPerRequest": 0.06,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "dependentCount": 16,
+              "cancelledDependents": 16,
+              "blockingFailedEventFired": 1,
+              "allResolvedEventFired": 1,
+              "cascadeEffective": true
+            }
+          },
+          {
+            "name": "DebugSanitizationPlugin: Sanitization Overhead",
+            "description": "Measures throughput delta from sanitizeUrl + sanitizeHeaders running on every request and error interceptor.",
+            "requestCount": 200,
+            "concurrency": 20,
+            "durationMs": 115.61,
+            "throughputPerSec": 1729.96,
+            "successCount": 200,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 200,
+              "minMs": 3.54,
+              "maxMs": 37.57,
+              "avgMs": 9.32,
+              "p50Ms": 6.13,
+              "p95Ms": 33.41,
+              "p99Ms": 35.62
+            },
+            "upstreamCalls": 225,
+            "upstreamCallsPerRequest": 1.13,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "baselineThroughput": 1747.36,
+              "pluginThroughput": 1729.96,
+              "overheadPct": 1
+            }
+          },
+          {
+            "name": "CachingPlugin: invalidateCache (prefix + exact + RegExp)",
+            "description": "Warms cache, reads hot data, then invalidates via prefix, exact key, and RegExp; measures re-miss rate.",
+            "requestCount": 150,
+            "concurrency": 20,
+            "durationMs": 16.66,
+            "throughputPerSec": 9004.25,
+            "successCount": 30,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 30,
+              "minMs": 6.06,
+              "maxMs": 10.29,
+              "avgMs": 8.29,
+              "p50Ms": 8.78,
+              "p95Ms": 10.27,
+              "p99Ms": 10.29
+            },
+            "upstreamCalls": 60,
+            "upstreamCallsPerRequest": 0.4,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "preInvalidationHitRate": 100,
+              "invalidatedByPrefix": 15,
+              "invalidatedByRegexp": 14,
+              "cacheStatsAfterInvalidation": {
+                "size": 0,
+                "oldestItemAge": 0,
+                "newestItemAge": 0,
+                "averageAge": 0
+              },
+              "remissesAfterInvalidation": 30,
+              "remissRate": 100
+            }
+          },
+          {
+            "name": "CircuitBreaker: Sliding Window Self-Healing",
+            "description": "Failures outside the sliding window expire without tripping the circuit; proves old failures do not accumulate.",
+            "requestCount": 26,
+            "concurrency": 8,
+            "durationMs": 939.17,
+            "throughputPerSec": 27.68,
+            "successCount": 20,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 20,
+              "minMs": 4.54,
+              "maxMs": 8.28,
+              "avgMs": 6.49,
+              "p50Ms": 6.12,
+              "p95Ms": 8.1,
+              "p99Ms": 8.28
+            },
+            "upstreamCalls": 26,
+            "upstreamCallsPerRequest": 1,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "slidingWindowMs": 800,
+              "failureThreshold": 4,
+              "stateAfterSubThresholdFailures": "CLOSED",
+              "stateAfterWindowExpiry": "CLOSED",
+              "finalState": "CLOSED",
+              "circuitNeverTripped": true
+            }
+          },
+          {
+            "name": "TokenRefreshPlugin: customErrorDetector (200 body auth error)",
+            "description": "Detects UNAUTHENTICATED errors in 200 OK GraphQL responses and triggers a single token refresh cycle.",
+            "requestCount": 60,
+            "concurrency": 20,
+            "durationMs": 57.61,
+            "throughputPerSec": 1041.54,
+            "successCount": 60,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 60,
+              "minMs": 7.1,
+              "maxMs": 35.96,
+              "avgMs": 17.47,
+              "p50Ms": 9.94,
+              "p95Ms": 34.68,
+              "p99Ms": 35.96
+            },
+            "upstreamCalls": 81,
+            "upstreamCallsPerRequest": 1.35,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "refreshCalls": 1,
+              "replayAmplification": 1.35,
+              "onlyOneRefreshCycle": true
+            }
+          },
+          {
+            "name": "Per-request Overrides: requestRetries + backoffType",
+            "description": "requestRetries:0 prevents any retry; requestRetries:2 allows recovery; backoffType per-request overrides manager default.",
+            "requestCount": 120,
+            "concurrency": 16,
+            "durationMs": 196.52,
+            "throughputPerSec": 610.63,
+            "successCount": 80,
+            "failureCount": 40,
+            "successRate": 66.67,
+            "latencyMs": {
+              "count": 120,
+              "minMs": 5.01,
+              "maxMs": 38.01,
+              "avgMs": 25.08,
+              "p50Ms": 32.75,
+              "p95Ms": 36.56,
+              "p99Ms": 37.88
+            },
+            "upstreamCalls": 200,
+            "upstreamCallsPerRequest": 1.67,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "groupSize": 40,
+              "noRetryGroupFailures": 40,
+              "normalRetryGroupSuccesses": 40,
+              "staticBackoffGroupSuccesses": 40,
+              "noRetryFailureRate": 100,
+              "normalRetrySuccessRate": 100
+            }
+          },
+          {
+            "name": "Event Listeners + Plugin Lifecycle (use/unuse/listPlugins)",
+            "description": "Registers on/off event listeners mid-run and exercises use/unuse/listPlugins for runtime plugin management.",
+            "requestCount": 80,
+            "concurrency": 12,
+            "durationMs": 132.23,
+            "throughputPerSec": 605,
+            "successCount": 40,
+            "failureCount": 0,
+            "successRate": 100,
+            "latencyMs": {
+              "count": 40,
+              "minMs": 5.78,
+              "maxMs": 34.09,
+              "avgMs": 13.44,
+              "p50Ms": 7.44,
+              "p95Ms": 34.05,
+              "p99Ms": 34.09
+            },
+            "upstreamCalls": 101,
+            "upstreamCallsPerRequest": 1.26,
+            "retryMetrics": {
+              "successfulRetries": 0,
+              "failedRetries": 0,
+              "completelyFailedRequests": 0,
+              "avgQueueWaitMs": 0,
+              "avgRetryDelayMs": 0
+            },
+            "timerHealth": {
+              "healthScore": 0,
+              "activeTimers": 0,
+              "activeRetryTimers": 0
+            },
+            "memoryDeltaMb": 0,
+            "extras": {
+              "beforeRetryWhileListening": 11,
+              "afterRetryWhileListening": 11,
+              "onFailureWhileListening": 0,
+              "listenersStoppedCorrectly": true,
+              "pluginsAfterUse": [
+                "CachingPlugin"
+              ],
+              "pluginsAfterUnuse": [],
+              "pluginCountAfterUse": 1,
+              "pluginCountAfterUnuse": 0
+            }
+          }
+        ],
+        "summary": {
+          "profile": "standard",
+          "avgSuccessRate": 83.33,
+          "avgThroughputPerSec": 1661.01,
+          "gatingEffective": true,
+          "circuitNeverTripped": true,
+          "singleRefreshCycle": true
         }
       }
     }
   ],
   "rollup": {
-    "benchmarkCount": 7,
-    "successfulCount": 7,
+    "benchmarkCount": 10,
+    "successfulCount": 10,
     "failedCount": 0,
-    "avgDurationMs": 11078.94,
-    "avgScenarioSuccessRate": 72.57,
-    "peakThroughputPerSec": 4012.74,
-    "slowestP95Ms": 3025.44,
+    "avgDurationMs": 7960.61,
+    "avgScenarioSuccessRate": 86.21,
+    "peakThroughputPerSec": 52124.62,
+    "slowestP95Ms": 652.04,
     "failures": []
   }
 }

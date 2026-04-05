@@ -9,11 +9,15 @@ import { AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../src/types';
 import { CachingPlugin } from '../src/plugins/CachingPlugin';
 import {
   CircuitBreakerPlugin,
+  CIRCUIT_BREAKER_STATES,
   CircuitBreakerState,
 } from '../src/plugins/CircuitBreakerPlugin';
+import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
+import { RequestDependencyPlugin } from '../src/plugins/RequestDependencyPlugin';
 import { TokenRefreshPlugin } from '../src/plugins/TokenRefreshPlugin';
+import { InMemoryRequestStore } from '../src/store/InMemoryRequestStore';
 import { assignRequestMetadata, getRequestMetadata } from '../src/utils/requestMetadata';
-import { sanitizeData, sanitizeHeaders, sanitizeUrl } from '../src/utils/sanitize';
+import { sanitizeData, sanitizeHeaders, sanitizeUrl } from '../src/plugins/DebugSanitizationPlugin/sanitize';
 
 describe('Targeted Coverage Regressions', () => {
   const managers: RetryManager[] = [];
@@ -33,7 +37,8 @@ describe('Targeted Coverage Regressions', () => {
       expect(parseRetryAfterMs('2')).toBe(2000);
       expect(parseRetryAfterMs('not-a-date')).toBe(0);
 
-      const future = new Date(Date.now() + 1600).toUTCString();
+      // +2100ms ensures the raw ms delta is >= 1000ms after UTC-string second-truncation.
+      const future = new Date(Date.now() + 2100).toUTCString();
       expect(parseRetryAfterMs(future)).toBeGreaterThanOrEqual(1000);
     });
 
@@ -103,23 +108,14 @@ describe('Targeted Coverage Regressions', () => {
   });
 
   describe('EventBus', () => {
-    test('runs configured hooks, plugin hooks, and extracts request ids for logs', () => {
+    test('runs configured hooks and extracts request ids for logs', () => {
       const logger = new RetryLogger(true);
       const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
       const beforeRetry = jest.fn();
-      const pluginBeforeRetry = jest.fn();
 
       const bus = new EventBus({
         hooks: { beforeRetry },
         logger,
-        getPlugins: () => [
-          {
-            name: 'HookPlugin',
-            version: '1.0.0',
-            initialize: jest.fn(),
-            hooks: { beforeRetry: pluginBeforeRetry },
-          },
-        ],
       });
 
       const config = {};
@@ -129,7 +125,6 @@ describe('Targeted Coverage Regressions', () => {
       bus.triggerHook('beforeRetry', config);
 
       expect(beforeRetry).toHaveBeenCalledWith(config);
-      expect(pluginBeforeRetry).toHaveBeenCalledWith(config);
       expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Hook "beforeRetry" executed', { requestId: 'hook-1' });
     });
 
@@ -143,7 +138,6 @@ describe('Targeted Coverage Regressions', () => {
           },
         },
         logger,
-        getPlugins: () => [],
       });
 
       const listener = () => {
@@ -206,7 +200,6 @@ describe('Targeted Coverage Regressions', () => {
     test.each([
       [{ maxConcurrentRequests: 0 }, 'maxConcurrentRequests must be a positive integer'],
       [{ maxQueueSize: 0 }, 'maxQueueSize must be a positive integer'],
-      [{ maxRequestsToStore: 0 }, 'maxRequestsToStore must be a positive integer'],
       [{ queueDelay: -1 }, 'queueDelay must be a non-negative integer'],
     ])('validates numeric options %p', (options, message) => {
       expect(() => new RetryManager(options)).toThrow(message);
@@ -239,10 +232,9 @@ describe('Targeted Coverage Regressions', () => {
       expect(getRequestMetadata(config)?.isRetrying).toBe(false);
     });
 
-    test('stores queue-cancelled retries before rejecting', async () => {
+    test('rejects queue-cancelled retries without relying on core replay state', async () => {
       const manager = trackManager(new RetryManager());
       jest.spyOn(manager['retryScheduler'], 'waitForRetryDelay').mockResolvedValue(true);
-      const storeSpy = jest.spyOn(manager.requestStore, 'add');
 
       const config = {};
       assignRequestMetadata(config, {
@@ -252,7 +244,6 @@ describe('Targeted Coverage Regressions', () => {
       });
 
       await expect(manager['scheduleRetry'](config, 1, 3, true)).rejects.toThrow('Request aborted. ID: queue-cancelled');
-      expect(storeSpy).toHaveBeenCalledWith(config);
     });
 
     test('auto-retries with retry-after headers through the scheduler path', async () => {
@@ -285,18 +276,13 @@ describe('Targeted Coverage Regressions', () => {
     });
 
     test('handles terminal critical offline failures without throwing when configured', async () => {
-      const manager = trackManager(
-        new RetryManager({
-          blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
-          throwErrorOnFailedRetries: false,
-        }),
-      );
+      const manager = trackManager(new RetryManager({ throwErrorOnFailedRetries: false }));
+      manager.use(new RequestDependencyPlugin({ blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH }));
       const internetListener = jest.fn();
-      const criticalListener = jest.fn();
-      const cancelSpy = jest.spyOn(manager, 'cancelQueuedRequests');
+      const blockingListener = jest.fn();
 
       manager.on('onInternetConnectionError', internetListener);
-      manager.on('onCriticalRequestFailed', criticalListener);
+      manager.on('onBlockingRequestFailed', blockingListener);
 
       const config = {};
       assignRequestMetadata(config, {
@@ -309,36 +295,14 @@ describe('Targeted Coverage Regressions', () => {
 
       await expect(manager['handleNoRetriesAction'](error, false)).resolves.toBeNull();
       expect(internetListener).toHaveBeenCalledWith(config);
-      expect(criticalListener).toHaveBeenCalled();
-      expect(cancelSpy).toHaveBeenCalled();
+      expect(blockingListener).toHaveBeenCalledWith(config);
     });
 
-    test('releases request tracking and cancels active requests', () => {
-      const manager = trackManager(
-        new RetryManager({
-          blockingQueueThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
-        }),
-      );
-      const criticalResolved = jest.fn();
-      manager.on('onAllCriticalRequestsResolved', criticalResolved);
-
-      const trackedConfig = {};
-      assignRequestMetadata(trackedConfig, {
-        priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
-        requestId: 'tracked',
-      });
-      const controller = new AbortController();
-      controller.__priority = AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH;
-      manager['activeRequests'].set('tracked', controller);
-
-      const markCompleteSpy = jest.spyOn(manager['requestQueue'], 'markComplete');
-      manager.releaseRequestTracking(trackedConfig);
-
-      expect(markCompleteSpy).toHaveBeenCalled();
-      expect(criticalResolved).toHaveBeenCalled();
+    test('cancels active requests', () => {
+      const manager = trackManager(new RetryManager());
 
       const abortController = new AbortController();
-      manager['activeRequests'].set('cancel-me', abortController);
+      manager['requestLifecycle']['activeRequests'].set('cancel-me', abortController);
       const cancelQueuedSpy = jest.spyOn(manager['requestQueue'], 'cancelQueuedRequest').mockReturnValue(true);
       const retryTimerSpy = jest.spyOn(manager['retryScheduler'], 'cancelRetryTimer').mockReturnValue(true);
       const cancelListener = jest.fn();
@@ -397,36 +361,48 @@ describe('Targeted Coverage Regressions', () => {
       expect(manager['getLogUrl']('/users')).toBe('/users');
     });
 
-    test('retries stored requests selectively and clears active lifecycle state', async () => {
+    test('retries stored requests selectively through ManualRetryPlugin', async () => {
       const beforeManualRetry = jest.fn((config) => {
         return config.url === '/skip-me' ? null : config;
       });
-      const manager = trackManager(new RetryManager({
-        hooks: { beforeManualRetry },
-      }));
-      const scheduleSpy = jest.spyOn(manager, 'scheduleRetry' as never).mockResolvedValue({ status: 200 } as never);
+      const requestStore = new InMemoryRequestStore();
+      const manager = trackManager(new RetryManager());
+      const manualRetry = new ManualRetryPlugin({
+        beforeRetry: beforeManualRetry,
+        requestStore,
+      });
+      manager.use(manualRetry);
 
-      const replayable = { url: '/replay-me' };
-      const skipped = { url: '/skip-me' };
-      manager.requestStore.add(replayable);
-      manager.requestStore.add(skipped);
+      const replayable = { method: 'get', url: '/replay-me' };
+      const skipped = { method: 'get', url: '/skip-me' };
+      assignRequestMetadata(replayable, { requestId: 'replay-me', timestamp: Date.now() });
+      assignRequestMetadata(skipped, { requestId: 'skip-me', timestamp: Date.now() });
+      requestStore.add(replayable);
+      requestStore.add(skipped);
+      const requestSpy = jest.spyOn(manager.axiosInstance, 'request').mockResolvedValue({
+        config: replayable as never,
+        data: { ok: true },
+        headers: {},
+        status: 200,
+        statusText: 'OK',
+      });
 
-      const responses = await manager.retryFailedRequests();
+      const responses = await manualRetry.retryFailedRequests();
 
       expect(responses).toHaveLength(1);
       expect(beforeManualRetry).toHaveBeenCalledTimes(2);
-      expect(scheduleSpy).toHaveBeenCalledWith(replayable, 1, manager['retries']);
+      expect(requestSpy).toHaveBeenCalledWith(replayable);
+    });
 
-      const resetProvider = { reset: jest.fn() };
-      manager.registerCriticalRequestProvider(resetProvider as never);
+    test('clears active lifecycle state on cancelAllRequests', () => {
+      const manager = trackManager(new RetryManager());
       const abortController = new AbortController();
-      manager['activeRequests'].set('active', abortController);
+      manager['requestLifecycle']['activeRequests'].set('active', abortController);
       const cancelAllRetryTimersSpy = jest.spyOn(manager['retryScheduler'], 'cancelAllRetryTimers').mockImplementation();
 
       manager.cancelAllRequests();
 
       expect(abortController.signal.aborted).toBe(true);
-      expect(resetProvider.reset).toHaveBeenCalled();
       expect(cancelAllRetryTimersSpy).toHaveBeenCalled();
     });
   });
@@ -462,7 +438,7 @@ describe('Targeted Coverage Regressions', () => {
         warn: jest.fn(),
       };
 
-      plugin['_manager'] = {
+      plugin['_context'] = {
         axiosInstance: axios.create({ baseURL: 'https://api.example.com' }),
         getLogger: () => logger,
       };
@@ -502,7 +478,7 @@ describe('Targeted Coverage Regressions', () => {
       plugin['_knownScopes'].set('api.example.com/users/:id', scope);
       plugin['_reset']('api.example.com/users/:id');
       expect(stateAdapter.set).toHaveBeenCalled();
-      expect(plugin.getState('api.example.com/users/:id')).toBe(CircuitBreakerState.CLOSED);
+      expect(plugin.getState('api.example.com/users/:id')).toBe(CIRCUIT_BREAKER_STATES.CLOSED);
     });
 
     test('creates circuit errors with remembered failure details', () => {
@@ -516,7 +492,7 @@ describe('Targeted Coverage Regressions', () => {
           lastFailureStatus: 503,
           nextAttempt: Date.now(),
           recentFailures: [],
-          state: CircuitBreakerState.OPEN,
+          state: CIRCUIT_BREAKER_STATES.OPEN,
           successCount: 0,
         },
         'Circuit is open',
@@ -547,13 +523,14 @@ describe('Targeted Coverage Regressions', () => {
       const storage = {
         clear: jest.fn(),
         delete: jest.fn(),
+        entries: jest.fn().mockResolvedValue([]),
         get: jest.fn()
           .mockRejectedValueOnce(new Error('storage-read-failed'))
           .mockResolvedValue(undefined),
         set: jest.fn(),
       };
       const plugin = new CachingPlugin({ storage });
-      plugin['manager'] = { getLogger: () => logger };
+      plugin['context'] = { getLogger: () => logger };
 
       const firstConfig = { url: '/users', method: 'get' };
       expect(await plugin['handleRequest'](firstConfig)).toBe(firstConfig);
@@ -578,17 +555,27 @@ describe('Targeted Coverage Regressions', () => {
     });
 
     test('supports promise-based cache clearing and invalidation helpers', async () => {
+      const storageMap = new Map();
       const storage = {
-        clear: jest.fn().mockResolvedValue(undefined),
-        delete: jest.fn().mockResolvedValue(undefined),
-        get: jest.fn(),
-        set: jest.fn(),
+        clear: jest.fn().mockImplementation(async () => {
+          storageMap.clear();
+        }),
+        delete: jest.fn().mockImplementation(async (key) => {
+          storageMap.delete(key);
+        }),
+        entries: jest.fn().mockImplementation(async () =>
+          Array.from(storageMap, ([key, value]) => ({ key, value })),
+        ),
+        get: jest.fn().mockImplementation(async (key) => storageMap.get(key)),
+        set: jest.fn().mockImplementation(async (key, value) => {
+          storageMap.set(key, value);
+        }),
       };
       const plugin = new CachingPlugin({
         dedupeConcurrentRequests: false,
         storage,
       });
-      plugin['manager'] = { getLogger: () => ({ debug: jest.fn(), error: jest.fn(), warn: jest.fn() }) };
+      plugin['context'] = { getLogger: () => ({ debug: jest.fn(), error: jest.fn(), warn: jest.fn() }) };
 
       const passthroughConfig = { url: '/passthrough', method: 'get' };
       expect(await plugin['handleRequest'](passthroughConfig)).toBe(passthroughConfig);
@@ -601,13 +588,13 @@ describe('Targeted Coverage Regressions', () => {
         status: 200,
         statusText: 'OK',
       };
-      plugin['cache'].set('GET|/users/1|||', { response, timestamp: Date.now() });
-      plugin['cache'].set('GET|/users/2|||', { response, timestamp: Date.now() });
+      storageMap.set('GET|/users/1|||', { response, timestamp: Date.now() });
+      storageMap.set('GET|/users/2|||', { response, timestamp: Date.now() });
 
       await expect(plugin.clearCache()).resolves.toBeUndefined();
-      plugin['cache'].set('GET|/users/1|||', { response, timestamp: Date.now() });
-      plugin['cache'].set('GET|/users/2|||', { response, timestamp: Date.now() });
-      await expect(plugin.invalidateCache('/users')).resolves.toBe(2);
+      storageMap.set('GET|/users/1|||', { response, timestamp: Date.now() });
+      storageMap.set('GET|/users/2|||', { response, timestamp: Date.now() });
+      await expect(plugin.invalidateCache({ prefix: 'GET|/users' })).resolves.toBe(2);
       expect(storage.delete).toHaveBeenCalledTimes(2);
     });
   });
@@ -621,7 +608,7 @@ describe('Targeted Coverage Regressions', () => {
       const plugin = new TokenRefreshPlugin(async () => ({ token: 'fresh' }), {
         refreshStatusCodes: [401],
       });
-      plugin['manager'] = { releaseRequestTracking: jest.fn() };
+      plugin['context'] = { releaseRequestTracking: jest.fn() };
 
       await expect(plugin['handleResponseError'](new AxiosError('missing-config'))).rejects.toMatchObject({
         message: 'missing-config',
@@ -650,7 +637,7 @@ describe('Targeted Coverage Regressions', () => {
       const triggerAndEmit = jest.fn();
       const defaults = { headers: { common: {} } };
 
-      plugin['manager'] = {
+      plugin['context'] = {
         axiosInstance: { defaults },
         triggerAndEmit,
       };

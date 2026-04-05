@@ -4,7 +4,7 @@
   "description": "TypeScript-first Axios retry library with concurrency limits, request priority, token refresh, response caching, and circuit breaker plugins.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
-  "types": "dist/types/index.d.ts",
+  "types": "dist/index.d.ts",
   "sideEffects": false,
   "repository": {
     "type": "git",
@@ -53,6 +53,7 @@
     "jest": "^29.7.0",
     "prettier": "3.4.2",
     "rollup": "^3.0.0",
+    "rollup-plugin-dts": "6.4.1",
     "rollup-plugin-typescript2": "^0.34.1",
     "rollup-plugin-visualizer": "^5.12.0",
     "ts-jest": "^29.2.5",
@@ -64,57 +65,57 @@
   "files": [
     "dist/index.cjs.js",
     "dist/index.esm.js",
+    "dist/index.d.ts",
     "dist/chunks",
-    "dist/plugins",
-    "dist/types"
+    "dist/plugins"
   ],
   "directories": {
     "lib": "dist"
   },
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.esm.js",
       "require": "./dist/index.cjs.js",
       "default": "./dist/index.esm.js"
     },
     "./plugins": {
-      "types": "./dist/types/plugins/index.d.ts",
+      "types": "./dist/plugins/index.d.ts",
       "import": "./dist/plugins/index.esm.js",
       "require": "./dist/plugins/index.cjs.js"
     },
     "./plugins/CachingPlugin": {
-      "types": "./dist/types/plugins/CachingPlugin/index.d.ts",
+      "types": "./dist/plugins/CachingPlugin.d.ts",
       "import": "./dist/plugins/CachingPlugin.esm.js",
       "require": "./dist/plugins/CachingPlugin.cjs.js"
     },
     "./plugins/CircuitBreakerPlugin": {
-      "types": "./dist/types/plugins/CircuitBreakerPlugin/index.d.ts",
+      "types": "./dist/plugins/CircuitBreakerPlugin.d.ts",
       "import": "./dist/plugins/CircuitBreakerPlugin.esm.js",
       "require": "./dist/plugins/CircuitBreakerPlugin.cjs.js"
     },
     "./plugins/TokenRefreshPlugin": {
-      "types": "./dist/types/plugins/TokenRefreshPlugin/index.d.ts",
+      "types": "./dist/plugins/TokenRefreshPlugin.d.ts",
       "import": "./dist/plugins/TokenRefreshPlugin.esm.js",
       "require": "./dist/plugins/TokenRefreshPlugin.cjs.js"
     },
     "./plugins/ManualRetryPlugin": {
-      "types": "./dist/types/plugins/ManualRetryPlugin/index.d.ts",
+      "types": "./dist/plugins/ManualRetryPlugin.d.ts",
       "import": "./dist/plugins/ManualRetryPlugin.esm.js",
       "require": "./dist/plugins/ManualRetryPlugin.cjs.js"
     },
     "./plugins/DebugSanitizationPlugin": {
-      "types": "./dist/types/plugins/DebugSanitizationPlugin/index.d.ts",
+      "types": "./dist/plugins/DebugSanitizationPlugin.d.ts",
       "import": "./dist/plugins/DebugSanitizationPlugin.esm.js",
       "require": "./dist/plugins/DebugSanitizationPlugin.cjs.js"
     },
-    "./plugins/CriticalRequestPlugin": {
-      "types": "./dist/types/plugins/CriticalRequestPlugin/index.d.ts",
-      "import": "./dist/plugins/CriticalRequestPlugin.esm.js",
-      "require": "./dist/plugins/CriticalRequestPlugin.cjs.js"
+    "./plugins/RequestDependencyPlugin": {
+      "types": "./dist/plugins/RequestDependencyPlugin.d.ts",
+      "import": "./dist/plugins/RequestDependencyPlugin.esm.js",
+      "require": "./dist/plugins/RequestDependencyPlugin.cjs.js"
     },
     "./plugins/MetricsPlugin": {
-      "types": "./dist/types/plugins/MetricsPlugin/index.d.ts",
+      "types": "./dist/plugins/MetricsPlugin.d.ts",
       "import": "./dist/plugins/MetricsPlugin.esm.js",
       "require": "./dist/plugins/MetricsPlugin.cjs.js"
     },

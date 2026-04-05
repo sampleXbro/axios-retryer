@@ -1,73 +1,8 @@
 import type { AxiosRequestConfig } from 'axios';
 
-import type { RetryStrategy } from '../types';
-import { RetryLogger } from '../services/logger';
+import type { Logger, RetryStrategy } from '../types';
 import { getRequestMetadata } from '../utils/requestMetadata';
-
-type SleepHandle = {
-  promise: Promise<void>;
-  cancel: () => void;
-};
-
-class TimerManager {
-  private activeTimers = new Set<ReturnType<typeof setTimeout>>();
-  private isDestroyed = false;
-
-  public createTimeout(
-    callback: () => void,
-    delay: number,
-  ): { timerId: ReturnType<typeof setTimeout> | null; cancel: () => void } {
-    if (this.isDestroyed) {
-      callback();
-      return { timerId: null, cancel: () => {} };
-    }
-
-    const timerId = setTimeout(() => {
-      this.activeTimers.delete(timerId);
-      if (!this.isDestroyed) {
-        callback();
-      }
-    }, delay);
-
-    this.activeTimers.add(timerId);
-
-    return {
-      timerId,
-      cancel: () => {
-        if (this.activeTimers.has(timerId)) {
-          clearTimeout(timerId);
-          this.activeTimers.delete(timerId);
-        }
-      },
-    };
-  }
-
-  public createSleep(ms: number): SleepHandle {
-    let cancelFn: () => void = () => {};
-
-    const promise = new Promise<void>((resolve, reject) => {
-      const { cancel } = this.createTimeout(resolve, ms);
-      cancelFn = () => {
-        cancel();
-        reject(new Error('Sleep cancelled'));
-      };
-    });
-
-    return { promise, cancel: cancelFn };
-  }
-
-  public getActiveTimerCount(): number {
-    return this.activeTimers.size;
-  }
-
-  public destroy(): void {
-    this.isDestroyed = true;
-    this.activeTimers.forEach((timerId) => {
-      clearTimeout(timerId);
-    });
-    this.activeTimers.clear();
-  }
-}
+import { TimerManager } from './TimerManager';
 
 export function parseRetryAfterMs(headerValue: string | undefined | null): number {
   if (!headerValue) {
@@ -81,8 +16,8 @@ export function parseRetryAfterMs(headerValue: string | undefined | null): numbe
 
   const dateMs = Date.parse(headerValue);
   if (!Number.isNaN(dateMs)) {
-    const delayMs = dateMs - Date.now();
-    return delayMs > 0 ? Math.ceil(delayMs / 1000) * 1000 : 0;
+    // Preserve millisecond precision for HTTP-date values — do not round to the nearest second.
+    return Math.max(0, dateMs - Date.now());
   }
 
   return 0;
@@ -93,7 +28,7 @@ export class RetryScheduler {
   private readonly activeRetryTimers = new Map<string, () => void>();
 
   constructor(
-    private readonly logger: RetryLogger,
+    private readonly logger: Logger,
     private readonly retryStrategy: RetryStrategy,
   ) {}
 

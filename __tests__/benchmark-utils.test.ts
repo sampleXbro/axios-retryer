@@ -145,6 +145,11 @@ describe('benchmark utils', () => {
         completelyFailedRequests: 3,
         avgQueueWait: 1.234,
         avgRetryDelay: 2.345,
+        timerHealth: {
+          healthScore: 4,
+          activeTimers: 2,
+          activeRetryTimers: 1,
+        },
       }),
       getTimerStats: () => ({
         activeTimers: 2,

@@ -69,6 +69,25 @@ describe('CachingPlugin', () => {
     ).toBe(true);
   });
 
+  test('should serve immutable cache snapshots even if callers mutate prior results', async () => {
+    cachingPlugin = new CachingPlugin();
+    cachingPlugin.initialize(fakeManager as unknown as RetryManager);
+
+    const url = '/snapshot';
+    const responseData = { nested: { value: 1 } };
+
+    mock.onGet(url).replyOnce(200, responseData);
+
+    const firstResponse = await axiosInstance.get(url);
+    firstResponse.data.nested.value = 99;
+    responseData.nested.value = 42;
+
+    const secondResponse = await axiosInstance.get(url);
+
+    expect(secondResponse.data).toEqual({ nested: { value: 1 } });
+    expect(secondResponse.data).not.toBe(firstResponse.data);
+  });
+
   test('should not cache non-GET methods', async () => {
     cachingPlugin = new CachingPlugin();
     cachingPlugin.initialize(fakeManager as unknown as RetryManager);
@@ -289,7 +308,7 @@ describe('CachingPlugin', () => {
       expect(initialStats.size).toBe(3);
       
       // Invalidate only user-related cache entries
-      cachingPlugin.invalidateCache('/users');
+      cachingPlugin.invalidateCache({ prefix: 'GET|/users' });
       
       // Should only have posts in cache now
       const afterStats = cachingPlugin.getCacheStats();
@@ -406,7 +425,7 @@ describe('CachingPlugin', () => {
       manager.use(plugin);
       
       // Now we can call invalidateCache
-      plugin.invalidateCache('/api/');
+      plugin.invalidateCache({ prefix: 'GET|/api/' });
       
       // Cleanup
       manager.unuse('CachingPlugin');
@@ -549,7 +568,7 @@ describe('CachingPlugin', () => {
       expect(
         fakeLogger.debug.mock.calls.some(args => 
           args[0].includes('Caching response') && 
-          args[0].includes('custom TTR: 5000ms')
+          args[1]?.ttrMs === 5000
         )
       ).toBe(true);
     });

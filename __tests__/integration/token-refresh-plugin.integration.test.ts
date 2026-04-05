@@ -184,4 +184,100 @@ describe('TokenRefreshPlugin integration', () => {
     expect(hooks.onTokenRefreshFailed).toHaveBeenCalledTimes(1);
     expect(hooks.onTokenRefreshed).not.toHaveBeenCalled();
   });
+
+  it('reuses the manager adapter for relative refresh requests and fans refresh in once', async () => {
+    let refreshCalls = 0;
+    let refreshAdapterCalls = 0;
+    let releaseRefresh: (() => void) | undefined;
+
+    axiosInstance.defaults.adapter = jest.fn(async (config) => {
+      if (config.url === '/auth/refresh') {
+        refreshAdapterCalls++;
+
+        return new Promise((resolve) => {
+          releaseRefresh = () => {
+            resolve({
+              config,
+              data: { token: 'fresh-token' },
+              headers: {},
+              status: 200,
+              statusText: 'OK',
+            });
+          };
+        });
+      }
+
+      const token = getHeader(config, 'Authorization');
+      if (token === 'Bearer fresh-token') {
+        return {
+          config,
+          data: { ok: true, url: config.url },
+          headers: {},
+          status: 200,
+          statusText: 'OK',
+        };
+      }
+
+      const error = new Error('Unauthorized') as Error & {
+        config: AxiosRequestConfig;
+        response: {
+          config: AxiosRequestConfig;
+          data: { error: string };
+          headers: Record<string, never>;
+          status: number;
+          statusText: string;
+        };
+      };
+      error.config = config;
+      error.response = {
+        config,
+        data: { error: 'Unauthorized' },
+        headers: {},
+        status: 401,
+        statusText: 'Unauthorized',
+      };
+      throw error;
+    });
+
+    retryManager.use(
+      new TokenRefreshPlugin(async (refreshAxios) => {
+        refreshCalls++;
+        const response = await refreshAxios.post('/auth/refresh');
+        return { token: response.data.token };
+      }, {
+        authHeaderName: 'Authorization',
+        tokenPrefix: 'Bearer ',
+        refreshStatusCodes: [401],
+        retryOnRefreshFail: false,
+        maxRefreshAttempts: 1,
+      }),
+    );
+
+    const accountRequest = retryManager.axiosInstance.get('/account', {
+      headers: { Authorization: 'Bearer stale-token' },
+    });
+
+    await waitForAssertion(() => {
+      expect(refreshCalls).toBe(1);
+      expect(refreshAdapterCalls).toBe(1);
+      expect(releaseRefresh).toBeDefined();
+    });
+
+    const profileRequest = retryManager.axiosInstance.get('/profile', {
+      headers: { Authorization: 'Bearer stale-token' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(refreshCalls).toBe(1);
+    expect(refreshAdapterCalls).toBe(1);
+
+    releaseRefresh?.();
+
+    const [accountResponse, profileResponse] = await Promise.all([accountRequest, profileRequest]);
+
+    expect(accountResponse.data).toEqual({ ok: true, url: '/account' });
+    expect(profileResponse.data).toEqual({ ok: true, url: '/profile' });
+    expect(refreshCalls).toBe(1);
+    expect(refreshAdapterCalls).toBe(1);
+  });
 });

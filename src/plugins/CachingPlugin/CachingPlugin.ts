@@ -4,8 +4,11 @@ import type { AxiosError, AxiosRequestConfig, AxiosResponse, InternalAxiosReques
 
 import type { AxiosRetryerHttpMethod, RetryPlugin } from '../../types';
 import { AXIOS_RETRYER_HTTP_METHODS } from '../../types';
-import { RetryManager } from '../../core/RetryManager';
+import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
+import type { PluginContext } from '../../types';
+import { cloneValue } from '../../utils/clone';
 import { ensureRequestMetadata, getRequestMetadata } from '../../utils/requestMetadata';
+import { InvalidCacheKeyError } from './InvalidCacheKeyError';
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -16,6 +19,12 @@ export interface CachedItem {
   response: AxiosResponse<unknown>;
   timestamp: number;
   ttr?: number; // Custom TTR for this cache entry
+  lastAccessedAt?: number;
+}
+
+export interface CacheStorageEntry {
+  readonly key: string;
+  readonly value: CachedItem;
 }
 
 export interface CacheStorage {
@@ -23,6 +32,11 @@ export interface CacheStorage {
   set(key: string, value: CachedItem): MaybePromise<void>;
   delete(key: string): MaybePromise<void>;
   clear(): MaybePromise<void>;
+  /**
+   * Returns the adapter's full cache index.
+   * Cleanup and non-exact invalidation operate on this index.
+   */
+  entries(): MaybePromise<readonly CacheStorageEntry[]>;
 }
 
 export class InMemoryCacheStorage implements CacheStorage {
@@ -42,6 +56,10 @@ export class InMemoryCacheStorage implements CacheStorage {
 
   public clear(): void {
     this.storage.clear();
+  }
+
+  public entries(): readonly CacheStorageEntry[] {
+    return Array.from(this.storage, ([key, value]) => ({ key, value }));
   }
 }
 
@@ -70,9 +88,161 @@ function isPromiseLike<T>(value: unknown): value is Promise<T> {
   return !!value && typeof (value as Promise<T>).then === 'function';
 }
 
+function fingerprintValue(value: string): string {
+  let hash = 2166136261;
+
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `fp_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function compareStringTuples([leftKey, leftValue]: readonly [string, string], [rightKey, rightValue]: readonly [string, string]): number {
+  return leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue);
+}
+
+function normalizeUrl(url: string): string {
+  const hashIndex = url.indexOf('#');
+  const withoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const queryIndex = withoutHash.indexOf('?');
+
+  if (queryIndex === -1) {
+    return withoutHash;
+  }
+
+  const pathname = withoutHash.slice(0, queryIndex);
+  const query = withoutHash.slice(queryIndex + 1);
+  if (!query) {
+    return pathname;
+  }
+
+  const entries = Array.from(new URLSearchParams(query).entries()).sort(compareStringTuples);
+  if (entries.length === 0) {
+    return pathname;
+  }
+
+  const normalizedQuery = entries
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+
+  return `${pathname}?${normalizedQuery}`;
+}
+
+function normalizeValue(value: unknown, lowercaseKeys = false): unknown {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof URLSearchParams !== 'undefined' && value instanceof URLSearchParams) {
+    return Array.from(value.entries()).sort(compareStringTuples);
+  }
+
+  if (value instanceof Map) {
+    return Array.from(value.entries())
+      .map(([key, entryValue]) => [String(key), normalizeValue(entryValue, lowercaseKeys)] as const)
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+  }
+
+  if (value instanceof Set) {
+    return Array.from(value.values()).map((entryValue) => normalizeValue(entryValue, lowercaseKeys));
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entryValue) => normalizeValue(entryValue, lowercaseKeys));
+  }
+
+  if (typeof value === 'object') {
+    const objectValue =
+      typeof (value as { toJSON?: () => unknown }).toJSON === 'function'
+        ? (value as { toJSON: () => unknown }).toJSON()
+        : value;
+
+    if (objectValue !== value) {
+      return normalizeValue(objectValue, lowercaseKeys);
+    }
+
+    const normalizedObject: Record<string, unknown> = {};
+    Object.entries(objectValue as Record<string, unknown>)
+      .map(([key, entryValue]) => [lowercaseKeys ? key.toLowerCase() : key, normalizeValue(entryValue, lowercaseKeys)] as const)
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      .forEach(([key, entryValue]) => {
+        normalizedObject[key] = entryValue;
+      });
+
+    return normalizedObject;
+  }
+
+  return String(value);
+}
+
+function stableStringify(value: unknown, lowercaseKeys = false): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    ) {
+      try {
+        return JSON.stringify(normalizeValue(JSON.parse(trimmed), lowercaseKeys));
+      } catch (_error) {
+        // Fall through and treat invalid JSON-like strings as plain strings.
+      }
+    }
+
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return JSON.stringify(normalizeValue(value, lowercaseKeys));
+}
+
 /**
  * Options for the CachingPlugin.
  */
+/**
+ * Header names that indicate authenticated or personalized traffic.
+ * Requests carrying any of these headers are excluded from caching by default
+ * to prevent cross-principal cache collisions.
+ */
+const AUTH_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'x-auth-token',
+  'x-api-key',
+]);
+
+function requestHasAuthHeaders(config: AxiosRequestConfig): boolean {
+  if (!config.headers) {
+    return false;
+  }
+
+  for (const key of Object.keys(config.headers)) {
+    if (AUTH_HEADERS.has(key.toLowerCase())) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export interface CachingPluginOptions {
   /**
    * If true, include the entire headers object in the cache key.
@@ -124,7 +294,9 @@ export interface CachingPluginOptions {
   cacheOnlyRetriedRequests?: boolean;
 
   /**
-   * Storage backend used for cache entries.
+   * Indexed storage backend used for cache entries.
+   * Custom adapters must implement `entries()` so cleanup and invalidation can
+   * operate on the adapter's source of truth after restart or across processes.
    * Defaults to the built-in in-memory storage.
    */
   storage?: CacheStorage;
@@ -134,13 +306,121 @@ export interface CachingPluginOptions {
    * @default true
    */
   dedupeConcurrentRequests?: boolean;
+
+  /**
+   * Allows custom cache key composition from canonical request parts.
+   * The default builder uses normalized method, URL, params, body, and optional headers.
+   */
+  cacheKeyBuilder?: CacheKeyBuilder;
+
+  /**
+   * When true, requests carrying authentication headers (Authorization, Cookie,
+   * Proxy-Authorization, X-Auth-Token, X-API-Key) are excluded from caching.
+   * This prevents cross-principal cache collisions on shared retryer instances.
+   *
+   * Set to `false` only for legitimate shared-cache use cases where all
+   * principals should receive the same cached response.
+   *
+   * @default true
+   */
+  skipWhenAuthPresent?: boolean;
+
+  /**
+   * Header names whose values are folded into the cache key, binding each
+   * cache entry to the identity or context carried by those headers.
+   *
+   * Use this instead of (or together with) `skipWhenAuthPresent: false`
+   * when you need per-principal caching rather than skipping the cache entirely.
+   *
+   * Header name matching is case-insensitive.
+   *
+   * @default []
+   *
+   * @example
+   * ```ts
+   * // Cache responses per-user based on their Authorization header:
+   * new CachingPlugin({ skipWhenAuthPresent: false, varyHeaders: ['Authorization'] });
+   * ```
+   */
+  varyHeaders?: readonly string[];
+}
+
+export interface CachingRequestOptions {
+  cache?: boolean;
+  ttr?: number;
+}
+
+export interface CacheKeyBuilderContext {
+  readonly config: AxiosRequestConfig;
+  readonly method: string;
+  readonly normalizedUrl: string;
+  readonly normalizedParams: string;
+  readonly normalizedData: string;
+  readonly normalizedHeaders: string;
+}
+
+export type CacheKeyBuilder = (context: CacheKeyBuilderContext) => string;
+
+export type CacheInvalidationMatcher =
+  | string
+  | RegExp
+  | {
+      exact: string;
+    }
+  | {
+      prefix: string;
+    };
+
+function buildDefaultCacheKey(context: CacheKeyBuilderContext): string {
+  return [
+    context.method,
+    context.normalizedUrl,
+    context.normalizedParams,
+    context.normalizedData,
+    context.normalizedHeaders,
+  ].join('|');
+}
+
+function getCacheEntryAccessTimestamp(cachedItem: CachedItem): number {
+  return cachedItem.lastAccessedAt ?? cachedItem.timestamp;
+}
+
+function sortCacheEntriesByAccess(entries: readonly CacheStorageEntry[]): CacheStorageEntry[] {
+  return [...entries].sort(
+    (left, right) =>
+      getCacheEntryAccessTimestamp(left.value) - getCacheEntryAccessTimestamp(right.value) ||
+      left.key.localeCompare(right.key),
+  );
+}
+
+function createCachedResponseSnapshot(response: AxiosResponse<unknown>): AxiosResponse<unknown> {
+  return {
+    config: {} as AxiosRequestConfig,
+    data: cloneValue(response.data),
+    headers: cloneValue(response.headers),
+    status: response.status,
+    statusText: response.statusText,
+  } as AxiosResponse<unknown>;
+}
+
+function cloneAxiosResponse(
+  response: Pick<AxiosResponse<unknown>, 'data' | 'headers' | 'status' | 'statusText'>,
+  config: AxiosRequestConfig,
+): AxiosResponse<unknown> {
+  return {
+    config: config as AxiosRequestConfig,
+    data: cloneValue(response.data),
+    headers: cloneValue(response.headers),
+    status: response.status,
+    statusText: response.statusText,
+  } as AxiosResponse<unknown>;
 }
 
 export class CachingPlugin implements RetryPlugin {
   public name = 'CachingPlugin';
   public version = '1.0.0';
 
-  private manager!: RetryManager;
+  private context!: PluginContext;
   private interceptorIdReq: number | null = null;
   private interceptorIdRes: number | null = null;
   private cleanupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -164,27 +444,34 @@ export class CachingPlugin implements RetryPlugin {
       cacheOnlyRetriedRequests: false,
       storage: options?.storage ?? new InMemoryCacheStorage(),
       dedupeConcurrentRequests: true,
+      cacheKeyBuilder: options?.cacheKeyBuilder ?? buildDefaultCacheKey,
+      skipWhenAuthPresent: true,
+      varyHeaders: [],
       ...options,
     };
     this.storage = this.options.storage;
 
     if (!Number.isInteger(this.options.cleanupInterval) || this.options.cleanupInterval < 0) {
-      throw new Error('cleanupInterval must be a non-negative integer');
+      throw new RetryerConfigError('cleanupInterval must be a non-negative integer', 'cleanupInterval', this.options.cleanupInterval);
     }
     if (!Number.isInteger(this.options.maxAge) || this.options.maxAge < 0) {
-      throw new Error('maxAge must be a non-negative integer');
+      throw new RetryerConfigError('maxAge must be a non-negative integer', 'maxAge', this.options.maxAge);
     }
     if (!Number.isInteger(this.options.maxItems) || this.options.maxItems < 0) {
-      throw new Error('maxItems must be a non-negative integer');
+      throw new RetryerConfigError('maxItems must be a non-negative integer', 'maxItems', this.options.maxItems);
     }
     if (!Number.isInteger(this.options.timeToRevalidate) || this.options.timeToRevalidate < 0) {
-      throw new Error('timeToRevalidate must be a non-negative integer');
+      throw new RetryerConfigError(
+        'timeToRevalidate must be a non-negative integer',
+        'timeToRevalidate',
+        this.options.timeToRevalidate,
+      );
     }
   }
 
-  public initialize(manager: RetryManager): void {
-    this.manager = manager;
-    const axiosInstance = manager.axiosInstance;
+  public initialize(context: PluginContext): void {
+    this.context = context;
+    const axiosInstance = context.axiosInstance;
 
     this.interceptorIdReq = axiosInstance.interceptors.request.use(
       (config) =>
@@ -204,12 +491,47 @@ export class CachingPlugin implements RetryPlugin {
 
   public onBeforeDestroyed(): void {
     if (this.interceptorIdReq !== null) {
-      this.manager.axiosInstance.interceptors.request.eject(this.interceptorIdReq);
+      this.context.axiosInstance.interceptors.request.eject(this.interceptorIdReq);
     }
     if (this.interceptorIdRes !== null) {
-      this.manager.axiosInstance.interceptors.response.eject(this.interceptorIdRes);
+      this.context.axiosInstance.interceptors.response.eject(this.interceptorIdRes);
     }
     this.stopPeriodicCleanup();
+  }
+
+  private getCacheKeyFingerprint(cacheKey: string): string {
+    return fingerprintValue(cacheKey);
+  }
+
+  private describeInvalidationMatcher(
+    matcher: CacheInvalidationMatcher,
+  ): { type: 'exact' | 'prefix' | 'regexp'; fingerprint: string } {
+    if (matcher instanceof RegExp) {
+      return {
+        type: 'regexp',
+        fingerprint: fingerprintValue(String(matcher)),
+      };
+    }
+
+    if (typeof matcher === 'string') {
+      return {
+        type: 'exact',
+        fingerprint: fingerprintValue(matcher),
+      };
+    }
+
+    return {
+      type: 'exact' in matcher ? 'exact' : 'prefix',
+      fingerprint: fingerprintValue('exact' in matcher ? matcher.exact : matcher.prefix),
+    };
+  }
+
+  private getErrorMeta(error: unknown): Record<string, unknown> {
+    if (error instanceof Error) {
+      return { errorName: error.name };
+    }
+
+    return {};
   }
 
   /**
@@ -217,14 +539,24 @@ export class CachingPlugin implements RetryPlugin {
    */
   private async handleRequest(config: AxiosRequestConfig): Promise<AxiosRequestConfig> {
     const metadata = ensureRequestMetadata(config);
+    const cachingOptions = this.getRequestCachingOptions(config);
     const method = (config.method || AXIOS_RETRYER_HTTP_METHODS.GET).toUpperCase() as AxiosRetryerHttpMethod;
 
-    if (metadata.cachingOptions?.cache === false) {
-      this.manager.getLogger()?.debug('[CachingPlugin] Skipping cache for request (explicitly disabled)');
+    if (cachingOptions) {
+      metadata.cachingOptions = cachingOptions;
+    }
+
+    if (cachingOptions?.cache === false) {
+      this.context.getLogger()?.debug('[CachingPlugin] Skipping cache for request (explicitly disabled)');
       return config;
     }
 
-    if (metadata.cachingOptions?.cache !== true && !this.options.cacheMethods.includes(method)) {
+    if (this.options.skipWhenAuthPresent && requestHasAuthHeaders(config)) {
+      this.context.getLogger()?.debug('[CachingPlugin] Skipping cache for authenticated request');
+      return config;
+    }
+
+    if (cachingOptions?.cache !== true && !this.options.cacheMethods.includes(method)) {
       return config;
     }
 
@@ -232,37 +564,45 @@ export class CachingPlugin implements RetryPlugin {
       return config;
     }
 
-    const cacheKey = this.generateCacheKey(config);
+    const cacheKey = this.buildCacheKey(config);
+    const cacheKeyFingerprint = this.getCacheKeyFingerprint(cacheKey);
     let cachedItem: CachedItem | undefined = this.cache.get(cacheKey);
 
     if (!cachedItem) {
       try {
         cachedItem = await this.storage.get(cacheKey);
       } catch (error) {
-        this.manager.getLogger()?.warn(`[CachingPlugin] Failed to read cache entry for ${cacheKey}`, error);
+        this.context.getLogger()?.warn('[CachingPlugin] Failed to read cache entry', {
+          cacheKeyFingerprint,
+          ...this.getErrorMeta(error),
+        });
         return config;
       }
     }
 
     if (cachedItem) {
-      this.touchCacheEntry(cacheKey, cachedItem);
-      const ageMs = Date.now() - cachedItem.timestamp;
+      const now = Date.now();
+      const ageMs = now - cachedItem.timestamp;
       const ttr = cachedItem.ttr ?? this.options.timeToRevalidate;
 
       if (ttr === 0 || ageMs < ttr) {
-        this.manager.getLogger()?.debug(`[CachingPlugin] Cache hit for ${cacheKey} (age: ${ageMs}ms)`);
+        const touchedItem = this.touchCacheEntry(cacheKey, cachedItem, now);
+        await this.persistCacheTouchIfNeeded(cacheKey, touchedItem, cacheKeyFingerprint);
+        this.context.getLogger()?.debug('[CachingPlugin] Cache hit', {
+          cacheKeyFingerprint,
+          ageMs,
+        });
         this.servedFromCache.add(config);
         return {
           ...config,
-          adapter: () =>
-            Promise.resolve({
-              ...cachedItem.response,
-              config,
-            }) as never,
+          adapter: () => Promise.resolve(cloneAxiosResponse(touchedItem.response, config)) as never,
         };
       }
 
-      this.manager.getLogger()?.debug(`[CachingPlugin] Cache stale for ${cacheKey} (age: ${ageMs}ms); removing entry.`);
+      this.context.getLogger()?.debug('[CachingPlugin] Cache stale', {
+        cacheKeyFingerprint,
+        ageMs,
+      });
       await this.deleteCacheEntry(cacheKey);
     }
 
@@ -273,13 +613,12 @@ export class CachingPlugin implements RetryPlugin {
     const inflightEntry = this.inflightRequests.get(cacheKey);
     if (inflightEntry) {
       this.inflightFollowers.set(config, cacheKey);
-      this.manager.getLogger()?.debug(`[CachingPlugin] Piggybacking on in-flight request for ${cacheKey}`);
+      this.context.getLogger()?.debug('[CachingPlugin] Piggybacking on in-flight request', {
+        cacheKeyFingerprint,
+      });
       return {
         ...config,
-        adapter: async () => ({
-          ...(await inflightEntry.promise),
-          config,
-        }) as never,
+        adapter: async () => cloneAxiosResponse(await inflightEntry.promise, config) as never,
       };
     }
 
@@ -305,12 +644,19 @@ export class CachingPlugin implements RetryPlugin {
       return response;
     }
 
-    if (metadata?.cachingOptions?.cache === false) {
+    const cachingOptions = this.getRequestCachingOptions(response.config);
+
+    if (cachingOptions?.cache === false) {
       this.resolveInflightRequest(response.config, response);
       return response;
     }
 
-    if (metadata?.cachingOptions?.cache !== true) {
+    if (this.options.skipWhenAuthPresent && requestHasAuthHeaders(response.config)) {
+      this.resolveInflightRequest(response.config, response);
+      return response;
+    }
+
+    if (cachingOptions?.cache !== true) {
       const method = (response.config?.method || AXIOS_RETRYER_HTTP_METHODS.GET).toUpperCase() as AxiosRetryerHttpMethod;
       if (!this.options.cacheMethods.includes(method)) {
         this.resolveInflightRequest(response.config, response);
@@ -324,21 +670,27 @@ export class CachingPlugin implements RetryPlugin {
     }
 
     if (response.status >= 200 && response.status < 300) {
-      const cacheKey = this.generateCacheKey(response.config);
-      const ttr = metadata?.cachingOptions?.ttr;
+      const cacheKey = this.buildCacheKey(response.config);
+      const cacheKeyFingerprint = this.getCacheKeyFingerprint(cacheKey);
+      const ttr = cachingOptions?.ttr;
 
       try {
-        this.manager.getLogger()?.debug(
-          `[CachingPlugin] Caching response for ${cacheKey}${ttr ? ` with custom TTR: ${ttr}ms` : ''}`
-        );
+        this.context.getLogger()?.debug('[CachingPlugin] Caching response', {
+          cacheKeyFingerprint,
+          ...(ttr ? { ttrMs: ttr } : {}),
+        });
 
         await this.upsertCacheEntry(cacheKey, {
-          response,
+          response: createCachedResponseSnapshot(response),
           timestamp: Date.now(),
           ttr,
+          lastAccessedAt: Date.now(),
         });
       } catch (error) {
-        this.manager.getLogger()?.warn(`[CachingPlugin] Failed to cache response for ${cacheKey}`, error);
+        this.context.getLogger()?.warn('[CachingPlugin] Failed to cache response', {
+          cacheKeyFingerprint,
+          ...this.getErrorMeta(error),
+        });
       } finally {
         this.resolveInflightRequest(response.config, response);
       }
@@ -361,29 +713,16 @@ export class CachingPlugin implements RetryPlugin {
   /**
    * Generates a unique cache key based on the request configuration.
    */
-  private generateCacheKey(config: AxiosRequestConfig): string {
+  public buildCacheKey(config: AxiosRequestConfig): string {
     if (!config.url) {
-      throw new Error('URL is required for cache key generation');
+      throw new InvalidCacheKeyError();
     }
 
-    const method = (config.method || 'GET').toUpperCase();
-    const params = config.params
-      ? typeof config.params === 'object'
-        ? JSON.stringify(config.params)
-        : String(config.params)
-      : '';
-    const data = config.data
-      ? typeof config.data === 'object'
-        ? JSON.stringify(config.data)
-        : String(config.data)
-      : '';
+    return this.options.cacheKeyBuilder(this.buildCacheKeyContext(config));
+  }
 
-    let headersPart = '';
-    if (this.options.compareHeaders && config.headers) {
-      headersPart = typeof config.headers === 'object' ? JSON.stringify(config.headers) : String(config.headers);
-    }
-
-    return [method, config.url, params, data, headersPart].join('|');
+  private generateCacheKey(config: AxiosRequestConfig): string {
+    return this.buildCacheKey(config);
   }
 
   private startPeriodicCleanup(): void {
@@ -392,7 +731,9 @@ export class CachingPlugin implements RetryPlugin {
     }
 
     this.cleanupTimer = setInterval(() => {
-      void this.runCacheCleanup();
+      void this.runCacheCleanup().catch((error: unknown) => {
+        this.context.getLogger()?.warn('[CachingPlugin] Failed to run cache cleanup', this.getErrorMeta(error));
+      });
     }, this.options.cleanupInterval);
   }
 
@@ -404,30 +745,32 @@ export class CachingPlugin implements RetryPlugin {
   }
 
   private async runCacheCleanup(): Promise<void> {
+    const indexedEntries = await this.readCacheEntriesForScan();
+    this.syncLocalCache(indexedEntries);
+
     const now = Date.now();
     const itemsToRemove = new Set<string>();
 
     if (this.options.maxAge > 0) {
-      this.cache.forEach((item, key) => {
-        if (now - item.timestamp > this.options.maxAge) {
+      indexedEntries.forEach(({ key, value }) => {
+        if (now - value.timestamp > this.options.maxAge) {
           itemsToRemove.add(key);
         }
       });
     }
 
-    if (this.options.maxItems > 0 && this.cache.size > this.options.maxItems) {
-      const excess = this.cache.size - this.options.maxItems;
-      let removed = 0;
-      const keys = Array.from(this.cache.keys());
-      for (let i = 0; i < keys.length && removed < excess; i++) {
-        itemsToRemove.add(keys[i]);
-        removed++;
+    if (this.options.maxItems > 0 && indexedEntries.length > this.options.maxItems) {
+      const excess = indexedEntries.length - this.options.maxItems;
+      const evictionCandidates = sortCacheEntriesByAccess(indexedEntries);
+
+      for (let i = 0; i < evictionCandidates.length && itemsToRemove.size < excess; i++) {
+        itemsToRemove.add(evictionCandidates[i].key);
       }
     }
 
     if (itemsToRemove.size > 0) {
       await Promise.all(Array.from(itemsToRemove, (key) => this.deleteCacheEntry(key)));
-      this.manager.getLogger()?.debug(`[CachingPlugin] Cleaned up ${itemsToRemove.size} cached items`);
+      this.context.getLogger()?.debug(`[CachingPlugin] Cleaned up ${itemsToRemove.size} cached items`);
     }
   }
 
@@ -437,7 +780,7 @@ export class CachingPlugin implements RetryPlugin {
   public clearCache(): void | Promise<void> {
     this.cache.clear();
     this.inflightRequests.clear();
-    this.manager.getLogger()?.debug('[CachingPlugin] Cache cleared.');
+    this.context.getLogger()?.debug('[CachingPlugin] Cache cleared.');
 
     const clearResult = this.storage.clear();
     if (isPromiseLike(clearResult)) {
@@ -446,45 +789,20 @@ export class CachingPlugin implements RetryPlugin {
   }
 
   /**
-   * Invalidates a specific cache entry by key pattern.
-   * If the key is a string, it will invalidate exact matches.
-   * If the key is a RegExp, it will invalidate all matching keys.
+   * Invalidates cache entries using explicit exact-key, prefix, or RegExp matching.
    *
-   * @param keyPattern The key or pattern to match for invalidation
+   * Plain string input is treated as an exact-key match.
+   *
+   * @param matcher The exact key, prefix matcher, or RegExp to match for invalidation
    * @returns The number of invalidated cache entries
    */
-  public invalidateCache(keyPattern: string | RegExp): number | Promise<number> {
-    let count = 0;
-    const keys = Array.from(this.cache.keys());
-    const deleteOperations: Array<void | Promise<void>> = [];
-
-    if (keyPattern instanceof RegExp) {
-      keys.forEach((key) => {
-        if (keyPattern.test(key)) {
-          this.cache.delete(key);
-          deleteOperations.push(this.storage.delete(key));
-          count++;
-        }
-      });
-    } else {
-      keys.forEach((key) => {
-        if (key === keyPattern || key.includes(keyPattern)) {
-          this.cache.delete(key);
-          deleteOperations.push(this.storage.delete(key));
-          count++;
-        }
-      });
+  public invalidateCache(matcher: CacheInvalidationMatcher): number | Promise<number> {
+    const indexedEntries = this.storage.entries();
+    if (isPromiseLike(indexedEntries)) {
+      return Promise.resolve(indexedEntries).then((entries) => this.invalidateCacheEntries(matcher, entries));
     }
 
-    if (count > 0) {
-      this.manager.getLogger()?.debug(`[CachingPlugin] Invalidated ${count} cache entries matching pattern: ${keyPattern}`);
-    }
-
-    if (deleteOperations.some((operation) => isPromiseLike(operation))) {
-      return Promise.all(deleteOperations.map((operation) => Promise.resolve(operation))).then(() => count);
-    }
-
-    return count;
+    return this.invalidateCacheEntries(matcher, indexedEntries);
   }
 
   /**
@@ -519,25 +837,192 @@ export class CachingPlugin implements RetryPlugin {
   }
 
   private async upsertCacheEntry(cacheKey: string, cachedItem: CachedItem): Promise<void> {
-    if (this.options.maxItems > 0 && !this.cache.has(cacheKey) && this.cache.size >= this.options.maxItems) {
-      const oldestKey = this.cache.keys().next().value;
-      if (oldestKey !== undefined) {
-        await this.deleteCacheEntry(oldestKey);
-      }
+    await this.enforceMaxItemsBeforeUpsert(cacheKey);
+
+    const touchedItem = this.touchCacheEntry(
+      cacheKey,
+      cachedItem,
+      cachedItem.lastAccessedAt ?? cachedItem.timestamp,
+    );
+    await this.storage.set(cacheKey, touchedItem);
+  }
+
+  private touchCacheEntry(cacheKey: string, cachedItem: CachedItem, touchedAt = Date.now()): CachedItem {
+    const touchedItem =
+      cachedItem.lastAccessedAt === touchedAt ? cachedItem : { ...cachedItem, lastAccessedAt: touchedAt };
+
+    this.cache.delete(cacheKey);
+    this.cache.set(cacheKey, touchedItem);
+
+    return touchedItem;
+  }
+
+  private deleteCacheEntry(cacheKey: string): void | Promise<void> {
+    this.cache.delete(cacheKey);
+
+    const deleteResult = this.storage.delete(cacheKey);
+    if (isPromiseLike(deleteResult)) {
+      return deleteResult.then(() => undefined);
+    }
+  }
+
+  private getRequestCachingOptions(config: AxiosRequestConfig): CachingRequestOptions | undefined {
+    return config.__cachingOptions ?? getRequestMetadata(config)?.cachingOptions;
+  }
+
+  private async readCacheEntriesForScan(): Promise<CacheStorageEntry[]> {
+    return Array.from(await this.storage.entries());
+  }
+
+  private syncLocalCache(entries: readonly CacheStorageEntry[]): void {
+    this.cache.clear();
+
+    sortCacheEntriesByAccess(entries).forEach(({ key, value }) => {
+      this.cache.set(key, value);
+    });
+  }
+
+  private async enforceMaxItemsBeforeUpsert(cacheKey: string): Promise<void> {
+    if (this.options.maxItems === 0) {
+      return;
     }
 
-    this.touchCacheEntry(cacheKey, cachedItem);
-    await this.storage.set(cacheKey, cachedItem);
+    // Fast path: use the in-memory mirror when it is populated.
+    // The local Map is kept in insertion/access order and is authoritative
+    // for the in-memory storage adapter. For custom persistent adapters it
+    // may lag after restart, but syncLocalCache during periodic cleanup
+    // re-aligns it. Falling back to storage on a cold cache is still correct.
+    if (this.cache.size > 0) {
+      if (this.cache.has(cacheKey)) {
+        return; // Updating an existing entry — no capacity change.
+      }
+      if (this.cache.size < this.options.maxItems) {
+        return; // Capacity available — no eviction needed.
+      }
+      const excess = this.cache.size - this.options.maxItems + 1;
+      const evictionCandidates = sortCacheEntriesByAccess(
+        Array.from(this.cache, ([key, value]) => ({ key, value })),
+      );
+      await Promise.all(evictionCandidates.slice(0, excess).map(({ key }) => this.deleteCacheEntry(key)));
+      return;
+    }
+
+    // Cold-start path: local cache is empty — read from storage once to
+    // initialise the mirror, then apply the same eviction logic.
+    const indexedEntries = await this.readCacheEntriesForScan();
+    this.syncLocalCache(indexedEntries);
+
+    if (indexedEntries.some((entry) => entry.key === cacheKey)) {
+      return;
+    }
+
+    const excess = indexedEntries.length - this.options.maxItems + 1;
+    if (excess <= 0) {
+      return;
+    }
+
+    const keysToRemove = sortCacheEntriesByAccess(indexedEntries)
+      .slice(0, excess)
+      .map((entry) => entry.key);
+
+    await Promise.all(keysToRemove.map((key) => this.deleteCacheEntry(key)));
   }
 
-  private touchCacheEntry(cacheKey: string, cachedItem: CachedItem): void {
-    this.cache.delete(cacheKey);
-    this.cache.set(cacheKey, cachedItem);
+  private async persistCacheTouchIfNeeded(
+    cacheKey: string,
+    cachedItem: CachedItem,
+    cacheKeyFingerprint: string,
+  ): Promise<void> {
+    if (this.options.maxItems === 0) {
+      return;
+    }
+
+    try {
+      await this.storage.set(cacheKey, cachedItem);
+    } catch (error) {
+      this.context.getLogger()?.warn('[CachingPlugin] Failed to persist cache access metadata', {
+        cacheKeyFingerprint,
+        ...this.getErrorMeta(error),
+      });
+    }
   }
 
-  private async deleteCacheEntry(cacheKey: string): Promise<void> {
-    this.cache.delete(cacheKey);
-    await this.storage.delete(cacheKey);
+  private invalidateCacheEntries(
+    matcher: CacheInvalidationMatcher,
+    indexedEntries: readonly CacheStorageEntry[],
+  ): number | Promise<number> {
+    this.syncLocalCache(indexedEntries);
+
+    const keysToRemove = indexedEntries
+      .filter(({ key }) => this.matchesInvalidationMatcher(key, matcher))
+      .map(({ key }) => key);
+
+    if (keysToRemove.length === 0) {
+      return 0;
+    }
+
+    const deleteOperations = keysToRemove.map((key) => this.deleteCacheEntry(key));
+    const finalize = (): number => {
+      this.context.getLogger()?.debug('[CachingPlugin] Invalidated cache entries', {
+        count: keysToRemove.length,
+        matcher: this.describeInvalidationMatcher(matcher),
+      });
+
+      return keysToRemove.length;
+    };
+
+    if (deleteOperations.some((operation) => isPromiseLike(operation))) {
+      return Promise.all(deleteOperations.map((operation) => Promise.resolve(operation))).then(() => finalize());
+    }
+
+    return finalize();
+  }
+
+  private buildCacheKeyContext(config: AxiosRequestConfig): CacheKeyBuilderContext {
+    let normalizedHeaders: string;
+
+    if (this.options.compareHeaders && config.headers) {
+      normalizedHeaders = stableStringify(config.headers, true);
+    } else if (this.options.varyHeaders.length > 0 && config.headers) {
+      const varySet = new Set(this.options.varyHeaders.map((h) => h.toLowerCase()));
+      const varyEntries: [string, string][] = [];
+
+      for (const key of Object.keys(config.headers)) {
+        if (varySet.has(key.toLowerCase())) {
+          varyEntries.push([key.toLowerCase(), String(config.headers[key])]);
+        }
+      }
+
+      varyEntries.sort(compareStringTuples);
+      normalizedHeaders = varyEntries.length > 0 ? JSON.stringify(varyEntries) : '';
+    } else {
+      normalizedHeaders = '';
+    }
+
+    return {
+      config,
+      method: (config.method || AXIOS_RETRYER_HTTP_METHODS.GET).toUpperCase(),
+      normalizedUrl: normalizeUrl(config.url ?? ''),
+      normalizedParams: stableStringify(config.params),
+      normalizedData: stableStringify(config.data),
+      normalizedHeaders,
+    };
+  }
+
+  private matchesInvalidationMatcher(key: string, matcher: CacheInvalidationMatcher): boolean {
+    if (matcher instanceof RegExp) {
+      return matcher.test(key);
+    }
+
+    if (typeof matcher === 'string') {
+      return key === matcher;
+    }
+
+    if ('exact' in matcher) {
+      return key === matcher.exact;
+    }
+
+    return key.startsWith(matcher.prefix);
   }
 
   private resolveInflightRequest(config: AxiosRequestConfig | undefined, response: AxiosResponse): void {

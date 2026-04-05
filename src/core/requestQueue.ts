@@ -1,9 +1,12 @@
 'use strict';
 
-import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
-import { AxiosError } from 'axios';
+import type { AxiosRequestConfig } from 'axios';
 
+import { QueueClearedError } from './errors/QueueClearedError';
+import { QueueDestroyedError } from './errors/QueueDestroyedError';
 import { QueueFullError } from './errors/QueueFullError';
+import { QueuedRequestCanceledError } from './errors/QueuedRequestCanceledError';
+import { RetryerConfigError } from './errors/RetryerConfigError';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
 import { ensureRequestMetadata, getRequestMetadata } from '../utils/requestMetadata';
 
@@ -158,52 +161,54 @@ class PriorityHeap {
   }
 }
 
+export interface RequestQueueOptions {
+  maxConcurrent?: number;
+  queueDelay?: number;
+  maxQueueSize?: number;
+  /**
+   * Optional base gate: if provided, a request may only leave the queue when this returns true.
+   * Applied before any plugin-registered processing gates.
+   */
+  canProcess?: (request: AxiosRequestConfig) => boolean;
+}
+
 /**
  * A queue that holds AxiosRequestConfig objects and resolves them
  * once concurrency is available, prioritizing higher priorities first.
- * 
+ *
  * Now uses a binary heap for O(log n) insertions instead of O(n) array operations.
  */
 export class RequestQueue {
   private readonly maxConcurrent: number;
   private readonly queueDelay: number;
   private readonly maxQueueSize?: number;
-  private readonly hasActiveCriticalRequests: () => boolean;
-  private readonly isCriticalRequest: (request: AxiosRequestConfig) => boolean;
+  private readonly baseCanProcess: (request: AxiosRequestConfig) => boolean;
+  private readonly processingGates = new Map<string, (request: AxiosRequestConfig) => boolean>();
   private readonly waiting: PriorityHeap;
   private inProgressCount = 0;
   private isDestroyed = false;
   private dequeueTimer: ReturnType<typeof setTimeout> | null = null;
   private microtaskScheduled = false;
 
-  /**
-   * @param maxConcurrent - maximum number of requests to process at once
-   * @param queueDelay - delay of every enqueued request
-   * @param hasActiveCriticalRequests - check if there are active critical requests
-   * @param isCriticalRequest - check if a request is critical
-   * @param maxQueueSize - optional maximum number of requests that can be queued
-   */
-  constructor(
-    maxConcurrent = 5,
-    queueDelay = 100,
-    hasActiveCriticalRequests: typeof this.hasActiveCriticalRequests,
-    isCriticalRequest: typeof this.isCriticalRequest,
-    maxQueueSize?: number,
-  ) {
+  constructor(options: RequestQueueOptions = {}) {
+    const { maxConcurrent = 5, queueDelay = 100, maxQueueSize, canProcess } = options;
     if (maxConcurrent < 1) {
-      throw new Error(`maxConcurrent must be >= 1. Received: ${maxConcurrent}`);
+      throw new RetryerConfigError(`maxConcurrent must be >= 1. Received: ${maxConcurrent}`, 'maxConcurrent', maxConcurrent);
     }
     if (!Number.isInteger(queueDelay) || queueDelay < 0) {
-      throw new Error(`queueDelay must be >= 0. Received: ${queueDelay}`);
+      throw new RetryerConfigError(`queueDelay must be >= 0. Received: ${queueDelay}`, 'queueDelay', queueDelay);
     }
     if (maxQueueSize !== undefined && (!Number.isInteger(maxQueueSize) || maxQueueSize < 1)) {
-      throw new Error(`maxQueueSize must be >= 1 when provided. Received: ${maxQueueSize}`);
+      throw new RetryerConfigError(
+        `maxQueueSize must be >= 1 when provided. Received: ${maxQueueSize}`,
+        'maxQueueSize',
+        maxQueueSize,
+      );
     }
     this.maxConcurrent = maxConcurrent;
     this.queueDelay = queueDelay;
     this.maxQueueSize = maxQueueSize;
-    this.hasActiveCriticalRequests = hasActiveCriticalRequests;
-    this.isCriticalRequest = isCriticalRequest;
+    this.baseCanProcess = canProcess ?? (() => true);
     this.waiting = new PriorityHeap(this.comparePriority.bind(this));
   }
 
@@ -217,12 +222,12 @@ export class RequestQueue {
 
     // Check if the queue has been destroyed
     if (this.isDestroyed) {
-      return Promise.reject(new AxiosError('Queue has been destroyed', 'QUEUE_DESTROYED'));
+      return Promise.reject(new QueueDestroyedError(config));
     }
 
     // Check if the queue is at its maximum capacity
     if (this.maxQueueSize !== undefined && this.waiting.length >= this.maxQueueSize) {
-      throw new QueueFullError(config);
+      return Promise.reject(new QueueFullError(config));
     }
 
     return new Promise<AxiosRequestConfig>((resolve, reject) => {
@@ -259,6 +264,24 @@ export class RequestQueue {
     return this.waiting.length > 0 || this.inProgressCount > 0;
   }
 
+  public registerProcessingGate(name: string, canProcess: (request: AxiosRequestConfig) => boolean): void {
+    this.processingGates.set(name, canProcess);
+    this.refresh();
+  }
+
+  public unregisterProcessingGate(name: string): boolean {
+    const removed = this.processingGates.delete(name);
+    if (removed) {
+      this.refresh();
+    }
+
+    return removed;
+  }
+
+  public refresh(): void {
+    this.tryDequeue();
+  }
+
   /**
    * Cancel a specific request in the queue before it starts.
    * @param requestId The request ID to cancel.
@@ -271,13 +294,7 @@ export class RequestQueue {
       return false; // Not found, possibly already dequeued or wrong ID
     }
 
-    request.reject(
-      new AxiosError(
-        `Request is cancelled ID: ${requestId}`,
-        'REQUEST_CANCELED',
-        request.config as InternalAxiosRequestConfig,
-      ),
-    );
+    request.reject(new QueuedRequestCanceledError(requestId, request.config));
 
     this.cleanupRequest(request);
 
@@ -293,13 +310,7 @@ export class RequestQueue {
     
     // Reject all pending requests
     for (const item of items) {
-      item.reject(
-        new AxiosError(
-          'Queue cleared',
-          'QUEUE_CLEARED',
-          item.config as InternalAxiosRequestConfig,
-        ),
-      );
+      item.reject(new QueueClearedError(item.config));
       this.cleanupRequest(item);
     }
   }
@@ -360,6 +371,14 @@ export class RequestQueue {
     }, this.queueDelay);
   };
 
+  /**
+   * Dequeue and resolve items while concurrency allows.
+   *
+   * Head-of-line blocking is intentional: if the highest-priority item cannot be
+   * processed (a gate returns false), the drain stops. This ensures gates work as
+   * real barriers — no lower-priority request slips through while a gate is active.
+   * Plugins that need ordered, gated dispatch (e.g. token refresh) rely on this.
+   */
   private drainQueue(): void {
     while (this.inProgressCount < this.maxConcurrent && this.waiting.length > 0) {
       const topItem = this.waiting.peek();
@@ -379,7 +398,17 @@ export class RequestQueue {
   }
 
   private canProcess(config: AxiosRequestConfig): boolean {
-    return this.isCriticalRequest(config) || !this.hasActiveCriticalRequests();
+    if (!this.baseCanProcess(config)) {
+      return false;
+    }
+
+    for (const gate of Array.from(this.processingGates.values())) {
+      if (!gate(config)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /**

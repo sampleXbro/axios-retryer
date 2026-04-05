@@ -1,5 +1,5 @@
 import { createRetryer } from '../src';
-import { createTokenRefreshPlugin } from '../src/plugins';
+import { createManualRetryPlugin, createTokenRefreshPlugin } from '../src/plugins';
 
 const verifyDynamicEventTyping = (): void => {
   const retryer = createRetryer();
@@ -12,10 +12,11 @@ const verifyDynamicEventTyping = (): void => {
   // @ts-expect-error Token refresh events require TokenRefreshPlugin to be registered first.
   retryer.on('onTokenRefreshed', () => undefined);
 
-  // @ts-expect-error Hook-only callbacks are not subscribable events.
-  retryer.on('beforeManualRetry', () => null);
+  // @ts-expect-error Manual replay events require ManualRetryPlugin to be registered first.
+  retryer.on('onManualRetryProcessStarted', () => undefined);
 
   const retryerWithTokenRefresh = retryer.use(createTokenRefreshPlugin(async () => ({ token: 'fresh-token' })));
+  const retryerWithManualRetry = retryer.use(createManualRetryPlugin());
 
   const tokenListener = (token: string): void => {
     expect(token).toBe('fresh-token');
@@ -24,6 +25,7 @@ const verifyDynamicEventTyping = (): void => {
   retryerWithTokenRefresh.on('onTokenRefreshed', tokenListener);
   retryerWithTokenRefresh.off('onTokenRefreshed', tokenListener);
   retryerWithTokenRefresh.triggerAndEmit('onTokenRefreshed', 'fresh-token');
+  retryerWithManualRetry.on('onManualRetryProcessStarted', () => undefined);
 };
 
 describe('RetryManager dynamic event typing', () => {

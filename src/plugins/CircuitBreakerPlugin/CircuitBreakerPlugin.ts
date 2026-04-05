@@ -1,16 +1,20 @@
 import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 
-import { RetryManager } from '../../core/RetryManager';
+import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
+import type { PluginContext } from '../../types';
 import type { RetryPlugin } from '../../types';
 import { assignRequestMetadata, ensureRequestMetadata, getRequestMetadata } from '../../utils/requestMetadata';
+import { CircuitBreakerStateError } from './CircuitBreakerStateError';
 
 type MaybePromise<T> = T | Promise<T>;
 
-export enum CircuitBreakerState {
-  CLOSED = 'CLOSED',
-  OPEN = 'OPEN',
-  HALF_OPEN = 'HALF_OPEN',
-}
+export const CIRCUIT_BREAKER_STATES = {
+  CLOSED: 'CLOSED',
+  OPEN: 'OPEN',
+  HALF_OPEN: 'HALF_OPEN',
+} as const;
+
+export type CircuitBreakerState = (typeof CIRCUIT_BREAKER_STATES)[keyof typeof CIRCUIT_BREAKER_STATES];
 
 export const CIRCUIT_BREAKER_SCOPES = {
   HOST: 'host',
@@ -88,6 +92,13 @@ export interface CircuitBreakerOptions {
    * Timeout multiplier (e.g., 1.5 = 150% of the calculated percentile).
    */
   adaptiveTimeoutMultiplier?: number;
+
+  /**
+   * Maximum number of unique scope keys tracked in the adaptive-timeout response-metrics map.
+   * Prevents unbounded memory growth under adversarial or high-cardinality URL spaces.
+   * When the cap is reached, the oldest entry is evicted. Default: 500.
+   */
+  maxTrackedScopes?: number;
 
   /**
    * Allow specific endpoints to be excluded from circuit breaking.
@@ -233,7 +244,7 @@ function isPromiseLike<T>(value: unknown): value is Promise<T> {
  * @implements {RetryPlugin}
  */
 export class CircuitBreakerPlugin implements RetryPlugin {
-  public static STATES = CircuitBreakerState;
+  public static STATES = CIRCUIT_BREAKER_STATES;
 
   public readonly name = 'CircuitBreakerPlugin';
   public readonly version = '2.0.0';
@@ -245,7 +256,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
   };
   private _requestInterceptorId?: number;
   private _responseInterceptorId?: number;
-  private _manager!: RetryManager;
+  private _context!: PluginContext;
   private _responseMetrics: Record<string, ResponseTimeMetrics> = {};
   private readonly _scopeStateCache = new Map<string, CircuitBreakerScopeState>();
   private readonly _knownScopes = new Map<string, ScopeDetails>();
@@ -266,6 +277,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
       adaptiveTimeoutPercentile: 0.95,
       adaptiveTimeoutSampleSize: 100,
       adaptiveTimeoutMultiplier: 1.5,
+      maxTrackedScopes: 500,
       excludeUrls: [],
     };
 
@@ -277,19 +289,23 @@ export class CircuitBreakerPlugin implements RetryPlugin {
     };
 
     if (!Number.isInteger(this._options.failureThreshold) || this._options.failureThreshold < 1) {
-      throw new Error('failureThreshold must be a positive integer');
+      throw new RetryerConfigError('failureThreshold must be a positive integer', 'failureThreshold', this._options.failureThreshold);
     }
     if (!Number.isInteger(this._options.openTimeout) || this._options.openTimeout < 0) {
-      throw new Error('openTimeout must be a non-negative integer');
+      throw new RetryerConfigError('openTimeout must be a non-negative integer', 'openTimeout', this._options.openTimeout);
     }
     if (!Number.isInteger(this._options.halfOpenMax) || this._options.halfOpenMax < 1) {
-      throw new Error('halfOpenMax must be a positive integer');
+      throw new RetryerConfigError('halfOpenMax must be a positive integer', 'halfOpenMax', this._options.halfOpenMax);
     }
     if (
       this._options.successThreshold !== undefined &&
       (!Number.isInteger(this._options.successThreshold) || this._options.successThreshold < 1)
     ) {
-      throw new Error('successThreshold must be a positive integer');
+      throw new RetryerConfigError(
+        'successThreshold must be a positive integer',
+        'successThreshold',
+        this._options.successThreshold,
+      );
     }
 
     if (this._options.successThreshold > this._options.halfOpenMax) {
@@ -303,9 +319,9 @@ export class CircuitBreakerPlugin implements RetryPlugin {
    *
    * @param {RetryManager} manager - The RetryManager instance.
    */
-  public initialize(manager: RetryManager): void {
-    this._manager = manager;
-    const axiosInstance = manager.axiosInstance;
+  public initialize(context: PluginContext): void {
+    this._context = context;
+    const axiosInstance = context.axiosInstance;
 
     this._log('debug', 'Initializing CircuitBreakerPlugin with options:', {
       ...this._options,
@@ -326,7 +342,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
       const scopeDetails = this._getScopeDetails(config);
       let scopeState = await this._readScopeState(scopeDetails.scopeKey);
 
-      if (scopeState.state === CircuitBreakerState.OPEN) {
+      if (scopeState.state === CIRCUIT_BREAKER_STATES.OPEN) {
         if (Date.now() >= scopeState.nextAttempt) {
           scopeState = await this._transitionToHalfOpen(scopeDetails.scopeKey, scopeState);
         } else {
@@ -341,7 +357,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
         }
       }
 
-      if (scopeState.state === CircuitBreakerState.HALF_OPEN) {
+      if (scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN) {
         if (scopeState.halfOpenCount >= this._options.halfOpenMax) {
           this._log('debug', `Circuit is HALF_OPEN for ${scopeDetails.scopeKey}: too many test requests.`);
           return Promise.reject(
@@ -381,7 +397,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
         const scopeDetails = this._getScopeDetails(response.config);
         const scopeState = await this._readScopeState(scopeDetails.scopeKey);
 
-        if (scopeState.state === CircuitBreakerState.HALF_OPEN) {
+        if (scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN) {
           scopeState.successCount++;
           const successThreshold = this._options.successThreshold || 1;
 
@@ -398,7 +414,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
               `HALF_OPEN success: ${scopeState.successCount}/${successThreshold} successful test requests for ${scopeDetails.scopeKey}`,
             );
           }
-        } else if (scopeState.state === CircuitBreakerState.CLOSED && scopeState.failureCount > 0) {
+        } else if (scopeState.state === CIRCUIT_BREAKER_STATES.CLOSED && scopeState.failureCount > 0) {
           scopeState.failureCount = 0;
           scopeState.lastFailureStatus = undefined;
           scopeState.lastFailureCode = undefined;
@@ -446,7 +462,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
           );
 
           if (
-            scopeState.state === CircuitBreakerState.HALF_OPEN ||
+            scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN ||
             scopeState.failureCount >= this._options.failureThreshold
           ) {
             await this._tripScope(scopeDetails.scopeKey, scopeState);
@@ -466,9 +482,9 @@ export class CircuitBreakerPlugin implements RetryPlugin {
    *
    * @param {RetryManager} manager - The RetryManager instance.
    */
-  public onBeforeDestroyed(manager: RetryManager): void {
+  public onBeforeDestroyed(context: PluginContext): void {
     this._log('debug', 'Removing CircuitBreakerPlugin');
-    const axiosInstance = manager.axiosInstance;
+    const axiosInstance = context.axiosInstance;
     if (this._requestInterceptorId !== undefined) {
       axiosInstance.interceptors.request.eject(this._requestInterceptorId);
     }
@@ -483,17 +499,17 @@ export class CircuitBreakerPlugin implements RetryPlugin {
    */
   public getState(scopeKey?: string): CircuitBreakerState {
     if (scopeKey) {
-      return this._scopeStateCache.get(scopeKey)?.state ?? CircuitBreakerState.CLOSED;
+      return this._scopeStateCache.get(scopeKey)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
     }
 
     const states = Array.from(this._scopeStateCache.values()).map((scopeState) => scopeState.state);
-    if (states.includes(CircuitBreakerState.OPEN)) {
-      return CircuitBreakerState.OPEN;
+    if (states.includes(CIRCUIT_BREAKER_STATES.OPEN)) {
+      return CIRCUIT_BREAKER_STATES.OPEN;
     }
-    if (states.includes(CircuitBreakerState.HALF_OPEN)) {
-      return CircuitBreakerState.HALF_OPEN;
+    if (states.includes(CIRCUIT_BREAKER_STATES.HALF_OPEN)) {
+      return CIRCUIT_BREAKER_STATES.HALF_OPEN;
     }
-    return CircuitBreakerState.CLOSED;
+    return CIRCUIT_BREAKER_STATES.CLOSED;
   }
 
   /**
@@ -558,8 +574,8 @@ export class CircuitBreakerPlugin implements RetryPlugin {
   }
 
   private async _tripScope(scopeKey: string, scopeState: CircuitBreakerScopeState): Promise<void> {
-    if (scopeState.state !== CircuitBreakerState.OPEN) {
-      scopeState.state = CircuitBreakerState.OPEN;
+    if (scopeState.state !== CIRCUIT_BREAKER_STATES.OPEN) {
+      scopeState.state = CIRCUIT_BREAKER_STATES.OPEN;
       scopeState.nextAttempt = Date.now() + this._options.openTimeout;
       scopeState.successCount = 0;
       scopeState.halfOpenCount = 0;
@@ -581,7 +597,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
     scopeKey: string,
     scopeState: CircuitBreakerScopeState,
   ): Promise<CircuitBreakerScopeState> {
-    scopeState.state = CircuitBreakerState.HALF_OPEN;
+    scopeState.state = CIRCUIT_BREAKER_STATES.HALF_OPEN;
     scopeState.halfOpenCount = 0;
     scopeState.successCount = 0;
     await this._writeScopeState(scopeKey, scopeState);
@@ -599,26 +615,28 @@ export class CircuitBreakerPlugin implements RetryPlugin {
     scopeState: CircuitBreakerScopeState,
     message: string,
   ): AxiosError {
-    const circuitError = new Error(message) as AxiosError;
     const errorConfig: AxiosRequestConfig = {
       ...config,
     };
     assignRequestMetadata(errorConfig, { requestRetries: 0 });
 
-    circuitError.config = errorConfig as never;
-    circuitError.code = scopeState.lastFailureCode;
-
-    if (scopeState.lastFailureStatus !== undefined) {
-      circuitError.response = {
+    const response = scopeState.lastFailureStatus !== undefined
+      ? {
         status: scopeState.lastFailureStatus,
         statusText: 'Circuit Open',
         config: errorConfig as never,
         headers: {},
         data: { error: message },
-      } as never;
-    }
+      } as never
+      : undefined;
 
-    return circuitError;
+    return new CircuitBreakerStateError(
+      message,
+      scopeState.state,
+      errorConfig,
+      scopeState.lastFailureCode,
+      response,
+    );
   }
 
   /**
@@ -684,6 +702,11 @@ export class CircuitBreakerPlugin implements RetryPlugin {
     }
 
     if (!this._responseMetrics[scopeDetails.scopeKey]) {
+      const keys = Object.keys(this._responseMetrics);
+      if (keys.length >= this._options.maxTrackedScopes) {
+        // Evict the oldest (first-inserted) scope to keep the map bounded.
+        delete this._responseMetrics[keys[0]];
+      }
       this._responseMetrics[scopeDetails.scopeKey] = {
         times: [],
         sampleSize: this._options.adaptiveTimeoutSampleSize,
@@ -707,10 +730,18 @@ export class CircuitBreakerPlugin implements RetryPlugin {
 
   /**
    * Updates the timeout percentile calculation for a specific scope.
+   * Recalculates only every 10 samples to avoid an O(n log n) sort on every response.
+   * Always calculates on the first sample (currentPercentileMs === 0).
    */
   private _updateTimeoutPercentile(scopeKey: string): void {
     const metrics = this._responseMetrics[scopeKey];
     if (!metrics || metrics.times.length === 0) {
+      return;
+    }
+
+    // Recalculate every min(10, sampleSize) samples to bound the O(n log n) sort cost.
+    const recalcInterval = Math.min(10, metrics.sampleSize);
+    if (metrics.currentPercentileMs > 0 && metrics.times.length % recalcInterval !== 0) {
       return;
     }
 
@@ -762,8 +793,8 @@ export class CircuitBreakerPlugin implements RetryPlugin {
    * Helper method for logging with the appropriate log level.
    */
   private _log(level: 'debug' | 'error' | 'warn', message: string, data?: unknown): void {
-    if (this._manager && typeof this._manager.getLogger === 'function') {
-      const logger = this._manager.getLogger();
+    if (this._context && typeof this._context.getLogger === 'function') {
+      const logger = this._context.getLogger();
       const formattedMsg = `${this.name}: ${message}`;
 
       switch (level) {
@@ -782,7 +813,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
 
   private _createInitialScopeState(): CircuitBreakerScopeState {
     return {
-      state: CircuitBreakerState.CLOSED,
+      state: CIRCUIT_BREAKER_STATES.CLOSED,
       failureCount: 0,
       successCount: 0,
       halfOpenCount: 0,
@@ -795,14 +826,17 @@ export class CircuitBreakerPlugin implements RetryPlugin {
 
   private async _readScopeState(scopeKey: string): Promise<CircuitBreakerScopeState> {
     const storedState = await this._options.stateAdapter.get(scopeKey);
+    // Clone once: isolate from the adapter's internal storage.
     const scopeState = storedState ? cloneScopeState(storedState) : this._createInitialScopeState();
-    this._scopeStateCache.set(scopeKey, cloneScopeState(scopeState));
+    // Cache the same reference; _writeScopeState will replace it with a fresh clone.
+    this._scopeStateCache.set(scopeKey, scopeState);
     return scopeState;
   }
 
   private async _writeScopeState(scopeKey: string, scopeState: CircuitBreakerScopeState): Promise<void> {
+    // Clone once: isolate cache and adapter from the caller's mutable reference.
     const clonedState = cloneScopeState(scopeState);
-    this._scopeStateCache.set(scopeKey, cloneScopeState(clonedState));
+    this._scopeStateCache.set(scopeKey, clonedState);
     await this._options.stateAdapter.set(scopeKey, clonedState);
   }
 
@@ -855,7 +889,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
       return null;
     }
 
-    const baseURL = config.baseURL ?? this._manager?.axiosInstance.defaults.baseURL;
+    const baseURL = config.baseURL ?? this._context?.axiosInstance.defaults.baseURL;
     const isAbsolute = /^[a-z][a-z\d+\-.]*:\/\//i.test(config.url);
 
     if (!isAbsolute && !baseURL) {

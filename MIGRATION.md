@@ -18,7 +18,8 @@ If you are upgrading from any `1.x` release, use this checklist.
 4. Prefer documented plugin imports from `axios-retryer/plugins` or per-plugin entry points.
 5. Update any TypeScript code that listens to plugin-specific events so the manager type is widened through `use()` or an explicit generic.
 6. Re-check `maxRefreshAttempts` if you use `TokenRefreshPlugin`.
-7. If you used the browser bundle, build it locally with `npm run build:browser`.
+7. Move any manual replay usage to `ManualRetryPlugin`. Root `retryFailedRequests()`, `maxRequestsToStore`, `requestStore`, and `beforeManualRetry` are removed in `2.0`.
+8. If you used the browser bundle, build it locally with `npm run build:browser`.
 
 ## Breaking Changes
 
@@ -71,6 +72,8 @@ retryer.on('onMetricsUpdated', (metrics) => {
 });
 ```
 
+`onRetryProcessFinished` remains a core lifecycle event, but it no longer carries a metrics payload. Use `onMetricsUpdated` when you need snapshots.
+
 After:
 
 ```typescript
@@ -83,6 +86,43 @@ retryer.use(createMetricsPlugin());
 retryer.on('onMetricsUpdated', (metrics) => {
   console.log(metrics.successfulRetries);
 });
+```
+
+### Manual replay moved to `ManualRetryPlugin`
+
+In `1.x`, manual replay could be driven from the root manager. In `2.0`, that replay surface lives entirely on `ManualRetryPlugin`.
+
+Before:
+
+```typescript
+import { createRetryer, RETRY_MODES } from 'axios-retryer';
+
+const retryer = createRetryer({
+  mode: RETRY_MODES.MANUAL,
+  maxRequestsToStore: 100,
+  hooks: {
+    beforeManualRetry: (config) => config,
+  },
+});
+
+const responses = await retryer.retryFailedRequests();
+```
+
+After:
+
+```typescript
+import { createRetryer, RETRY_MODES } from 'axios-retryer';
+import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';
+
+const retryer = createRetryer({ mode: RETRY_MODES.MANUAL });
+const manualRetry = createManualRetryPlugin({
+  maxRequestsToStore: 100,
+  beforeRetry: (config) => config,
+});
+
+retryer.use(manualRetry);
+
+const responses = await manualRetry.retryFailedRequests();
 ```
 
 ### Plugin event typing is no longer implied on the root manager
@@ -163,19 +203,45 @@ npm run build:browser
 
 ## Import Guidance
 
-These import styles are supported in `2.0`:
+These import styles are supported in `2.0`, but the per-plugin subpaths are the preferred documented path:
 
 ```typescript
 import { createRetryer } from 'axios-retryer';
-import { createTokenRefreshPlugin, createMetricsPlugin } from 'axios-retryer/plugins';
-```
-
-```typescript
 import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
 import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';
 ```
 
-Avoid deep internal imports from `src/` or undocumented paths.
+```typescript
+import { createTokenRefreshPlugin, createMetricsPlugin } from 'axios-retryer/plugins';
+```
+
+Use the barrel when convenience matters more than explicitness, and avoid deep internal imports from `src/` or undocumented paths.
+
+## Legacy Plugin Hooks Removed
+
+Plugins must subscribe through `retryer.on(...)` inside `initialize()`. The deprecated `plugin.hooks` field no longer runs in `2.0`.
+
+```typescript
+plugin.initialize = (retryer) => {
+  retryer.on('beforeRetry', (config) => {
+    console.log(config.url);
+  });
+};
+```
+
+## Caching Invalidation
+
+`CachingPlugin.invalidateCache()` now prefers explicit exact-key or prefix matching instead of substring semantics.
+
+Preferred direction:
+
+```typescript
+const cachePlugin = createCachePlugin();
+const userKey = cachePlugin.buildCacheKey({ method: 'get', url: '/users/1' });
+
+cachePlugin.invalidateCache({ exact: userKey });
+cachePlugin.invalidateCache({ prefix: 'GET|/users/' });
+```
 
 ## Typical End State
 
@@ -214,4 +280,23 @@ retryer.use(
 ## Notes
 
 - `1.5.4` was prepared but not published. The fixes and API cleanup tracked for that release are included in `2.0.0`.
-- The dedicated plugin barrel `axios-retryer/plugins` is the easiest default import style, but per-plugin subpaths remain supported.
+- The dedicated plugin barrel `axios-retryer/plugins` is kept for compatibility but is deprecated. Prefer focused subpath imports (e.g. `axios-retryer/plugins/CachingPlugin`) for better tree-shaking.
+
+## axios-retryer/plugins barrel — deprecation roadmap
+
+**Measured bundle impact:** The `axios-retryer/plugins` barrel bundles all plugins unconditionally (~52.6 KB raw / ~13.8 KB gzip). Importing from subpaths (e.g. `axios-retryer/plugins/CachingPlugin`) allows bundlers to tree-shake unused plugins, reducing per-plugin cost to ~5–15 KB raw.
+
+**Decision:** The barrel will be removed in the next major release (v3.0.0). Users should migrate to subpath imports now.
+
+**Migration:** Replace:
+
+```js
+import { CachingPlugin, TokenRefreshPlugin } from 'axios-retryer/plugins';
+```
+
+With focused imports:
+
+```js
+import { CachingPlugin } from 'axios-retryer/plugins/CachingPlugin';
+import { TokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
+```

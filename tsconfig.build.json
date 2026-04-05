@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "declaration": true,
+    "declarationDir": "dist/types",
+    "declarationMap": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "target": "ES2019",
+    "module": "ESNext",
+    "sourceMap": false
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "__tests__"
+  ]
+}

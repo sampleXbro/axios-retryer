@@ -1,7 +1,12 @@
 'use strict';
 
-import type { AxiosRetryerMetrics, RetryPlugin } from '../../types';
-import type { RetryManager } from '../../core/RetryManager';
+import type {
+  AxiosRetryerDetailedMetrics,
+  AxiosRetryerMetrics,
+  MetricsRecorder,
+  PluginContext,
+  RetryPlugin,
+} from '../../types';
 import { MetricsCollector } from './MetricsCollector';
 
 const createInitialMetrics = (): AxiosRetryerMetrics => ({
@@ -24,6 +29,15 @@ const createInitialMetrics = (): AxiosRetryerMetrics => ({
   retryDelayDuration: 0,
 });
 
+const EMPTY_TIMER_STATS = {
+  activeTimers: 0,
+  activeRetryTimers: 0,
+};
+
+export interface MetricsPluginEvents {
+  onMetricsUpdated?: (metrics: AxiosRetryerDetailedMetrics) => void;
+}
+
 /**
  * Plugin that enables detailed metrics collection for the RetryManager.
  *
@@ -42,18 +56,51 @@ const createInitialMetrics = (): AxiosRetryerMetrics => ({
  * const metrics = manager.getMetrics();
  * ```
  */
-export class MetricsPlugin implements RetryPlugin {
+export class MetricsPlugin implements RetryPlugin<MetricsPluginEvents> {
   public name = 'MetricsPlugin';
   public version = '1.0.0';
 
+  private context: PluginContext<MetricsPluginEvents> | null = null;
   private metrics: AxiosRetryerMetrics = createInitialMetrics();
   private collector: MetricsCollector = new MetricsCollector(() => this.metrics);
+  private readonly recorder: MetricsRecorder = {
+    recordRequestStart: (priority) => this.collector.recordRequestStart(priority),
+    recordQueueWait: (durationMs) => this.collector.recordQueueWait(durationMs),
+    recordRetrySuccess: (priority) => this.collector.recordRetrySuccess(priority),
+    recordRetryFailure: (priority, error) => this.collector.recordRetryFailure(priority, error),
+    recordRetryAttempt: (attempt, priority) => this.collector.recordRetryAttempt(attempt, priority),
+    recordRetryDelay: (durationMs) => this.collector.recordRetryDelay(durationMs),
+    recordCancellation: (includeErrorType) => this.collector.recordCancellation(includeErrorType),
+    recordTerminalFailure: (isCritical) => this.collector.recordTerminalFailure(isCritical),
+    reset: () => this.collector.reset(),
+    buildDetailedMetrics: (timerStats) => this.collector.buildDetailedMetrics(timerStats),
+    emitMetricsUpdated: () => this.emitMetricsUpdated(),
+  };
 
-  public initialize(manager: RetryManager): void {
-    manager.registerMetricsRecorder(this.collector);
+  public initialize(context: PluginContext<MetricsPluginEvents>): void {
+    this.context = context;
+    context.registerMetricsRecorder(this.recorder);
   }
 
-  public onBeforeDestroyed(manager: RetryManager): void {
-    manager.registerMetricsRecorder(null);
+  public onBeforeDestroyed(context: PluginContext<MetricsPluginEvents>): void {
+    context.registerMetricsRecorder(null);
+    this.context = null;
+  }
+
+  public getMetrics(): AxiosRetryerDetailedMetrics {
+    return this.collector.buildDetailedMetrics(this.context?.getTimerStats() ?? EMPTY_TIMER_STATS);
+  }
+
+  public resetMetrics(): void {
+    this.collector.reset();
+    this.emitMetricsUpdated();
+  }
+
+  private emitMetricsUpdated(): void {
+    if (!this.context) {
+      return;
+    }
+
+    this.context.triggerAndEmit('onMetricsUpdated', this.getMetrics());
   }
 }

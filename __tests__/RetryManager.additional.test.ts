@@ -3,6 +3,7 @@ import AxiosMockAdapter from 'axios-mock-adapter';
 import { RetryManager } from '../src';
 import type { RetryManagerOptions } from '../src';
 import axios, { type AxiosError } from 'axios';
+import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
 
 describe('RetryManager Additional Tests', () => {
   let mock: AxiosMockAdapter;
@@ -25,12 +26,14 @@ describe('RetryManager Additional Tests', () => {
   describe('Request ID Generation', () => {
     it('All IDs should be unique', async () => {
       const idsSet = new Set();
+      const manualRetry = new ManualRetryPlugin();
       // Disable retries to isolate the test behavior
       retryManager = new RetryManager({
         mode: 'automatic',
         retries: 0, // No retries
         axiosInstance: axios.create({ baseURL: 'http://localhost' }),
       });
+      retryManager.use(manualRetry);
       mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
       // Mock the responses to always fail
@@ -55,8 +58,7 @@ describe('RetryManager Additional Tests', () => {
       ]);
 
       // Check the request store
-      const requestStore = (retryManager as any).requestStore;
-      const storedRequests = requestStore.getAll();
+      const storedRequests = manualRetry.getStoredRequests();
       storedRequests.forEach((request) => {
         idsSet.add(request.__axiosRetryer?.requestId);
       });
@@ -121,6 +123,8 @@ describe('RetryManager Additional Tests', () => {
     });
 
     test('should allow per-request mode override', async () => {
+      const manualRetry = new ManualRetryPlugin();
+      retryManager.use(manualRetry);
       mock.onGet('/override-mode').reply(500);
 
       await retryManager
@@ -130,8 +134,7 @@ describe('RetryManager Additional Tests', () => {
         })
         .catch(() => {});
 
-      const requestStore = retryManager['requestStore'];
-      expect(requestStore.getAll()).toHaveLength(1); // Should be stored for manual retry
+      expect(manualRetry.getStoredRequests()).toHaveLength(1);
     });
   });
 
@@ -333,9 +336,7 @@ describe('RetryManager Additional Tests', () => {
 
       await retryManager.axiosInstance.get('/cleanup');
 
-      expect(retryManager['activeRequests'].size).toBe(0);
-      const requestStore = retryManager['requestStore'];
-      expect(requestStore.getAll()).toHaveLength(0);
+      expect(retryManager['requestLifecycle']['activeRequests'].size).toBe(0);
     });
 
     test('should handle multiple request cleanups correctly', async () => {
@@ -350,7 +351,7 @@ describe('RetryManager Additional Tests', () => {
           .catch(() => {}),
       ]);
 
-      expect(retryManager['activeRequests'].size).toBe(0);
+      expect(retryManager['requestLifecycle']['activeRequests'].size).toBe(0);
     });
   });
 });

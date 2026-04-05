@@ -6,6 +6,7 @@ import {
   AXIOS_RETRYER_REQUEST_PRIORITIES,
   AXIOS_RETRYER_BACKOFF_TYPES,
   RetryManager,
+  type PluginContext,
 } from '../../src';
 import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
@@ -264,9 +265,9 @@ describe('Functional API Integration Tests', () => {
         version: '1.0.0',
         beforeRetry: jest.fn(),
         afterRetry: jest.fn(),
-        initialize: (manager: RetryManager) => {
-          manager.on('beforeRetry', requestTracker.beforeRetry);
-          manager.on('afterRetry', requestTracker.afterRetry);
+        initialize: (context: PluginContext) => {
+          context.on('beforeRetry', requestTracker.beforeRetry);
+          context.on('afterRetry', requestTracker.afterRetry);
         },
       };
 

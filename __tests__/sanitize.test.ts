@@ -1,4 +1,4 @@
-import { sanitizeData, sanitizeHeaders, sanitizeUrl } from '../src/utils/sanitize';
+import { sanitizeData, sanitizeHeaders, sanitizeUrl } from '../src/plugins/DebugSanitizationPlugin/sanitize';
 
 describe('Sanitization utilities', () => {
   describe('sanitizeHeaders', () => {

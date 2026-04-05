@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { createRetryer, RetryManager, AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../../src';
+import { createRetryer, RetryManager, AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES, type PluginContext } from '../../src';
+import { ManualRetryPlugin } from '../../src/plugins/ManualRetryPlugin';
 import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
 describe('End-to-End Integration Tests', () => {
@@ -188,14 +189,11 @@ describe('End-to-End Integration Tests', () => {
       // Make a request to initialize internals
       await retryer.axiosInstance.get('/cleanup-test');
 
-      // Get initial timer stats
-      const initialTimers = retryer.getTimerStats();
-
       // Destroy the instance
       retryer.destroy();
 
-      // Verify cleanup
-      const finalTimers = retryer.getTimerStats();
+      // Verify cleanup via getMetrics().timerHealth
+      const finalTimers = retryer.getMetrics().timerHealth;
       expect(finalTimers.activeTimers).toBe(0);
       expect(finalTimers.activeRetryTimers).toBe(0);
 
@@ -310,12 +308,13 @@ describe('End-to-End Integration Tests', () => {
 
   describe('Manual Mode Integration', () => {
     it('should store failed requests and allow manual retry', async () => {
+      const manualRetry = new ManualRetryPlugin({ maxRequestsToStore: 10 });
       const retryer = new RetryManager({
         axiosInstance,
         mode: RETRY_MODES.MANUAL,
         retries: 0,
-        maxRequestsToStore: 10
       });
+      retryer.use(manualRetry);
 
       // Setup failing endpoint
       mock.onGet('/store-and-retry').reply(500, { error: 'server error' });
@@ -327,7 +326,7 @@ describe('End-to-End Integration Tests', () => {
        mock.onGet('/store-and-retry').reply(200, { data: 'retry success' });
 
        // Retry stored requests
-       const retryResults = await retryer.retryFailedRequests();
+       const retryResults = await manualRetry.retryFailedRequests();
        
        expect(retryResults).toHaveLength(1);
        expect(retryResults[0].status).toBe(200);
@@ -349,15 +348,15 @@ describe('End-to-End Integration Tests', () => {
       const testPlugin = {
         name: 'TestPlugin',
         version: '1.0.0',
-        initialize: (manager: RetryManager) => {
-          manager.on('beforeRetry', (config: AxiosRequestConfig) => {
+        initialize: (context: PluginContext) => {
+          context.on('beforeRetry', (config: AxiosRequestConfig) => {
             pluginCalls.push('beforeRetry');
             config.headers = { ...config.headers, 'X-Plugin-Retry': 'true' };
           });
-          manager.on('afterRetry', () => {
+          context.on('afterRetry', () => {
             pluginCalls.push('afterRetry');
           });
-          manager.on('onFailure', () => {
+          context.on('onFailure', () => {
             pluginCalls.push('onFailure');
           });
         }

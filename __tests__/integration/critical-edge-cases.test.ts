@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { createRetryer, RetryManager, QueueFullError, RETRY_MODES } from '../../src';
+import { createRetryer, RetryManager, QueueFullError, RETRY_MODES, type PluginContext } from '../../src';
+import { ManualRetryPlugin } from '../../src/plugins/ManualRetryPlugin';
 import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
 describe('Critical Edge Cases & Error Scenarios', () => {
@@ -160,8 +161,8 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const errorPlugin = {
         name: 'ErrorPlugin',
         version: '1.0.0',
-        initialize: (manager: RetryManager) => {
-          manager.on('beforeRetry', () => {
+        initialize: (context: PluginContext) => {
+          context.on('beforeRetry', () => {
             throw new Error('Plugin error');
           });
         }
@@ -247,7 +248,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         retryer.destroy();
       }).not.toThrow();
 
-      const finalStats = retryer.getTimerStats();
+      const finalStats = retryer.getMetrics().timerHealth;
       expect(finalStats.activeTimers).toBe(0);
       expect(finalStats.activeRetryTimers).toBe(0);
     });
@@ -272,27 +273,31 @@ describe('Critical Edge Cases & Error Scenarios', () => {
 
   describe('Manual Mode Edge Cases', () => {
     it('should handle manual mode with no failures', async () => {
+      const manualRetry = new ManualRetryPlugin();
       const retryer = createRetryer({
         axiosInstance,
         mode: RETRY_MODES.MANUAL,
         retries: 2
       });
+      retryer.use(manualRetry);
 
       mock.onGet('/success').reply(200, { success: true });
 
       await retryer.axiosInstance.get('/success');
 
-      const results = await retryer.retryFailedRequests();
+      const results = await manualRetry.retryFailedRequests();
       expect(results).toHaveLength(0);
     });
 
     it('should handle manual retry of failed requests', async () => {
+      const manualRetry = new ManualRetryPlugin();
       const retryer = createRetryer({
         axiosInstance,
         mode: RETRY_MODES.MANUAL,
         retries: 1,
         throwErrorOnFailedRetries: false
       });
+      retryer.use(manualRetry);
 
       let callCount = 0;
       mock.onGet('/manual-retry').reply(() => {
@@ -307,7 +312,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       await retryer.axiosInstance.get('/manual-retry');
 
       // Manual retry should succeed
-      const results = await retryer.retryFailedRequests();
+      const results = await manualRetry.retryFailedRequests();
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe(200);
     });
@@ -484,8 +489,8 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const result = await requestPromise;
       expect((result as any).cancelled).toBe(true);
 
-      const finalStats = retryer.getTimerStats();
+      const finalStats = retryer.getMetrics().timerHealth;
       expect(finalStats.activeRetryTimers).toBe(0);
     });
   });
-}); 
+});

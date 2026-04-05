@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { createRetryer, RetryManager } from '../../src';
+import { createRetryer, RetryManager, type PluginContext } from '../../src';
 
 jest.setTimeout(15000);
 
@@ -194,7 +194,8 @@ describe('Plugin Integration Tests', () => {
       // Add both plugins
       const cachingPlugin = new CachingPlugin({
         timeToRevalidate: 3000,
-        maxItems: 50
+        maxItems: 50,
+        skipWhenAuthPresent: false,
       });
 
       let apiCalls = 0;
@@ -284,8 +285,8 @@ describe('Plugin Integration Tests', () => {
       const faultyHookPlugin = {
         name: 'FaultyHookPlugin',
         version: '1.0.0',
-        initialize: (manager: RetryManager) => {
-          manager.on('beforeRetry', () => {
+        initialize: (context: PluginContext) => {
+          context.on('beforeRetry', () => {
             throw new Error('Hook failed');
           });
         }

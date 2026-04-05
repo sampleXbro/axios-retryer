@@ -14,7 +14,7 @@ async function waitForRetryTimers(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const stats = retryManager.getTimerStats();
+    const stats = retryManager.getMetrics().timerHealth;
     if (stats.activeRetryTimers >= minCount) {
       return stats;
     }
@@ -22,7 +22,7 @@ async function waitForRetryTimers(
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
-  return retryManager.getTimerStats();
+  return retryManager.getMetrics().timerHealth;
 }
 
 describe('Timer Accumulation Fixes - Performance Tests', () => {
@@ -51,7 +51,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       // Mock server to return failure on first calls
       mockAdapter.onGet('/test').replyOnce(500).onGet('/test').reply(200, 'success');
 
-      const initialTimerStats = retryManager.getTimerStats();
+      const initialTimerStats = retryManager.getMetrics().timerHealth;
       expect(initialTimerStats.activeTimers).toBe(0);
       expect(initialTimerStats.activeRetryTimers).toBe(0);
 
@@ -68,7 +68,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       retryManager.cancelAllRequests();
 
       // Verify timers are cleaned up
-      const statsAfterCancel = retryManager.getTimerStats();
+      const statsAfterCancel = retryManager.getMetrics().timerHealth;
       expect(statsAfterCancel.activeRetryTimers).toBe(0);
 
       // Request should be cancelled
@@ -119,7 +119,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       retryManager.cancelAllRequests();
 
       // Verify all timers are cleaned up
-      const statsAfterCancel = retryManager.getTimerStats();
+      const statsAfterCancel = retryManager.getMetrics().timerHealth;
       expect(statsAfterCancel.activeRetryTimers).toBe(0);
       expect(statsAfterCancel.activeTimers).toBe(0);
 
@@ -150,7 +150,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       await Promise.all(requests);
 
       // Check that no timers are left hanging
-      const finalStats = retryManager.getTimerStats();
+      const finalStats = retryManager.getMetrics().timerHealth;
       expect(finalStats.activeRetryTimers).toBe(0);
       expect(finalStats.activeTimers).toBe(0);
 
@@ -179,7 +179,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       // Monitor timer health during execution
       const healthChecks: number[] = [];
       const healthMonitor = setInterval(() => {
-        const stats = retryManager.getTimerStats();
+        const stats = retryManager.getMetrics().timerHealth;
         healthChecks.push(stats.activeRetryTimers);
       }, 10);
 
@@ -187,7 +187,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       clearInterval(healthMonitor);
 
       // Verify no timers are left
-      const finalStats = retryManager.getTimerStats();
+      const finalStats = retryManager.getMetrics().timerHealth;
       expect(finalStats.activeRetryTimers).toBe(0);
       expect(finalStats.activeTimers).toBe(0);
 
@@ -289,7 +289,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       expect(duration).toBeLessThan(30000); // 30 seconds max
 
       // Verify no timers are left
-      const finalStats = retryManager.getTimerStats();
+      const finalStats = retryManager.getMetrics().timerHealth;
       expect(finalStats.activeRetryTimers).toBe(0);
     });
 
@@ -306,14 +306,14 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
       // Wait for retry timers to be scheduled
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      const statsBeforeDestroy = retryManager.getTimerStats();
+      const statsBeforeDestroy = retryManager.getMetrics().timerHealth;
       expect(statsBeforeDestroy.activeRetryTimers).toBeGreaterThan(0);
 
       // Destroy should clean up all timers
       retryManager.destroy();
 
       // Verify cleanup
-      const statsAfterDestroy = retryManager.getTimerStats();
+      const statsAfterDestroy = retryManager.getMetrics().timerHealth;
       expect(statsAfterDestroy.activeRetryTimers).toBe(0);
       expect(statsAfterDestroy.activeTimers).toBe(0);
 
@@ -351,7 +351,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
         // Monitor timer health throughout
         const healthSamples: number[] = [];
         const monitor = setInterval(() => {
-          const stats = stressManager.getTimerStats();
+          const stats = stressManager.getMetrics().timerHealth;
           healthSamples.push(stats.activeTimers + stats.activeRetryTimers);
         }, 10);
 
@@ -359,7 +359,7 @@ describe('Timer Accumulation Fixes - Performance Tests', () => {
         clearInterval(monitor);
 
         // Verify final cleanup
-        const finalStats = stressManager.getTimerStats();
+        const finalStats = stressManager.getMetrics().timerHealth;
         expect(finalStats.activeRetryTimers).toBe(0);
         expect(finalStats.activeTimers).toBe(0);
 

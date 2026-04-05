@@ -1,8 +1,5 @@
-import type { RetryEventArgs, RetryEventListener, RetryManagerEvents } from '../types';
-import { RetryLogger } from '../services/logger';
+import type { Logger, RetryEventArgs, RetryEventListener, RetryManagerEvents } from '../types';
 import { getRequestMetadata } from '../utils/requestMetadata';
-
-type GenericHookMap = Partial<Record<string, (...args: readonly unknown[]) => unknown>>;
 
 type HookListeners<TPluginEvents extends object> = {
   [K in keyof RetryManagerEvents<TPluginEvents>]?: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[];
@@ -10,8 +7,7 @@ type HookListeners<TPluginEvents extends object> = {
 
 type EventBusOptions<TPluginEvents extends object> = {
   hooks?: Partial<RetryManagerEvents<TPluginEvents>>;
-  logger: RetryLogger;
-  getPlugins: () => Iterable<{ hooks?: GenericHookMap }>;
+  logger: Logger;
 };
 
 export class EventBus<TPluginEvents extends object = {}> {
@@ -35,18 +31,10 @@ export class EventBus<TPluginEvents extends object = {}> {
       const hook = this.options.hooks?.[hookName];
       if (hook) {
         (hook as (...hookArgs: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>) => unknown)(...args);
+        this.options.logger.debug(`Hook "${String(hookName)}" executed`, {
+          requestId: this.extractRequestId(args[0]),
+        });
       }
-
-      Array.from(this.options.getPlugins()).forEach((plugin) => {
-        const pluginHook = plugin.hooks?.[String(hookName)];
-        if (pluginHook) {
-          pluginHook(...args);
-        }
-      });
-
-      this.options.logger.debug(`Hook "${String(hookName)}" executed`, {
-        requestId: this.extractRequestId(args[0]),
-      });
     } catch (error) {
       this.options.logger.error(`Error executing "${String(hookName)}" hook:`, error);
     }
@@ -109,6 +97,18 @@ export class EventBus<TPluginEvents extends object = {}> {
 
   public clear(): void {
     this.listeners = {};
+  }
+
+  public hasListeners<K extends keyof RetryManagerEvents<TPluginEvents>>(event: K): boolean {
+    return Boolean(this.listeners[event]?.length);
+  }
+
+  public hasConfiguredHook<K extends keyof RetryManagerEvents<TPluginEvents>>(event: K): boolean {
+    return typeof this.options.hooks?.[event] === 'function';
+  }
+
+  public hasSubscriptions<K extends keyof RetryManagerEvents<TPluginEvents>>(event: K): boolean {
+    return this.hasConfiguredHook(event) || this.hasListeners(event);
   }
 
   private extractRequestId(value: unknown): string | undefined {

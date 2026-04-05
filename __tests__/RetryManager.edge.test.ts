@@ -12,13 +12,13 @@ describe('RetryManager Edge Scenarios', function () {
     retryManager = new RetryManager({
       mode: 'automatic',
       retries: 3,
-      requestStore: new InMemoryRequestStore(),
     });
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
   });
 
   afterEach(function () {
     mock.reset();
+    retryManager.destroy();
   });
 
   it('Simultaneous retries and cancellations', (done) => {
@@ -31,8 +31,6 @@ describe('RetryManager Edge Scenarios', function () {
 
     requestPromise.catch((err) => {
       expect(err.message).toContain('Request aborted');
-      const requestStore = retryManager['requestStore'];
-      expect(requestStore.getAll().length).toBe(1);
       done();
     });
   });
@@ -98,12 +96,10 @@ describe('RetryManager Edge Scenarios', function () {
     mock.onGet('/non-retryable').reply(400, 'Bad Request');
 
     await expect(retryManager.axiosInstance.get('/non-retryable')).rejects.toThrow();
-    const requestStore = (retryManager as any).requestStore;
-    expect(requestStore.getAll()).toHaveLength(0);
   });
 
   test('should clear request store', () => {
-    const requestStore = (retryManager as any).requestStore;
+    const requestStore = new InMemoryRequestStore();
     requestStore.add({ url: '/stored-request' });
     expect(requestStore.getAll()).toHaveLength(1);
 
@@ -128,7 +124,7 @@ describe('RetryManager Edge Scenarios', function () {
     // Set up the AbortController and request ID
     const controller = new AbortController();
     const requestId = 'cancel-specific';
-    retryManager['activeRequests'].set(requestId, controller);
+    retryManager['requestLifecycle']['activeRequests'].set(requestId, controller);
 
     // Start the request and immediately cancel it
     const mockPromise = retryManager.axiosInstance.get('/specific-cancel', { signal: controller.signal });
@@ -140,6 +136,6 @@ describe('RetryManager Edge Scenarios', function () {
     });
 
     // Ensure the request was removed from activeRequests
-    expect(retryManager['activeRequests'].has(requestId)).toBe(false);
+    expect(retryManager['requestLifecycle']['activeRequests'].has(requestId)).toBe(false);
   });
 });

@@ -1,8 +1,13 @@
 export { TokenRefreshPlugin } from './TokenRefreshPlugin';
+export type { TokenRefreshPluginEvents } from './TokenRefreshPlugin';
+export { MissingTokenRefreshHandlerError } from './MissingTokenRefreshHandlerError';
+export { TokenRefreshAbortError } from './TokenRefreshAbortError';
+export { TokenRefreshFailedError } from './TokenRefreshFailedError';
+export { TokenRefreshTimeoutError } from './TokenRefreshTimeoutError';
 export type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
-export type { TokenRefreshPluginEvents } from '../../types';
 
 import { TokenRefreshPlugin } from './TokenRefreshPlugin';
+import { TokenRefreshAbortError } from './TokenRefreshAbortError';
 import type { TokenRefreshHandler, TokenRefreshPluginOptions } from './types';
 
 /**
@@ -19,7 +24,7 @@ import type { TokenRefreshHandler, TokenRefreshPluginOptions } from './types';
  *   async (axiosInstance) => {
  *     const refreshToken = localStorage.getItem('refreshToken');
  *     if (!refreshToken) {
- *       throw new Error('Refresh token not found');
+ *       throw new TokenRefreshAbortError('Refresh token not found');
  *     }
  *     const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });
  *     return { token: data.accessToken };

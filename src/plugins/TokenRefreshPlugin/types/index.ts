@@ -19,7 +19,13 @@ export interface TokenRefreshPluginOptions {
   tokenPrefix?: string;
   /** HTTP status codes that trigger a token refresh (e.g., [401, 419]). */
   refreshStatusCodes?: readonly number[];
-  /** 
+  /**
+   * Maximum backoff delay in ms between refresh retry attempts.
+   * Caps the exponential backoff to prevent multi-minute stalls with high maxRefreshAttempts.
+   * Default: 30_000 (30 seconds).
+   */
+  maxRefreshBackoffMs?: number;
+  /**
    * Optional function to detect auth errors in response bodies (for APIs that return 200 with error in body)
    * Return true if response contains an auth error that should trigger token refresh
    */

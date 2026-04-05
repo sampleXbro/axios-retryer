@@ -2,15 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
-## 2.0.0 - 04.04.2026
+## 2.0.0 - 05.04.2026
 
 > `1.5.4` was prepared but never published. The fixes and API cleanup planned for that release ship in `2.0.0`.
 
 ### ⚠️ Breaking Changes
 - **Core sanitization options moved to `DebugSanitizationPlugin`.** The root `RetryManager` options no longer accept `enableSanitization` or `sanitizeOptions`; install the sanitization plugin explicitly when you need redacted debug logs.
 - **Populated retry metrics now require `MetricsPlugin`.** `getMetrics()` still returns the full metrics shape, but live counters and `onMetricsUpdated` reporting are now opt-in to keep the core smaller.
+- **Root manual replay moved fully to `ManualRetryPlugin`.** `retryFailedRequests()`, `maxRequestsToStore`, `requestStore`, and `beforeManualRetry` are no longer part of the core manager surface in `2.0`.
+- **Legacy `plugin.hooks` support was removed.** Plugins must subscribe through `retryer.on(...)` inside `initialize()`.
+- **`onRetryProcessFinished` is now lifecycle-only.** It no longer carries a metrics payload; use `onMetricsUpdated` with `MetricsPlugin` when you need snapshots.
 - **The browser bundle is now an optional local build.** Generate it with `npm run build:browser` when you need a script-tag artifact.
 - **`maxRefreshAttempts` now means the exact number of refresh attempts.** Previously the loop ran `maxRefreshAttempts + 1` times, so `maxRefreshAttempts: 3` silently produced 4 attempts. If you relied on the old (off-by-one) behavior, decrease your value by 1 (e.g. `3` → `2` to keep the same total attempts).
+- **`CriticalRequestPlugin` removed.** Prefer built-in request priority (`CRITICAL` / `RequestPriority`) and queue `canProcess` customization for similar behavior.
+
+### ✨ Added
+- **`RequestDependencyPlugin`** (documented subpath `axios-retryer/plugins/RequestDependencyPlugin`) for dependency-aware request gating
+- **Core lifecycle and resource management** (`RequestLifecycleManager`, `RetryManagerDisposer`, `TimerManager`) to clarify teardown and timer ownership
+- **Focused `tsconfig.build.json`** for production builds alongside root `tsconfig.json` for tooling and tests
 
 ### 🐛 Bug Fixes
 - Fixed `TokenRefreshPlugin` replay flow so refreshed business requests go back through `RetryManager` instead of bypassing queueing, metrics, cancellation handling, and other plugins
@@ -19,6 +28,7 @@ All notable changes to this project will be documented in this file.
 - Fixed retry metrics initialization and empty-metrics snapshots so instances no longer share nested metric state and averages no longer return `NaN`
 - Fixed failure accounting for `retries: 0` and terminal failure paths so production metrics are now internally consistent
 - Fixed failed-request store eviction to remove the oldest stored request instead of the newest one
+- Standardized library-thrown errors into named classes across core and plugin flows, including config validation, plugin registration, queue state, circuit-breaker fail-fast responses, cache key generation, and token refresh failures
 
 ### ⚡ Performance & Benchmarking
 - Reworked the benchmark suite around deterministic, user-facing scenarios instead of noisy random demos
@@ -27,13 +37,16 @@ All notable changes to this project will be documented in this file.
 - Preserved runtime defaults for end users while explicitly benchmarking the low-latency queue configuration
 
 ### 🧪 Testing
-- Added regression coverage for token refresh replay, interceptor cleanup, queue wait metrics, retry-disabled terminal failures, request store eviction, and benchmark helper utilities
-- Full suite validated at `55/55` test suites and `519/519` tests passing
+- Added regression coverage for token refresh replay, interceptor cleanup, queue wait metrics, retry-disabled terminal failures, request store eviction, benchmark helper utilities, error standardization, auth and metadata safety, lifecycle teardown, and caching storage adapters
+- Full suite validated at `63/63` test suites and `630/630` tests passing
 - Release benchmark suite validated at `7/7` benchmarks passing
 
 ### 📚 Documentation
-- Updated the README to reflect the current core-vs-plugin public API, plugin barrel imports, metrics plugin, and sanitization plugin
-- Added a dedicated `1.x` → `2.0` migration guide
+- Updated the README to reflect the current core-vs-plugin public API, per-plugin entry points, `RequestDependencyPlugin`, metrics and sanitization plugins, and current benchmark and test counts
+- Added and refined the `1.x` → `2.0` migration guide (including metrics vs manual-replay ordering and barrel deprecation notes)
+- Refreshed `SECURITY.md` supported-version policy for `2.x`
+- Refreshed `KNOWN_ISSUES.md` for `2.0` behavior and current test metadata
+- Removed obsolete `PRODUCTION_READINESS.md`; use `README.md` and `BENCHMARK_RESULTS.md` for performance and validation context
 
 ## 1.5.3 - 04.05.2025
 

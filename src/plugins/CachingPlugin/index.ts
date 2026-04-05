@@ -1,7 +1,26 @@
-export { CachingPlugin } from './CachingPlugin';
-export { InMemoryCacheStorage, type CacheStorage, type CachedItem, type CachingPluginOptions } from './CachingPlugin';
+import 'axios';
 
-import { CachingPlugin, type CachingPluginOptions } from './CachingPlugin';
+export { CachingPlugin } from './CachingPlugin';
+export { InvalidCacheKeyError } from './InvalidCacheKeyError';
+export {
+  InMemoryCacheStorage,
+  type CacheInvalidationMatcher,
+  type CacheKeyBuilder,
+  type CacheKeyBuilderContext,
+  type CacheStorageEntry,
+  type CacheStorage,
+  type CachedItem,
+  type CachingPluginOptions,
+  type CachingRequestOptions,
+} from './CachingPlugin';
+
+import { CachingPlugin, type CachingPluginOptions, type CachingRequestOptions } from './CachingPlugin';
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    __cachingOptions?: CachingRequestOptions;
+  }
+}
 
 /**
  * Creates a CachingPlugin instance.

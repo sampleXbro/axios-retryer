@@ -9,18 +9,16 @@ export {
   type RetryEventListener,
   type RetryManagerOptions,
   type RetryStrategy,
-  type RequestStore,
   type RetryPlugin,
-  type MetricsRecorder,
+  type PluginContext,
   type AxiosRetryerBackoffType,
   type AxiosRetryerHttpMethod,
   type AxiosRetryerRequestMetadata,
   type AxiosRetryerRequestPriority,
   type AxiosRetryerRetryableStatus,
   type AxiosRetryerStatusRange,
-  type AxiosRetryerMetrics,
   type AxiosRetryerDetailedMetrics,
-  type CriticalRequestProvider,
+  type Logger,
   RETRY_MODES,
   AXIOS_RETRYER_HTTP_METHODS,
   AXIOS_RETRYER_REQUEST_PRIORITIES,
@@ -29,21 +27,22 @@ export {
 
 // Export core functionality
 export { RetryManager } from './core/RetryManager';
-export { QueueFullError } from './core/errors/QueueFullError';
+export {
+  AxiosRetryerError,
+  PluginRegistrationError,
+  QueueClearedError,
+  QueueDestroyedError,
+  QueueFullError,
+  QueuedRequestCanceledError,
+  RequestAbortedError,
+  RetryerConfigError,
+} from './core/errors';
 export { DefaultRetryStrategy } from './core/strategies/DefaultRetryStrategy';
 
-// Only export type definitions for plugins
-// The actual plugin implementations are exported from their own entry points
-export type { TokenRefreshPluginOptions } from './plugins/TokenRefreshPlugin/types/';
-export type { ManualRetryPluginOptions } from './plugins/ManualRetryPlugin/ManualRetryPlugin';
-export type { DebugSanitizationPluginOptions } from './plugins/DebugSanitizationPlugin/DebugSanitizationPlugin';
-export type { CriticalRequestPluginOptions } from './plugins/CriticalRequestPlugin/CriticalRequestPlugin';
-
-// Note: Removed direct plugin exports from the root entry to keep the core surface compact.
-// Users can import plugins from the convenience barrel:
-// import { TokenRefreshPlugin } from 'axios-retryer/plugins';
-// Or from dedicated plugin entry points when preferred:
+// Note: Plugin-specific types and implementations are exported from documented plugin entry points.
+// Prefer dedicated subpaths such as:
 // import { TokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
+// The `axios-retryer/plugins` barrel remains available as a documented convenience entry.
 
 // ========== Functional API ==========
 
@@ -52,6 +51,8 @@ import { DefaultRetryStrategy } from './core/strategies/DefaultRetryStrategy';
 import type { AxiosError } from 'axios';
 import type { AxiosRetryerBackoffType, RetryManagerOptions, RetryStrategy } from './types';
 
+// Prevents TypeScript from widening TPluginEvents based on call-site usage,
+// ensuring the type parameter is always inferred from the declaration site only.
 type NoInferType<T> = [T][T extends unknown ? 0 : never];
 
 /**

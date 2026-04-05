@@ -1,6 +1,8 @@
 export { CircuitBreakerPlugin } from './CircuitBreakerPlugin';
+export { CircuitBreakerStateError } from './CircuitBreakerStateError';
 export {
   CIRCUIT_BREAKER_SCOPES,
+  CIRCUIT_BREAKER_STATES,
   CircuitBreakerState,
   InMemoryCircuitBreakerStateAdapter,
   type CircuitBreakerFailureRecord,

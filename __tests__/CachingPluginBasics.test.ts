@@ -75,37 +75,37 @@ describe('CachingPlugin Core Functionality', () => {
     expect(key4).toContain('Bearer token');
   });
 
-  test('invalidateCache with RegExp removes matching entries', () => {
+  test('invalidateCache with RegExp removes matching entries', async () => {
     cachingPlugin = new CachingPlugin();
     manager.use(cachingPlugin);
     
-    // Set up direct cache access for testing
-    const cache = cachingPlugin['cache'];
+    const storage = cachingPlugin['storage'];
     
-    // Add test entries to cache
-    cache.set('GET|/api/users/1|||', { 
+    // Add test entries to storage
+    storage.set('GET|/api/users/1|||', { 
       response: { data: { id: 1 } },
       timestamp: Date.now()
     });
-    cache.set('GET|/api/users/2|||', { 
+    storage.set('GET|/api/users/2|||', { 
       response: { data: { id: 2 } },
       timestamp: Date.now()
     });
-    cache.set('GET|/api/products/1|||', { 
+    storage.set('GET|/api/products/1|||', { 
       response: { data: { id: 1 } },
       timestamp: Date.now()
     });
     
     // Test RegExp invalidation
-    const count = cachingPlugin.invalidateCache(/users/);
+    const count = await cachingPlugin.invalidateCache(/users/);
+    const entries = storage.entries();
     expect(count).toBe(2);
-    expect(cache.size).toBe(1);
+    expect(entries).toHaveLength(1);
     
     // Verify right cache entry remains
-    expect(cache.has('GET|/api/products/1|||')).toBe(true);
+    expect(entries[0].key).toBe('GET|/api/products/1|||');
   });
 
-  test('runCacheCleanup removes expired items', () => {
+  test('runCacheCleanup removes expired items', async () => {
     jest.useFakeTimers();
     const now = Date.now();
     
@@ -115,72 +115,71 @@ describe('CachingPlugin Core Functionality', () => {
     });
     manager.use(cachingPlugin);
     
-    // Set up direct cache access for testing
-    const cache = cachingPlugin['cache'];
+    const storage = cachingPlugin['storage'];
     
     // Add test entries with different ages
-    cache.set('fresh', { 
+    storage.set('fresh', { 
       response: { data: 'fresh' },
       timestamp: now
     });
     
-    cache.set('old', { 
+    storage.set('old', { 
       response: { data: 'old' },
       timestamp: now - 2000 // 2 seconds old, should be expired
     });
     
     // Before cleanup
-    expect(cache.size).toBe(2);
+    expect(storage.entries()).toHaveLength(2);
     
     // Run cleanup
     const runCacheCleanup = cachingPlugin['runCacheCleanup'].bind(cachingPlugin);
-    runCacheCleanup();
+    await runCacheCleanup();
+    const entries = storage.entries();
     
     // Verify old item was removed
-    expect(cache.size).toBe(1);
-    expect(cache.has('fresh')).toBe(true);
-    expect(cache.has('old')).toBe(false);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('fresh');
   });
 
-  test('runCacheCleanup enforces maxItems', () => {
+  test('runCacheCleanup enforces maxItems', async () => {
     // Create plugin with maxItems
     cachingPlugin = new CachingPlugin({
       maxItems: 2
     });
     manager.use(cachingPlugin);
     
-    // Set up direct cache access for testing
-    const cache = cachingPlugin['cache'];
+    const storage = cachingPlugin['storage'];
     
     // Add test entries with timestamps in order
     const now = Date.now();
-    cache.set('oldest', { 
+    storage.set('oldest', { 
       response: { data: 'oldest' },
       timestamp: now - 3000 // Oldest
     });
     
-    cache.set('middle', { 
+    storage.set('middle', { 
       response: { data: 'middle' },
       timestamp: now - 2000
     });
     
-    cache.set('newest', { 
+    storage.set('newest', { 
       response: { data: 'newest' },
       timestamp: now - 1000 // Newest
     });
     
     // Before cleanup
-    expect(cache.size).toBe(3);
+    expect(storage.entries()).toHaveLength(3);
     
     // Run cleanup
     const runCacheCleanup = cachingPlugin['runCacheCleanup'].bind(cachingPlugin);
-    runCacheCleanup();
+    await runCacheCleanup();
+    const keys = storage.entries().map((entry) => entry.key);
     
     // Should keep only the 2 newest items
-    expect(cache.size).toBe(2);
-    expect(cache.has('oldest')).toBe(false);
-    expect(cache.has('middle')).toBe(true);
-    expect(cache.has('newest')).toBe(true);
+    expect(keys).toHaveLength(2);
+    expect(keys).not.toContain('oldest');
+    expect(keys).toContain('middle');
+    expect(keys).toContain('newest');
   });
 
   test('startPeriodicCleanup and stopPeriodicCleanup', () => {

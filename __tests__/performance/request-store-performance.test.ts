@@ -1,5 +1,6 @@
 import { RetryManager } from '../../src';
 import AxiosMockAdapter from 'axios-mock-adapter';
+import { ManualRetryPlugin } from '../../src/plugins/ManualRetryPlugin';
 import { getMemoryUsage, tryGC, calculateMemoryImpact } from './utils/memory-utils';
 
 describe('Request Store Performance Tests', () => {
@@ -25,13 +26,15 @@ describe('Request Store Performance Tests', () => {
       const retryManager = new RetryManager({
         maxConcurrentRequests: 20,
         retries: 0, // No retries to keep test simple
-        maxRequestsToStore: storeSize,
+        throwErrorOnFailedRetries: false,
         debug: false
       });
+      const manualRetry = new ManualRetryPlugin({ maxRequestsToStore: storeSize });
+      retryManager.use(manualRetry);
       
       // Setup mock
       mock = new AxiosMockAdapter(retryManager.axiosInstance);
-      mock.onAny().reply(200, { success: true });
+      mock.onAny().reply(500, { error: 'stored for replay' });
       
       // Measure performance
       const startTime = Date.now();
@@ -66,12 +69,13 @@ describe('Request Store Performance Tests', () => {
       const metrics = retryManager.getMetrics();
       
       // Use retryFailedRequests to get failed requests count (indirectly assessing store size)
-      const failedRequests = await retryManager.retryFailedRequests();
-      console.log(`Store size ${storeSize}: Actual stored requests = ${failedRequests.length}`);
+      const storedRequests = manualRetry.getStoredRequests();
+      console.log(`Store size ${storeSize}: Actual stored requests = ${storedRequests.length}`);
       console.log(`Total requests: ${metrics.totalRequests}`);
       
       // Clean up
       mock.restore();
+      retryManager.destroy();
     }
     
     // Output results
@@ -113,9 +117,11 @@ describe('Request Store Performance Tests', () => {
       const retryManager = new RetryManager({
         maxConcurrentRequests: 20,
         retries: 0, // Disable retries for test predictability
-        maxRequestsToStore: count * 2, // Ensure store is large enough
+        throwErrorOnFailedRetries: false,
         debug: false
       });
+      const manualRetry = new ManualRetryPlugin({ maxRequestsToStore: count * 2 });
+      retryManager.use(manualRetry);
       
       // Setup mock for HTTP requests - Ensure all responses are handled
       mock = new AxiosMockAdapter(retryManager.axiosInstance);
@@ -166,7 +172,7 @@ describe('Request Store Performance Tests', () => {
       
       try {
         // Verify some requests are stored by trying to retry them
-        const failedRequests = await retryManager.retryFailedRequests();
+        const failedRequests = manualRetry.getStoredRequests();
         const expectedFailed = Math.floor(count / 3); // Every third request should fail
         
         console.log(`\nOperation count: ${count}`);
@@ -178,6 +184,7 @@ describe('Request Store Performance Tests', () => {
       
       // Clean up
       mock.restore();
+      retryManager.destroy();
     }
     
     // Output results

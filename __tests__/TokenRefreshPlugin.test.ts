@@ -4,8 +4,13 @@ import MockAdapter from 'axios-mock-adapter';
 import { jest } from '@jest/globals';
 import { RetryManager, RetryHooks } from '../src';
 import { RetryLogger } from '../src/services/logger';
-import { TokenRefreshPlugin, TokenRefreshPluginOptions } from '../src/plugins/TokenRefreshPlugin';
+import {
+  TokenRefreshFailedError,
+  TokenRefreshPlugin,
+  TokenRefreshPluginOptions,
+} from '../src/plugins/TokenRefreshPlugin';
 import { MetricsPlugin } from '../src/plugins/MetricsPlugin';
+import { toTokenRefreshError } from '../src/plugins/TokenRefreshPlugin/TokenRefreshAbortError';
 
 describe('TokenRefreshPlugin', () => {
   let mockAxios: MockAdapter;
@@ -92,6 +97,40 @@ describe('TokenRefreshPlugin', () => {
         refreshTimeout: 0,
       });
     }).toThrow('refreshTimeout must be a positive integer');
+  });
+
+  it('should normalize object-shaped refresh errors without prototype pollution', () => {
+    const cause = new Error('root cause');
+    const normalized = toTokenRefreshError(
+      JSON.parse('{"message":"refresh exploded","code":"EREFRESH_UPSTREAM","__proto__":{"polluted":true}}'),
+    ) as TokenRefreshFailedError & {
+      cause?: unknown;
+      request?: unknown;
+      response?: unknown;
+    };
+
+    const enriched = toTokenRefreshError({
+      cause,
+      message: 'refresh exploded',
+      request: { url: '/auth/refresh' },
+      response: { status: 500 },
+    }) as TokenRefreshFailedError & {
+      cause?: unknown;
+      request?: unknown;
+      response?: unknown;
+    };
+
+    expect(normalized).toBeInstanceOf(Error);
+    expect(normalized).toBeInstanceOf(TokenRefreshFailedError);
+    expect(normalized.message).toBe('refresh exploded');
+    expect(normalized.code).toBe('EREFRESH_UPSTREAM');
+    expect(normalized instanceof TokenRefreshFailedError).toBe(true);
+    expect(Object.getPrototypeOf(normalized)).toBe(TokenRefreshFailedError.prototype);
+    expect((normalized as Record<string, unknown>).polluted).toBeUndefined();
+
+    expect(enriched.cause).toBe(cause);
+    expect(enriched.request).toEqual({ url: '/auth/refresh' });
+    expect(enriched.response).toEqual({ status: 500 });
   });
 
   afterAll(() => {
@@ -818,5 +857,106 @@ describe('TokenRefreshPlugin', () => {
 
     // Verify the auth header was updated globally
     expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer CONCURRENT_GRAPHQL_TOKEN');
+  });
+
+  describe('timer cleanup on destroy', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('cancels the refresh timeout timer when the plugin is destroyed mid-refresh', async () => {
+      let resolveRefresh: (value: { token: string }) => void;
+      const hangingRefresh = new Promise<{ token: string }>((resolve) => {
+        resolveRefresh = resolve;
+      });
+
+      const timeoutPlugin = new TokenRefreshPlugin(() => hangingRefresh, {
+        refreshStatusCodes: [401],
+        refreshTimeout: 5000,
+        maxRefreshAttempts: 1,
+        retryOnRefreshFail: false,
+      });
+
+      const timeoutAxios = axios.create();
+      const timeoutMock = new MockAdapter(timeoutAxios);
+      const timeoutManager = new RetryManager({ axiosInstance: timeoutAxios, retries: 0 });
+      timeoutManager.use(timeoutPlugin);
+
+      timeoutMock.onGet('/guarded').reply(401);
+
+      const requestPromise = timeoutAxios.get('/guarded').catch(() => {});
+
+      // Advance enough to trigger the interceptor but not the refresh timeout
+      jest.advanceTimersByTime(100);
+
+      // Destroy the manager — this should cancel all timers
+      timeoutManager.destroy();
+
+      // Advance past the refresh timeout — no callbacks should fire
+      const timeoutCb = jest.fn();
+      setTimeout(timeoutCb, 0);
+      jest.runAllTimers();
+
+      await requestPromise;
+
+      // The timerManager inside the plugin should have been destroyed
+      expect(timeoutPlugin['timerManager']['isDestroyed']).toBe(true);
+      expect(timeoutPlugin['timerManager'].getActiveTimerCount()).toBe(0);
+
+      timeoutMock.restore();
+    });
+
+    it('cancels the backoff sleep timer when the plugin is destroyed during retry backoff', async () => {
+      let callCount = 0;
+      const failThenHang = jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          // First attempt fails with a retryable error
+          return Promise.reject(Object.assign(new Error('server error'), {
+            response: { status: 500 },
+            isAxiosError: true,
+          }));
+        }
+        // Second attempt hangs forever
+        return new Promise(() => {});
+      });
+
+      const backoffPlugin = new TokenRefreshPlugin(failThenHang, {
+        refreshStatusCodes: [401],
+        refreshTimeout: 10000,
+        maxRefreshAttempts: 3,
+        retryOnRefreshFail: true,
+      });
+
+      const backoffAxios = axios.create();
+      const backoffMock = new MockAdapter(backoffAxios);
+      const backoffManager = new RetryManager({ axiosInstance: backoffAxios, retries: 0 });
+      backoffManager.use(backoffPlugin);
+
+      backoffMock.onGet('/backoff').reply(401);
+
+      const requestPromise = backoffAxios.get('/backoff').catch(() => {});
+
+      // Let the first refresh attempt run and fail
+      await Promise.resolve();
+      jest.advanceTimersByTime(50);
+      await Promise.resolve();
+
+      // Destroy during the backoff sleep
+      backoffManager.destroy();
+
+      jest.runAllTimers();
+      await requestPromise;
+
+      // Timer manager should be cleaned up
+      expect(backoffPlugin['timerManager']['isDestroyed']).toBe(true);
+      expect(backoffPlugin['timerManager'].getActiveTimerCount()).toBe(0);
+
+      backoffMock.restore();
+    });
   });
 });

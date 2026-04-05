@@ -4,10 +4,11 @@
 
 We actively support and patch security vulnerabilities for the following versions of the project:
 
-| Version                | Supported          |
-|------------------------|--------------------|
-| > 1.x                  | ✅ Fully supported |
-| < 1.0 or alpha or beta | ❌ Unsupported     |
+| Version                | Supported |
+|------------------------|-----------|
+| 2.x                    | ✅ Fully supported |
+| 1.x                    | ⚠️ Best-effort security fixes; upgrade to 2.x recommended |
+| < 1.0 stable, alpha, beta | ❌ Unsupported |
 
 ---
 
@@ -39,9 +40,9 @@ While we aim to make this library as secure as possible, there are specific nuan
    - **Mitigation**: Avoid including credentials or sensitive data in request payloads when possible, or use encryption for sensitive data.
 
 2. **Manual Retry Storage Keeps Replayable Request Data**
-   - Failed requests stored for later replay may retain raw headers, request bodies, auth data, and custom config fields in process memory.
-   - This is necessary for reliable replay, but it means memory inspection, crash dumps, or accidental application-level logging can expose secrets.
-   - **Mitigation**: Prefer automatic mode for sensitive traffic, keep `maxRequestsToStore` low, avoid storing long-lived secrets in request bodies, and clear pending retries when they are no longer needed.
+   - Failed requests stored for later replay may retain request bodies and custom config fields in process memory.
+   - `ManualRetryPlugin` now skips auth-bearing requests by default and strips sensitive auth headers before storage, but opting into auth-bearing replay or using the deprecated root replay path can still retain sensitive material.
+   - **Mitigation**: Prefer automatic mode for sensitive traffic, keep `maxRequestsToStore` low, leave `storeAuthRequests` disabled unless you truly need it, use `prepareRequestForStore` to redact payloads, and clear pending retries when they are no longer needed.
 
 3. **Request Retry Behavior**
    - Retried requests might unintentionally duplicate actions (e.g., creating resources) if the server does not support idempotency.

@@ -69,6 +69,33 @@ const BENCHMARKS = [
       full: 150000,
     },
   },
+  {
+    name: 'Manual Retry',
+    file: 'manual-retry.js',
+    timeoutByProfile: {
+      quick: 60000,
+      standard: 120000,
+      full: 180000,
+    },
+  },
+  {
+    name: 'Metrics Plugin',
+    file: 'metrics-plugin.js',
+    timeoutByProfile: {
+      quick: 60000,
+      standard: 90000,
+      full: 150000,
+    },
+  },
+  {
+    name: 'Advanced Plugins',
+    file: 'advanced-plugins.js',
+    timeoutByProfile: {
+      quick: 90000,
+      standard: 150000,
+      full: 240000,
+    },
+  },
 ];
 
 function resolveBenchmarks(profileName, args) {

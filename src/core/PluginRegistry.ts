@@ -1,26 +1,22 @@
-import type { RetryManager } from './RetryManager';
-import type { RetryPlugin } from '../types';
-import { RetryLogger } from '../services/logger';
+import { PluginRegistrationError } from './errors/PluginRegistrationError';
+import type { Logger, PluginContext, RetryPlugin } from '../types';
 
 type InterceptorControls = {
   ejectRetryerInterceptors: () => void;
   installRetryerInterceptors: () => void;
 };
 
-type GenericHookMap = Partial<Record<string, (...args: readonly unknown[]) => unknown>>;
-
 type RegisteredPlugin = {
   name: string;
   version: string;
-  initialize: (manager: RetryManager) => void;
-  onBeforeDestroyed?: (manager: RetryManager) => void;
-  hooks?: GenericHookMap;
+  initialize: (context: PluginContext) => void;
+  onBeforeDestroyed?: (context: PluginContext) => void;
 };
 
 export class PluginRegistry {
   private readonly plugins = new Map<string, RegisteredPlugin>();
 
-  constructor(private readonly logger: RetryLogger) {}
+  constructor(private readonly logger: Logger) {}
 
   public getPlugins(): IterableIterator<RegisteredPlugin> {
     return this.plugins.values();
@@ -32,7 +28,7 @@ export class PluginRegistry {
 
   public use<TPluginEvents extends object>(
     plugin: RetryPlugin<TPluginEvents>,
-    manager: RetryManager,
+    context: PluginContext,
     controls: InterceptorControls,
     beforeRetryerInterceptors = true,
   ): void {
@@ -40,12 +36,22 @@ export class PluginRegistry {
 
     if (this.plugins.has(plugin.name)) {
       this.logger.error('Plugin already registered', { plugin: plugin.name });
-      throw new Error(`Plugin "${plugin.name}" is already registered.`);
+      throw new PluginRegistrationError(
+        `Plugin "${plugin.name}" is already registered.`,
+        'EPLUGIN_ALREADY_REGISTERED',
+        plugin.name,
+        plugin.version,
+      );
     }
 
     if (!this.validatePluginVersion(plugin.version)) {
       this.logger.error('Invalid plugin version', { version: plugin.version });
-      throw new Error(`Invalid plugin version format: ${plugin.version}`);
+      throw new PluginRegistrationError(
+        `Invalid plugin version format: ${plugin.version}`,
+        'EINVALID_PLUGIN_VERSION',
+        plugin.name,
+        plugin.version,
+      );
     }
 
     this.plugins.set(plugin.name, registeredPlugin);
@@ -55,7 +61,7 @@ export class PluginRegistry {
         controls.ejectRetryerInterceptors();
       }
 
-      registeredPlugin.initialize(manager);
+      registeredPlugin.initialize(context);
 
       if (beforeRetryerInterceptors) {
         controls.installRetryerInterceptors();
@@ -76,7 +82,7 @@ export class PluginRegistry {
     }
   }
 
-  public unuse(pluginName: string, manager: RetryManager): boolean {
+  public unuse(pluginName: string, context: PluginContext): boolean {
     const plugin = this.plugins.get(pluginName);
     if (!plugin) {
       this.logger.debug('Plugin removal failed - not found', { pluginName });
@@ -84,7 +90,7 @@ export class PluginRegistry {
     }
 
     if (typeof plugin.onBeforeDestroyed === 'function') {
-      plugin.onBeforeDestroyed(manager as RetryManager<object>);
+      plugin.onBeforeDestroyed(context);
     }
 
     this.plugins.delete(pluginName);
@@ -92,10 +98,10 @@ export class PluginRegistry {
     return true;
   }
 
-  public cleanup(manager: RetryManager): void {
+  public cleanup(context: PluginContext): void {
     this.plugins.forEach((plugin) => {
       if (typeof plugin.onBeforeDestroyed === 'function') {
-        plugin.onBeforeDestroyed(manager as RetryManager<object>);
+        plugin.onBeforeDestroyed(context);
       }
     });
 

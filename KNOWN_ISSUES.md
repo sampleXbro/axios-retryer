@@ -1,160 +1,94 @@
 # Known Issues
 
-This document outlines known issues, unexpected behaviors, and edge cases discovered in axios-retryer through comprehensive integration testing.
+This document outlines known issues, unexpected behaviors, and edge cases for **axios-retryer 2.x**. It is meant to complement the [migration guide](./MIGRATION.md) and [security policy](./SECURITY.md).
 
-## 🔴 Active Issues
+## Resolved or materially improved in 2.0
 
-### 1. Metrics Inconsistency
-**Severity:** Medium  
-**Component:** Core Metrics  
-**Description:** Retry counts in metrics may not always match expected values across different scenarios.
+- **Metrics consistency:** Core metrics initialization, shared nested state, and `NaN` averages were fixed; populated counters and `onMetricsUpdated` now require **`MetricsPlugin`**. If you see zeros, confirm the plugin is installed.
+- **Token refresh replay:** Refreshed business requests go through `RetryManager` again (queue, cancellation, plugins) instead of bypassing them.
+- **Standardized errors:** Library-thrown failures use named error classes for clearer handling.
 
-```typescript
-const metrics = retryer.getMetrics();
-// Sometimes shows 1 retry when 2 were expected, or vice versa
-expect(metrics.successfulRetries).toBe(2); // May fail intermittently
-```
+## Active issues
 
-**Workaround:** Use `toBeGreaterThanOrEqual()` assertions instead of exact counts in tests.
+### 1. Sensitive data can remain in memory
 
-**Impact:** Affects monitoring and debugging capabilities but not core retry functionality.
-
-### 2. Sensitive Data Can Remain In Memory
 **Severity:** High  
-**Component:** Manual Retry Store / Caching  
-**Description:** Failed requests stored for manual retry and responses stored by the caching plugin can retain raw headers, tokens, payloads, and response bodies in process memory.
+**Component:** Manual retry store, caching plugin  
+**Description:** Failed requests stored for manual replay and responses held by the caching plugin can retain headers, tokens, payloads, and bodies in process memory.
 
-**Impact:** Secrets are not written to disk by the library, but they may still be exposed through memory inspection, crash dumps, or accidental userland logging.
+**Mitigation:** Prefer automatic mode for high-sensitivity traffic; keep `maxRequestsToStore` low; use `ManualRetryPlugin` defaults that avoid storing auth-bearing requests unless you explicitly opt in; do not share one caching-enabled manager across users or tenants; use `prepareRequestForStore` to redact payloads.
 
-**Workaround:**
-- Prefer automatic mode for high-sensitivity traffic
-- Keep `maxRequestsToStore` low
-- Avoid caching auth-scoped or personalized endpoints on shared instances
-- Use separate retry managers per user, tenant, or request boundary
+### 2. Shared cache instances can mix user-specific data
 
-### 3. Shared Cache Instances Can Mix User-Specific Data
 **Severity:** High  
-**Component:** CachingPlugin  
-**Description:** The cache key does not isolate users by default. If one retry manager instance is shared across multiple principals, a cached response for one user can be reused for another user requesting the same resource shape.
+**Component:** `CachingPlugin`  
+**Description:** Cache keys do not isolate principals by default. A shared `RetryManager` can serve one user’s cached response to another for the same URL shape.
 
-**Impact:** Possible cross-user or cross-tenant data exposure in SSR, backend, or worker environments.
+**Mitigation:** Use separate manager instances per user, tenant, or session; disable caching for personalized endpoints; scope caching to public or tenant-agnostic resources only.
 
-**Workaround:**
-- Do not share caching-enabled retryer instances across users or tenants
-- Disable caching for personalized endpoints
-- Only use shared caching for public or tenant-agnostic resources
+### 3. Cache keys and debug output may include sensitive values
 
-### 4. Cache Keys and Debug Output May Include Sensitive Values
 **Severity:** Medium  
-**Component:** CachingPlugin / Debug Logging  
-**Description:** Cache keys are derived from URL, params, body, and optionally headers. Sensitive values in those fields may therefore remain in memory and may appear in debug output.
+**Component:** `CachingPlugin`, debug logging  
+**Description:** Keys are derived from URL, params, body, and optionally headers. Secrets in those inputs can appear in memory and in logs when debug is on.
 
-**Workaround:**
-- Keep secrets out of query params when possible
-- Avoid `compareHeaders: true` for auth-bearing requests
-- Disable debug mode in production unless logs are tightly controlled
+**Mitigation:** Avoid secrets in query strings; avoid `compareHeaders: true` for auth-heavy traffic; keep `debug: false` in production unless logs are controlled; use `DebugSanitizationPlugin` when you need redacted debug output.
 
 ---
 
-## ⚠️ Unexpected Behaviors
+## Unexpected behaviors (by design)
 
-### 1. POST Request Idempotency Requirement
-**Severity:** Low (By Design)  
-**Component:** Core Retry Logic  
-**Description:** POST requests require an `Idempotency-Key` header to be retryable by default.
+### POST retries and idempotency
 
-```typescript
-// ❌ This POST won't be retried by default
-await retryer.axiosInstance.post('/api/data', { data: 'test' });
+**Severity:** Low (by design)  
+**Component:** Core retry strategy  
+**Description:** `POST` is not retried by default unless you provide an `Idempotency-Key` (or customize the strategy).
 
-// ✅ This POST will be retried
-await retryer.axiosInstance.post('/api/data', 
-  { data: 'test' }, 
-  { headers: { 'Idempotency-Key': 'unique-key-123' } }
-);
-```
-
-**Rationale:** Safety measure to prevent duplicate operations on non-idempotent endpoints.
-
-**Workaround:** 
-- Add `Idempotency-Key` headers to POST requests
-- Or configure custom retry strategy to allow POST retries without the header
+**Mitigation:** Send `Idempotency-Key` on mutating requests, or adjust your retry strategy explicitly.
 
 ---
 
-## 🔧 Configuration Gotchas
+## Configuration notes
 
-### 1. Concurrent Request Limits
-**Description:** Setting `maxConcurrentRequests` too low can cause unexpected queuing behavior.
+### Low `maxConcurrentRequests`
 
-```typescript
-const retryer = createRetryer({
-  maxConcurrentRequests: 1, // May cause significant delays
-  queueDelay: 100
-});
-```
+Very low concurrency can cause long queues and tail latency. Tune for your workload rather than copying test-only values.
 
-**Recommendation:** Use higher concurrency limits unless specifically testing queue behavior.
+### Circuit breaker timing
+
+`openTimeout` and related settings affect both failure detection and recovery; changing them moves both behaviors together.
 
 ---
 
-### 2. Circuit Breaker Reset Timing
-**Description:** Circuit breaker `openTimeout` affects both failure detection and recovery timing.
+## Test and environment notes
 
-```typescript
-const circuitBreaker = new CircuitBreakerPlugin({
-  failureThreshold: 3,
-  openTimeout: 1000 // Affects both failure counting window and recovery time
-});
-```
+### Timing-sensitive tests
 
-**Note:** Consider this dual impact when setting timeout values.
+Tests that depend on real delays can be flaky on slow CI runners.
+
+**Mitigation:** Prefer bounded assertions (`toBeGreaterThan`, generous timeouts) for timing-heavy cases.
 
 ---
 
-## 🧪 Test Environment Issues
+## Version compatibility
 
-### 1. Timing-Sensitive Test Flakiness
-**Severity:** Low (Testing Only)  
-**Component:** Test Suite  
-**Description:** Tests involving delays or timeouts may be flaky in CI environments.
+### Node.js
 
-**Affected Areas:**
-- Circuit breaker timeout tests
-- Cache expiration tests
-- Retry delay timing tests
+CI and local development typically use current Node.js **18+** (22.x is commonly used). Older Node versions may work but are not a focus for testing.
 
-**Workaround:** Use longer timeouts and `toBeGreaterThan()` assertions for timing-related tests.
+### Axios
+
+**Peer dependency:** `axios >= 1.7.4` (earlier releases have known security issues). Stay on supported Axios versions and run `npm audit` regularly.
 
 ---
 
-## 🔄 Version Compatibility
+## Reporting issues
 
-### Node.js Versions
-- **Tested:** Node.js 16, 18, 20
-- **Known Issues:** None reported
-
-### Axios Versions
-- **Tested:** Axios 1.x
-- **Known Issues:** None reported
+1. Check this document and [MIGRATION.md](./MIGRATION.md).  
+2. Search [GitHub issues](https://github.com/sampleXbro/axios-retryer/issues).  
+3. Open a new issue with reproduction steps, environment, expected vs actual behavior, and library version.
 
 ---
 
-## 📞 Reporting Issues
-
-If you encounter any of these issues or discover new ones:
-
-1. Check this document first
-2. Search existing [GitHub issues](https://github.com/your-org/axios-retryer/issues)
-3. Create a new issue with:
-   - Clear reproduction steps
-   - Environment details
-   - Expected vs actual behavior
-   - Workaround used (if any)
-
----
-
-**Last Updated:** 2024-12-19  
-**Test Coverage:** 97%+ of integration scenarios  
-**Integration Tests:** 54 passing tests across 4 comprehensive test suites  
-**Source:** Enhanced comprehensive integration testing suite with edge cases and error scenarios 
+**Last updated:** 2026-04-05  
+**Last full test run:** 63 test suites, 630 tests passing (see `npm test` in CI or locally).

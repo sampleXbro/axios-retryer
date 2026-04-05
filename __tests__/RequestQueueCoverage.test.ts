@@ -31,7 +31,7 @@ describe('RequestQueue Coverage Improvements', () => {
   beforeEach(() => {
     mockIsCriticalRequest.mockReset();
     mockHasActiveCriticalRequests.mockReset();
-    queue = new RequestQueue(2, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    queue = new RequestQueue({ maxConcurrent: 2, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
   });
 
   it('should correctly identify if queue is busy', () => {
@@ -109,7 +109,7 @@ describe('RequestQueue Coverage Improvements', () => {
     const delay = 100;
     // Add a small buffer to account for timing fluctuations
     const minExpectedDelay = 95;
-    const delayedQueue = new RequestQueue(1, delay, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    const delayedQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: delay, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
     
     const startTime = Date.now();
     let endTime = 0;
