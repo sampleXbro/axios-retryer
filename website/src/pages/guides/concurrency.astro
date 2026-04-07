@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  maxConcurrentRequests: 6,   // At most 6 requests run simultaneously\n  queueDelay: 50,             // 50ms between dequeue ticks (0 for max throughput)\n  maxQueueSize: 200,          // Reject with QueueFullError if queue exceeds 200\n});";
 const _shikiCode1 = "import { AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';\n\n// CRITICAL: auth, checkout, user-initiated actions\nretryer.axiosInstance.post('/auth/login', creds, {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },\n});\n\n// HIGH: primary page content\nretryer.axiosInstance.get('/api/dashboard', {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },\n});\n\n// MEDIUM: secondary data (default when omitted)\nretryer.axiosInstance.get('/api/sidebar');\n\n// LOW: background prefetch, analytics events\nretryer.axiosInstance.post('/api/analytics', event, {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },\n});";
 const _shikiCode2 = "import { createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,\n  cancelPendingOnDependencyFailure: true,  // Abort queued LOW/MEDIUM if CRITICAL fails\n});";
@@ -36,7 +37,7 @@ const _shikiCode5 = "const retryer = createRetryer({ maxConcurrentRequests: 3 })
 <CodeBlock code={_shikiCode5} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/guides/migration" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Migration Guide →</a>
-  <a href="/docs/configuration" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Configuration reference →</a>
+  <a href={withBase('/guides/migration')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Migration Guide →</a>
+  <a href={withBase('/docs/configuration')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Configuration reference →</a>
 </div>
 </DocsLayout>

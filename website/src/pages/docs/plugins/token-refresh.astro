@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
 const _shikiCode0 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';";
 const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\nconst retryer = createRetryer({ retries: 3 });\n\nretryer.use(\n  createTokenRefreshPlugin(\n    // Refresh callback \u2014 called once per refresh cycle regardless of how many requests are queued\n    async (axiosInstance) => {\n      const refreshToken = localStorage.getItem('refreshToken');\n      if (!refreshToken) throw new Error('No refresh token');  // Aborts immediately\n\n      const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });\n      localStorage.setItem('accessToken', data.accessToken);\n      return { token: data.accessToken };\n    }\n  )\n);";
 const _shikiCode2 = "retryer.use(\n  createTokenRefreshPlugin(\n    async (axiosInstance) => {\n      const { data } = await axiosInstance.post('/auth/refresh');\n      return { token: data.accessToken };\n    },\n    {\n      authHeaderName: 'Authorization',  // Header to inject the token into (default: 'Authorization')\n      tokenPrefix: 'Bearer ',           // Prefix prepended to the token value (default: 'Bearer ')\n      refreshStatusCodes: [401],        // HTTP status codes that trigger a refresh (default: [401])\n      maxRefreshAttempts: 3,            // Max refresh attempts before giving up (default: 3)\n      // Note: in v2.x this is the exact number of attempts (v1.x had an off-by-one bug)\n\n      // Optional: detect auth errors inside 200 OK bodies (e.g. GraphQL)\n      customErrorDetector: (responseData) => {\n        if (typeof responseData !== 'object' || !responseData?.errors) return false;\n        return responseData.errors.some((e: any) =>\n          e.extensions?.code === 'UNAUTHENTICATED' ||\n          e.message?.includes('token expired')\n        );\n      },\n    }\n  )\n);";
@@ -51,7 +52,7 @@ const _shikiCode7 = "// Resolve with no token to skip this refresh cycle (not a 
 <CodeBlock code={_shikiCode4} lang="typescript" />
 
 <h2 id="opt-out-of-refresh">Opt out of refresh (<code>null</code> / <code>undefined</code> token)</h2>
-<p>Sometimes you want to decide <em>after</em> async work that this cycle should not refresh (without treating it as a hard failure). If the callback <strong>resolves</strong> with <code>{ token: null }</code>, <code>{ token: undefined }</code>, or omits <code>token</code> entirely, the plugin <strong>skips</strong> that refresh cycle:</p>
+<p>Sometimes you want to decide <em>after</em> async work that this cycle should not refresh (without treating it as a hard failure). If the callback <strong>resolves</strong> with <code>{'{'} token: null {'}'}</code>, <code>{'{'} token: undefined {'}'}</code>, or omits <code>token</code> entirely, the plugin <strong>skips</strong> that refresh cycle:</p>
 <ul>
   <li>No <code>onTokenRefreshed</code> or <code>onTokenRefreshFailed</code></li>
   <li>No update to the instance default auth header and no &ldquo;failed refresh&rdquo; short-circuit for the old token</li>
@@ -71,7 +72,7 @@ const _shikiCode7 = "// Resolve with no token to skip this refresh cycle (not a 
 <CodeBlock code={_shikiCode6} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/plugins/circuit-breaker" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CircuitBreakerPlugin →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+  <a href={withBase('/docs/plugins/circuit-breaker')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CircuitBreakerPlugin →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
 </div>
 </DocsLayout>

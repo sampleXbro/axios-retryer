@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro';
 import '../styles/global.css';
+import { stripBasePath, withBase } from '../utils/baseUrl';
 
 interface Props {
   title: string;
@@ -9,6 +10,7 @@ interface Props {
 }
 const { title, description, section = 'Docs' } = Astro.props;
 const pathname = Astro.url.pathname;
+const routePath = stripBasePath(pathname);
 
 const nav = [
   {
@@ -191,8 +193,8 @@ const nav = [
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
-        <a href="/" class="sidebar-logo">
-          <img src="/axios-retryer-logo.png" alt="axios-retryer" />
+        <a href={withBase('/')} class="sidebar-logo">
+          <img src={withBase('/axios-retryer-logo.png')} alt="axios-retryer" />
         </a>
       </div>
       <nav class="sidebar-nav">
@@ -201,8 +203,8 @@ const nav = [
             <div class="nav-group-label">{group.group}</div>
             {group.items.map(item => (
               <a
-                href={item.href}
-                class={`nav-item ${pathname === item.href || pathname === item.href + '/' ? 'active' : ''}`}
+                href={withBase(item.href)}
+                class={`nav-item ${routePath === item.href || routePath === item.href + '/' ? 'active' : ''}`}
               >
                 {item.label}
               </a>
@@ -229,7 +231,7 @@ const nav = [
           <a href="https://github.com/sampleXbro/axios-retryer" class="topbar-link" target="_blank" rel="noopener">
             GitHub ↗
           </a>
-          <a href="/docs" class="topbar-btn">Get Started</a>
+          <a href={withBase('/docs')} class="topbar-btn">Get Started</a>
         </div>
       </header>
 

@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "npm install axios-retryer axios";
 const _shikiCode1 = "yarn add axios-retryer axios";
 const _shikiCode2 = "pnpm add axios-retryer axios";
@@ -71,6 +72,6 @@ const _shikiCode4 = "// tsconfig.json \u2014 recommended minimum\n{\n  \"compile
 <CodeBlock code={_shikiCode4} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/quick-start" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Quick Start →</a>
+  <a href={withBase('/docs/quick-start')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Quick Start →</a>
 </div>
 </DocsLayout>

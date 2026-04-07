@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
 const _shikiCode0 = "import { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';";
 const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\nconst retryer = createRetryer();\n\nretryer.use(\n  createCircuitBreaker({\n    failureThreshold: 5,      // Consecutive failures before tripping open\n    openTimeout: 30_000,      // ms to wait before testing (half-open)\n    halfOpenMax: 2,           // Probe requests allowed in half-open state\n  })\n);";
 const _shikiCode2 = "createCircuitBreaker({\n  failureThreshold: 5,         // Failures before circuit trips (default: 5)\n  openTimeout: 30_000,         // ms in OPEN state before going HALF-OPEN (default: 30000)\n  halfOpenMax: 2,              // Test requests in HALF-OPEN before deciding (default: 1)\n  successThreshold: 2,         // Successes in HALF-OPEN to close again (default: 1)\n  useSlidingWindow: true,      // Count failures within a time window (default: false)\n  slidingWindowSize: 60_000,   // Window size in ms (default: 60000)\n  excludeUrls: [               // URL patterns that bypass the breaker\n    /\\/healthcheck/,\n    '/api/status',\n  ],\n})";
@@ -57,7 +58,7 @@ const _shikiCode6 = "createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeo
 </div>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/plugins/caching" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CachingPlugin →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+  <a href={withBase('/docs/plugins/caching')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CachingPlugin →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
 </div>
 </DocsLayout>

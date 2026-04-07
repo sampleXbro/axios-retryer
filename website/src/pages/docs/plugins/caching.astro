@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
 const _shikiCode0 = "import { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';";
 const _shikiCode1 = "import { createRetryer, AXIOS_RETRYER_HTTP_METHODS } from 'axios-retryer';\nimport { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';\n\nconst retryer = createRetryer();\n\nconst cache = createCachePlugin({\n  timeToRevalidate: 60_000,                         // 1 minute TTR\n  cacheMethods: [AXIOS_RETRYER_HTTP_METHODS.GET],   // Only cache GET\n  maxItems: 200,\n  cleanupInterval: 5 * 60_000,                      // Prune expired entries every 5 min\n});\n\nretryer.use(cache);";
 const _shikiCode2 = "createCachePlugin({\n  timeToRevalidate: 60_000,    // Cache lifetime in ms (default: 60000)\n  cacheMethods: ['get'],       // HTTP methods to cache (default: ['get'])\n  maxItems: 100,               // Max cached entries; oldest evicted first (default: Infinity)\n  cleanupInterval: 300_000,    // ms between expired-entry pruning (default: 300000)\n  compareHeaders: false,       // Include headers in cache key (default: false)\n  cacheOnlyRetriedRequests: false,  // Only cache responses from retry attempts (default: false)\n  skipWhenAuthPresent: true,   // Don't cache when Authorization header is set (default: true)\n\n  // Custom key builder \u2014 receives normalized request fields\n  cacheKeyBuilder: ({ method, normalizedUrl, normalizedParams }) =>\n    `${method}|${normalizedUrl}|${normalizedParams}`,\n\n  // Custom storage adapter (e.g. Redis)\n  storage: myRedisAdapter,\n})";
@@ -47,7 +48,7 @@ const _shikiCode6 = "import type {\n  CacheStorage,\n  CacheStorageEntry,\n  Cac
 </div>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/plugins/manual-retry" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">ManualRetryPlugin →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+  <a href={withBase('/docs/plugins/manual-retry')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">ManualRetryPlugin →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
 </div>
 </DocsLayout>

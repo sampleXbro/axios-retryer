@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
+import { withBase } from '../../../utils/baseUrl';
 ---
 <DocsLayout title="Plugins Overview" section="Plugins" description="Overview of all axios-retryer plugins — token refresh, circuit breaker, caching, manual retry, metrics, and sanitization.">
 
@@ -42,7 +43,7 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
       <div class="plugin-title">🔑 TokenRefreshPlugin</div>
       <div class="plugin-entry">axios-retryer/plugins/TokenRefreshPlugin</div>
       <div class="plugin-desc">Automatically refreshes JWT/OAuth tokens when requests return 401. Queues all concurrent requests during the refresh, then replays them with the new token. Supports <code>customErrorDetector</code> for GraphQL APIs that return errors in 200 bodies. You can resolve the refresh callback with no <code>token</code> to skip a cycle without failure events.</div>
-      <a href="/docs/plugins/token-refresh" class="plugin-link">View docs →</a>
+      <a href={withBase('/docs/plugins/token-refresh')} class="plugin-link">View docs →</a>
     </div>
     <div class="plugin-when">
       <div class="plugin-when-title">Use when</div>
@@ -59,7 +60,7 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
       <div class="plugin-title">🛡️ CircuitBreakerPlugin</div>
       <div class="plugin-entry">axios-retryer/plugins/CircuitBreakerPlugin</div>
       <div class="plugin-desc">Trips open after N failures, fast-fails all subsequent requests during the recovery window, then allows configurable half-open probes. Supports sliding window analysis and URL exclusion patterns.</div>
-      <a href="/docs/plugins/circuit-breaker" class="plugin-link">View docs →</a>
+      <a href={withBase('/docs/plugins/circuit-breaker')} class="plugin-link">View docs →</a>
     </div>
     <div class="plugin-when">
       <div class="plugin-when-title">Use when</div>
@@ -76,7 +77,7 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
       <div class="plugin-title">💾 CachingPlugin</div>
       <div class="plugin-entry">axios-retryer/plugins/CachingPlugin</div>
       <div class="plugin-desc">Caches responses in memory with configurable TTR, exact/prefix/regex invalidation, per-request overrides, and a pluggable storage adapter contract (e.g. Redis, Memcached).</div>
-      <a href="/docs/plugins/caching" class="plugin-link">View docs →</a>
+      <a href={withBase('/docs/plugins/caching')} class="plugin-link">View docs →</a>
     </div>
     <div class="plugin-when">
       <div class="plugin-when-title">Use when</div>
@@ -93,7 +94,7 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
       <div class="plugin-title">💾 ManualRetryPlugin</div>
       <div class="plugin-entry">axios-retryer/plugins/ManualRetryPlugin</div>
       <div class="plugin-desc">Stores terminal failures (in <code>MANUAL</code> mode) and lets you replay them on demand. Built-in idempotency safeguards, auth-request skipping, and age limits.</div>
-      <a href="/docs/plugins/manual-retry" class="plugin-link">View docs →</a>
+      <a href={withBase('/docs/plugins/manual-retry')} class="plugin-link">View docs →</a>
     </div>
     <div class="plugin-when">
       <div class="plugin-when-title">Use when</div>
@@ -110,7 +111,7 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
       <div class="plugin-title">📊 MetricsPlugin</div>
       <div class="plugin-entry">axios-retryer/plugins/MetricsPlugin</div>
       <div class="plugin-desc">Activates live retry counters, success rates, failure counts, and timer health reporting. Without this plugin <code>getMetrics()</code> returns a zeroed snapshot.</div>
-      <a href="/docs/plugins/metrics" class="plugin-link">View docs →</a>
+      <a href={withBase('/docs/plugins/metrics')} class="plugin-link">View docs →</a>
     </div>
     <div class="plugin-when">
       <div class="plugin-when-title">Use when</div>
@@ -126,7 +127,7 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
       <div class="plugin-title">🔒 DebugSanitizationPlugin</div>
       <div class="plugin-entry">axios-retryer/plugins/DebugSanitizationPlugin</div>
       <div class="plugin-desc">Redacts sensitive headers, body fields, and URL params from plugin-managed debug logs. Safe <code>debug: true</code> in non-prod environments.</div>
-      <a href="/docs/plugins/debug-sanitization" class="plugin-link">View docs →</a>
+      <a href={withBase('/docs/plugins/debug-sanitization')} class="plugin-link">View docs →</a>
     </div>
     <div class="plugin-when">
       <div class="plugin-when-title">Use when</div>

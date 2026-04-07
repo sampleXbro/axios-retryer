@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
 const _shikiCode0 = "import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';";
 const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\n\nconst retryer = createRetryer({ debug: true });  // Enable verbose logs\n\nretryer.use(\n  createDebugSanitizationPlugin({\n    sanitizeOptions: {\n      sensitiveHeaders: ['Authorization', 'X-API-Key', 'Session-Token'],\n      sensitiveFields: ['password', 'creditCard', 'ssn', 'token'],\n      sensitiveParams: ['api_key', 'secret'],\n      redactionChar: '\u2588',          // Character used to replace sensitive values\n      sanitizeRequestData: true,   // Redact request body in logs\n      sanitizeResponseData: false, // Keep response body in logs (opt-in)\n      sanitizeUrlParams: true,     // Redact URL query params\n    },\n  })\n);";
 const _shikiCode2 = "{\n  sanitizeOptions: {\n    sensitiveHeaders: string[];      // Header names to redact (case-insensitive)\n    sensitiveFields: string[];       // Body field names to redact (nested paths supported)\n    sensitiveParams: string[];       // URL query param names to redact\n    redactionChar: string;           // Character to replace values (default: '*')\n    sanitizeRequestData: boolean;    // Sanitize request bodies in logs (default: true)\n    sanitizeResponseData: boolean;   // Sanitize response bodies in logs (default: false)\n    sanitizeUrlParams: boolean;      // Sanitize URL query params (default: true)\n  }\n}";
@@ -41,7 +42,7 @@ const _shikiCode2 = "{\n  sanitizeOptions: {\n    sensitiveHeaders: string[];   
 </div>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/configuration" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Configuration →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+  <a href={withBase('/docs/configuration')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Configuration →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
 </div>
 </DocsLayout>

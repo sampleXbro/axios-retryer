@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nconst retryer = createRetryer();\nretryer.use(createMetricsPlugin());\n\n// Chain multiple subscriptions\nretryer\n  .on('onRetryProcessStarted', () => {\n    console.log('Retry process started');\n  })\n  .on('beforeRetry', (config) => {\n    console.log(`About to retry: ${'${config.method?.toUpperCase()} ${config.url}'}`);\n  })\n  .on('afterRetry', (config, success, error) => {\n    console.log(`Retry attempt ${success ? 'succeeded' : 'failed'}`, error?.message);\n  })\n  .on('onRetryProcessFinished', () => {\n    console.log('All retry attempts complete');\n  })\n  .on('onFailure', (config) => {\n    analytics.track('api_failure', { url: config.url });\n  })\n  .on('onMetricsUpdated', (metrics) => {\n    // Requires MetricsPlugin\n    updateDashboard(metrics);\n  });";
 const _shikiCode1 = "const handler = (config: import('axios').AxiosRequestConfig) => console.log(config.url);\nretryer.on('beforeRetry', handler);\n\n// Later, when cleanup is needed:\nretryer.off('beforeRetry', handler);";
 const _shikiCode2 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\n// The return value of use() has the plugin's events typed\nconst retryerWithAuth = retryer.use(\n  createTokenRefreshPlugin(async (axios) => {\n    const { data } = await axios.post('/auth/refresh');\n    return { token: data.accessToken };\n  })\n);\n\nretryerWithAuth.on('onTokenRefreshed', (token) => {\n  console.log('Token refreshed:', token);\n});";
@@ -40,10 +41,10 @@ const _shikiCode3 = "import { createMetricsPlugin } from 'axios-retryer/plugins/
     <tr><td><code>onInternetConnectionError</code></td><td><code>AxiosRequestConfig</code></td><td>—</td><td>Network-level error (no response)</td></tr>
     <tr><td><code>onMetricsUpdated</code></td><td><code>RetryMetrics</code></td><td>MetricsPlugin</td><td>Metrics snapshot after each request cycle</td></tr>
     <tr><td><code>onBeforeTokenRefresh</code></td><td>—</td><td>TokenRefreshPlugin</td><td>Refresh cycle started (before the callback runs)</td></tr>
-    <tr><td><code>onTokenRefreshed</code></td><td><code>token: string</code></td><td>TokenRefreshPlugin</td><td>New token applied; not emitted if the callback skips by returning no <code>token</code> (<a href="/docs/plugins/token-refresh#opt-out-of-refresh">opt-out</a>)</td></tr>
+    <tr><td><code>onTokenRefreshed</code></td><td><code>token: string</code></td><td>TokenRefreshPlugin</td><td>New token applied; not emitted if the callback skips by returning no <code>token</code> (<a href={withBase('/docs/plugins/token-refresh#opt-out-of-refresh')}>opt-out</a>)</td></tr>
     <tr><td><code>onTokenRefreshFailed</code></td><td>—</td><td>TokenRefreshPlugin</td><td>All refresh attempts failed; not emitted on opt-out skip</td></tr>
     <tr><td><code>onBlockingRequestFailed</code></td><td><code>config</code></td><td>—</td><td>A blocking request (≥ <code>blockingPriorityThreshold</code>) failed terminally</td></tr>
-    <tr><td><code>onAllBlockingRequestsResolved</code></td><td>—</td><td>—</td><td>All in-flight blocking requests (≥ threshold) <strong>succeeded</strong>; gate lifted. Not emitted on blocker failure or cancellation (see <a href="/guides/concurrency">concurrency guide</a>)</td></tr>
+    <tr><td><code>onAllBlockingRequestsResolved</code></td><td>—</td><td>—</td><td>All in-flight blocking requests (≥ threshold) <strong>succeeded</strong>; gate lifted. Not emitted on blocker failure or cancellation (see <a href={withBase('/guides/concurrency')}>concurrency guide</a>)</td></tr>
     <tr><td><code>onManualRetryProcessStarted</code></td><td>—</td><td>ManualRetryPlugin</td><td>Manual replay begins</td></tr>
   </tbody>
 </table>
@@ -52,7 +53,7 @@ const _shikiCode3 = "import { createMetricsPlugin } from 'axios-retryer/plugins/
 <CodeBlock code={_shikiCode3} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/errors" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Error Classes →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Plugins</a>
+  <a href={withBase('/docs/errors')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Error Classes →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Plugins</a>
 </div>
 </DocsLayout>

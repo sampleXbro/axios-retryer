@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
 const _shikiCode0 = "import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';";
 const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nconst retryer = createRetryer({ retries: 3 });\nretryer.use(createMetricsPlugin());\n\n// Subscribe to live updates\nretryer.on('onMetricsUpdated', (metrics) => {\n  console.log('Total requests:  ', metrics.totalRequests);\n  console.log('Successful retries:', metrics.successfulRetries);\n  console.log('Failed completely: ', metrics.completelyFailedRequests);\n  console.log('Timer health:    ', metrics.timerHealth.healthScore);\n});\n\n// Get a snapshot at any time\nconst snapshot = retryer.getMetrics();\nconsole.log(snapshot);";
 const _shikiCode2 = "interface RetryMetrics {\n  totalRequests: number;                   // All requests dispatched\n  successfulRetries: number;               // Requests that succeeded after \u22651 retry\n  failedRetries: number;                   // Individual retry attempts that failed\n  completelyFailedRequests: number;        // Requests that exhausted all retries\n  completelyFailedCriticalRequests: number; // Failed CRITICAL priority requests\n  totalRetryAttempts: number;              // Sum of all retry attempts made\n  averageRetryDelay: number;               // ms average delay between retries\n\n  timerHealth: {\n    activeTimers: number;        // Total active internal timers\n    activeRetryTimers: number;   // Active retry-delay timers\n    healthScore: number;         // 0 = excellent, 50+ = investigate, 100+ = likely leak\n  };\n}";
@@ -36,7 +37,7 @@ const _shikiCode4 = "setInterval(() => {\n  const { timerHealth } = retryer.getM
 </div>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/plugins/debug-sanitization" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">DebugSanitizationPlugin →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+  <a href={withBase('/docs/plugins/debug-sanitization')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">DebugSanitizationPlugin →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
 </div>
 </DocsLayout>

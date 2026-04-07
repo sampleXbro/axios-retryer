@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "import { createRetryer, RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  mode: RETRY_MODES.AUTOMATIC,     // default, can omit\n  retries: 3,\n  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,\n  retryableStatuses: [408, 429, [500, 599] as const],\n});\n\n// This GET will retry up to 3 times on 5xx / 429 / timeout\nconst { data } = await retryer.axiosInstance.get('/api/products');";
 const _shikiCode1 = "import { createRetryer, RETRY_MODES } from 'axios-retryer';\nimport { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\n\nconst retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  maxRequestsToStore: 50,\n  manualRetryMaxAge: 5 * 60_000,   // Discard stored requests after 5 min\n});\nretryer.use(manualRetry);\n\n// Request fails \u2192 stored in ManualRetryPlugin\ntry {\n  await retryer.axiosInstance.get('/api/data');\n} catch {\n  console.log('Failed \u2014 stored for later replay');\n}\n\n// Later \u2014 replay all stored failures\nconst results = await manualRetry.retryFailedRequests();\nconsole.log(`${results.length} requests replayed`);";
 const _shikiCode2 = "window.addEventListener('online', async () => {\n  const results = await manualRetry.retryFailedRequests();\n  showToast(`Synced ${results.length} pending request(s)`);\n});";
@@ -51,7 +52,7 @@ const _shikiCode2 = "window.addEventListener('online', async () => {\n  const re
 </div>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/events" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Events →</a>
-  <a href="/docs/plugins/manual-retry" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">ManualRetryPlugin docs</a>
+  <a href={withBase('/docs/events')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Events →</a>
+  <a href={withBase('/docs/plugins/manual-retry')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">ManualRetryPlugin docs</a>
 </div>
 </DocsLayout>

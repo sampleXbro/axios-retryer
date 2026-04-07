@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  retries: 3,\n  debug: false,\n});\n\n// Drop-in replacement for axios\nconst { data } = await retryer.axiosInstance.get('https://api.example.com/users');\nconsole.log(data);";
 const _shikiCode1 = "import { RetryManager } from 'axios-retryer';\n\nconst manager = new RetryManager({ retries: 3 });\nconst { data } = await manager.axiosInstance.get('/api/users');";
 const _shikiCode2 = "import axios from 'axios';\nimport { createRetryer } from 'axios-retryer';\n\nconst baseAxios = axios.create({\n  baseURL: 'https://api.example.com',\n  timeout: 5000,\n  headers: { 'X-App-Version': '2.0' },\n});\n\nconst retryer = createRetryer({\n  retries: 3,\n  axiosInstance: baseAxios,      // uses your existing instance\n});\n\n// axiosInstance is the same object \u2014 base URL, headers, interceptors all preserved\nawait retryer.axiosInstance.get('/users');";
@@ -40,7 +41,7 @@ const _shikiCode5 = "// Cancel a specific request by ID\nconst config = await re
 </p>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/configuration" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Configuration →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Plugins</a>
+  <a href={withBase('/docs/configuration')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Configuration →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Plugins</a>
 </div>
 </DocsLayout>

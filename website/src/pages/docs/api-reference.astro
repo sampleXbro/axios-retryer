@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nconst retryer = createRetryer({ retries: 3 });";
 const _shikiCode1 = "import { createRetryStrategy } from 'axios-retryer';\nconst strategy = createRetryStrategy({\n  isRetryable: (error) => error.response?.status === 503,\n  shouldRetry: (error, attempt, max) => attempt <= max,\n  getDelay: (attempt) => attempt * 500,\n});";
 const _shikiCode2 = "interface RetryMetrics {\n  totalRequests: number;\n  successfulRetries: number;\n  failedRetries: number;\n  completelyFailedRequests: number;\n  completelyFailedCriticalRequests: number;\n  totalRetryAttempts: number;\n  averageRetryDelay: number;\n  timerHealth: {\n    activeTimers: number;\n    activeRetryTimers: number;\n    healthScore: number;          // 0 = excellent, 100+ = potential leak\n  };\n}";
@@ -94,6 +95,6 @@ const _shikiCode5 = "import {\n  RETRY_MODES,                        // AUTOMATI
 <CodeBlock code={_shikiCode5} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/plugins" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Plugins →</a>
+  <a href={withBase('/docs/plugins')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Plugins →</a>
 </div>
 </DocsLayout>

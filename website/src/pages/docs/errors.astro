@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "import {\n  RetryerConfigError,        // Invalid RetryManager configuration\n  PluginRegistrationError,   // Duplicate or invalid plugin registration\n  QueueFullError,            // maxQueueSize exceeded\n  QueuedRequestCanceledError, // Request was in queue when cancelled\n  QueueClearedError,         // Queue was cleared (e.g. destroy())\n  QueueDestroyedError,       // Manager was destroyed before request processed\n  RequestAbortedError,       // Request aborted via AbortController\n} from 'axios-retryer';";
 const _shikiCode1 = "// CachingPlugin\nimport { InvalidCacheKeyError } from 'axios-retryer/plugins/CachingPlugin';\n\n// CircuitBreakerPlugin\nimport { CircuitBreakerStateError } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\n// TokenRefreshPlugin\nimport {\n  MissingTokenRefreshHandlerError,\n  TokenRefreshAbortError,\n  TokenRefreshFailedError,\n  TokenRefreshTimeoutError,\n} from 'axios-retryer/plugins/TokenRefreshPlugin';";
 const _shikiCode2 = "import {\n  QueueFullError,\n  RetryerConfigError,\n  PluginRegistrationError,\n} from 'axios-retryer';\nimport {\n  TokenRefreshAbortError,\n  TokenRefreshTimeoutError,\n} from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { CircuitBreakerStateError } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\ntry {\n  await retryer.axiosInstance.get('/api/data');\n} catch (error) {\n  if (error instanceof QueueFullError) {\n    // Show backpressure UI\n    showToast('Server busy \u2014 please try again shortly');\n  } else if (error instanceof CircuitBreakerStateError) {\n    // Circuit tripped open\n    showBanner('Service temporarily unavailable');\n  } else if (error instanceof TokenRefreshAbortError) {\n    // Auth refresh failed fatally\n    redirectToLogin();\n  } else if (error instanceof TokenRefreshTimeoutError) {\n    // Refresh request took too long\n    scheduleRetry();\n  } else {\n    throw error;  // Re-throw unrecognized errors\n  }\n}";
@@ -44,6 +45,6 @@ const _shikiCode2 = "import {\n  QueueFullError,\n  RetryerConfigError,\n  Plugi
 </table>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/api-reference" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">API Reference →</a>
+  <a href={withBase('/docs/api-reference')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">API Reference →</a>
 </div>
 </DocsLayout>

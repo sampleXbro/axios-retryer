@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import '../styles/global.css';
 import CodeBlock from '../components/CodeBlock.astro';
+import { withBase } from '../utils/baseUrl';
 const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\nconst retryer = createRetryer({\n  retries: 3,\n  maxConcurrentRequests: 10,\n});\n\nretryer.use(createTokenRefreshPlugin(async (axios) => {\n  const { data } = await axios.post('/auth/refresh');\n  return { token: data.accessToken };\n}));\n\nretryer.use(createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeout: 30_000,\n}));\n\n// Use exactly like Axios\nconst { data } = await retryer.axiosInstance.get('/api/users');";
 ---
 <BaseLayout
@@ -165,20 +166,20 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
 
 <!-- Header -->
 <header class="site-header">
-  <a href="/" class="logo">
-    <img src="/axios-retryer-logo.png" alt="axios-retryer logo" />
+  <a href={withBase('/')} class="logo">
+    <img src={withBase('/axios-retryer-logo.png')} alt="axios-retryer logo" />
   </a>
   <nav class="header-nav">
-    <a href="/docs">Docs</a>
-    <a href="/docs/plugins">Plugins</a>
-    <a href="/guides/production">Guides</a>
+    <a href={withBase('/docs')}>Docs</a>
+    <a href={withBase('/docs/plugins')}>Plugins</a>
+    <a href={withBase('/guides/production')}>Guides</a>
     <a href="https://bundlephobia.com/package/axios-retryer" target="_blank" rel="noopener">Bundle size ↗</a>
   </nav>
   <div class="header-actions">
     <a href="https://github.com/sampleXbro/axios-retryer" class="btn btn-ghost" target="_blank" rel="noopener">
       GitHub
     </a>
-    <a href="/docs/installation" class="btn btn-primary">Get Started</a>
+    <a href={withBase('/docs/installation')} class="btn btn-primary">Get Started</a>
   </div>
 </header>
 
@@ -191,8 +192,8 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
     token refresh, response caching, and circuit breaker — as composable plugins.
   </p>
   <div class="hero-actions">
-    <a href="/docs/installation" class="btn btn-primary btn-lg">Get Started →</a>
-    <a href="/docs/quick-start" class="btn btn-ghost btn-lg">Quick Start</a>
+    <a href={withBase('/docs/installation')} class="btn btn-primary btn-lg">Get Started →</a>
+    <a href={withBase('/docs/quick-start')} class="btn btn-ghost btn-lg">Quick Start</a>
     <a href="https://github.com/sampleXbro/axios-retryer" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">GitHub</a>
   </div>
   <div class="install-strip">
@@ -283,7 +284,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       <p style="color:var(--text-muted); font-size:.95rem; margin-bottom:1.5rem">
         Wrap your Axios instance, add plugins, make requests. The <code>axiosInstance</code> property is a drop-in replacement for your existing Axios usage.
       </p>
-      <a href="/docs/quick-start" class="btn btn-primary">Read full guide →</a>
+      <a href={withBase('/docs/quick-start')} class="btn btn-primary">Read full guide →</a>
     </div>
     <div class="quickstart-code">
       <CodeBlock code={_shikiCode0} lang="typescript" />
@@ -298,7 +299,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
   <p class="section-sub">Each plugin is a separate tree-shakeable entry point. The core stays lean.</p>
 
   <div class="plugins-grid">
-    <a href="/docs/plugins/token-refresh" class="plugin-card">
+    <a href={withBase('/docs/plugins/token-refresh')} class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">🔑</div>
         <div>
@@ -308,7 +309,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       </div>
       <div class="plugin-desc">Auto-refresh access tokens on 401. Queue concurrent requests during refresh, replay them with new token.</div>
     </a>
-    <a href="/docs/plugins/circuit-breaker" class="plugin-card">
+    <a href={withBase('/docs/plugins/circuit-breaker')} class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">🛡️</div>
         <div>
@@ -318,7 +319,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       </div>
       <div class="plugin-desc">Trip open after N failures. Fail-fast during recovery. Test with half-open probes. Sliding window analysis.</div>
     </a>
-    <a href="/docs/plugins/caching" class="plugin-card">
+    <a href={withBase('/docs/plugins/caching')} class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">💾</div>
         <div>
@@ -328,7 +329,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       </div>
       <div class="plugin-desc">Cache GET responses. Exact/prefix invalidation, per-request TTR override, custom storage adapters.</div>
     </a>
-    <a href="/docs/plugins/manual-retry" class="plugin-card">
+    <a href={withBase('/docs/plugins/manual-retry')} class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">💾</div>
         <div>
@@ -338,7 +339,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       </div>
       <div class="plugin-desc">Store failed requests, replay them on reconnect. Offline-first patterns, idempotency safeguards.</div>
     </a>
-    <a href="/docs/plugins/metrics" class="plugin-card">
+    <a href={withBase('/docs/plugins/metrics')} class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">📊</div>
         <div>
@@ -348,7 +349,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       </div>
       <div class="plugin-desc">Retry counters, timer health, onMetricsUpdated events. Zero cost without the plugin.</div>
     </a>
-    <a href="/docs/plugins/debug-sanitization" class="plugin-card">
+    <a href={withBase('/docs/plugins/debug-sanitization')} class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">🔒</div>
         <div>
@@ -358,7 +359,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       </div>
       <div class="plugin-desc">Redact headers, fields, and URL params in debug logs. Safe verbose logging in non-prod environments.</div>
     </a>
-    <a href="/docs/configuration" class="plugin-card">
+    <a href={withBase('/docs/configuration')} class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">🔗</div>
         <div>
@@ -407,17 +408,17 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
   <h2>Ready to make your API calls resilient?</h2>
   <p>Install in seconds. Add the plugins that make sense for your app.</p>
   <div style="display:flex; gap:.75rem; justify-content:center; flex-wrap:wrap;">
-    <a href="/docs/installation" class="btn btn-primary btn-lg">Get Started →</a>
-    <a href="/docs/quick-start" class="btn btn-ghost btn-lg">View Examples</a>
+    <a href={withBase('/docs/installation')} class="btn btn-primary btn-lg">Get Started →</a>
+    <a href={withBase('/docs/quick-start')} class="btn btn-ghost btn-lg">View Examples</a>
   </div>
 </section>
 
 <!-- Footer -->
 <footer class="site-footer">
   <div class="footer-links">
-    <a href="/docs">Documentation</a>
-    <a href="/docs/plugins">Plugins</a>
-    <a href="/guides/migration">Migration</a>
+    <a href={withBase('/docs')}>Documentation</a>
+    <a href={withBase('/docs/plugins')}>Plugins</a>
+    <a href={withBase('/guides/migration')}>Migration</a>
     <a href="https://github.com/sampleXbro/axios-retryer" target="_blank" rel="noopener">GitHub</a>
     <a href="https://www.npmjs.com/package/axios-retryer" target="_blank" rel="noopener">npm</a>
     <a href="https://github.com/sampleXbro/axios-retryer/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>

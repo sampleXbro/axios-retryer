@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
 const _shikiCode0 = "const retryer = createRetryer({\n  debug: true,\n  enableSanitization: true,\n  sanitizeOptions: {\n    sensitiveHeaders: ['X-API-Key'],\n  },\n});";
 const _shikiCode1 = "import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\n\nconst retryer = createRetryer({ debug: true });\nretryer.use(createDebugSanitizationPlugin({\n  sanitizeOptions: { sensitiveHeaders: ['X-API-Key'] },\n}));";
 const _shikiCode2 = "const retryer = createRetryer();\n\nretryer.on('onMetricsUpdated', (metrics) => {\n  console.log(metrics.successfulRetries);\n});";
@@ -110,7 +111,7 @@ const _shikiCode16 = "import { CachingPlugin } from 'axios-retryer/plugins/Cachi
 <h2>Notes</h2>
 <ul>
   <li><code>1.5.4</code> was prepared but not published; its planned fixes ship in <code>2.0.0</code>.</li>
-  <li>Dependency-style gating (block lower-priority work until blocking requests finish) is <strong>core</strong>: <code>blockingPriorityThreshold</code> and <code>cancelPendingOnDependencyFailure</code>. See the <a href="/guides/concurrency">Concurrency guide</a>.</li>
+  <li>Dependency-style gating (block lower-priority work until blocking requests finish) is <strong>core</strong>: <code>blockingPriorityThreshold</code> and <code>cancelPendingOnDependencyFailure</code>. See the <a href={withBase('/guides/concurrency')}>Concurrency guide</a>.</li>
   <li>The <code>axios-retryer/plugins</code> barrel is deprecated for tree-shaking; it may be removed in v3.</li>
 </ul>
 
@@ -122,7 +123,7 @@ const _shikiCode16 = "import { CachingPlugin } from 'axios-retryer/plugins/Cachi
 <CodeBlock code={_shikiCode16} lang="typescript" />
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Back to Docs →</a>
+  <a href={withBase('/docs')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Back to Docs →</a>
   <a href="https://github.com/sampleXbro/axios-retryer/blob/main/MIGRATION.md" target="_blank" rel="noopener" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">MIGRATION.md ↗</a>
   <a href="https://github.com/sampleXbro/axios-retryer/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Changelog ↗</a>
 </div>

@@ -1,6 +1,7 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
 const _shikiCode0 = "import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';";
 const _shikiCode1 = "import { createRetryer, RETRY_MODES } from 'axios-retryer';\nimport { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\n\nconst retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  maxRequestsToStore: 50,\n  manualRetryMaxAge: 5 * 60_000,   // Drop requests older than 5 min\n});\n\nretryer.use(manualRetry);\n\n// Request fails in manual mode \u2192 stored\ntry {\n  await retryer.axiosInstance.post('/api/order', orderData);\n} catch {\n  showToast('Order saved \u2014 will retry when online');\n}\n\n// Later \u2014 replay on reconnect\nwindow.addEventListener('online', async () => {\n  const results = await manualRetry.retryFailedRequests();\n  console.log(`Replayed ${results.length} request(s)`);\n});";
 const _shikiCode2 = "createManualRetryPlugin({\n  maxRequestsToStore: 100,       // Max stored failures (oldest evicted first; default: 100)\n  manualRetryMaxAge: 300_000,    // ms before stored requests are discarded (default: none)\n  storeNonIdempotent: false,     // Store POST/PUT/PATCH/DELETE without idempotency key (default: false)\n  storeAuthRequests: false,      // Store requests with auth headers (default: false \u2014 safer)\n  \n  // Mutate or redact a request before storing\n  prepareRequestForStore: (config) => ({\n    ...config,\n    data: { redacted: true },   // Strip sensitive payload\n  }),\n\n  // Re-attach fresh auth before replay\n  rehydrateAuth: (config) => {\n    config.headers ??= {};\n    config.headers['Authorization'] = `Bearer ${store.getAccessToken()}`;\n    return config;\n  },\n\n  // Filter which requests to replay\n  beforeRetry: (config) => {\n    if (config.url?.includes('/non-critical')) return null;  // Skip\n    return config;\n  },\n})";
@@ -38,7 +39,7 @@ const _shikiCode4 = "const retryer = createRetryer({ mode: RETRY_MODES.MANUAL })
 </table>
 
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
-  <a href="/docs/plugins/metrics" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">MetricsPlugin →</a>
-  <a href="/docs/plugins" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+  <a href={withBase('/docs/plugins/metrics')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">MetricsPlugin →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
 </div>
 </DocsLayout>
