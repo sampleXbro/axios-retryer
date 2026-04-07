@@ -38,5 +38,6 @@ export function getBackoffDelay(attempt: number, backoffType: AxiosRetryerBackof
       break;
   }
 
-  return baseDelay;
+  // Full jitter: randomize between 0 and baseDelay to prevent thundering herd
+  return Math.floor(Math.random() * (baseDelay + 1));
 }

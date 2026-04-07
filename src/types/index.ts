@@ -1,14 +1,11 @@
-import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
-
-import type { RetryManager } from '../core/RetryManager';
-import type { SanitizeOptions } from '../utils/sanitize';
+import type { AxiosError, AxiosInstance, AxiosRequestConfig, Method } from 'axios';
 
 /**
- *  manual - After each request failure, Axios throws the rejected promise
- *  immediately to allow us to retry failed requests manually using {@link RetryManager.retryFailedRequests}
+ *  manual - Requests fail immediately after the first attempt.
+ *  Optional replay can be layered in with ManualRetryPlugin.
  *
- *  automatic - Automatic retry according to retry strategy and number of retries.
- *  After retires are completed we can retry the failed requests manually using {@link RetryManager.retryFailedRequests}
+ *  automatic - Requests retry automatically according to the configured
+ *  retry strategy and retry count.
  * */
 
 export const RETRY_MODES = {
@@ -17,6 +14,21 @@ export const RETRY_MODES = {
 } as const;
 
 export type RetryMode = (typeof RETRY_MODES)[keyof typeof RETRY_MODES];
+
+export const AXIOS_RETRYER_HTTP_METHODS = {
+  GET: 'GET',
+  POST: 'POST',
+  PUT: 'PUT',
+  PATCH: 'PATCH',
+  DELETE: 'DELETE',
+  HEAD: 'HEAD',
+  OPTIONS: 'OPTIONS',
+  PURGE: 'PURGE',
+  LINK: 'LINK',
+  UNLINK: 'UNLINK',
+} as const;
+
+export type AxiosRetryerHttpMethod = Method;
 
 export const AXIOS_RETRYER_REQUEST_PRIORITIES = {
   CRITICAL: 4,
@@ -36,19 +48,47 @@ export const AXIOS_RETRYER_BACKOFF_TYPES = {
 } as const;
 
 export type AxiosRetryerBackoffType = (typeof AXIOS_RETRYER_BACKOFF_TYPES)[keyof typeof AXIOS_RETRYER_BACKOFF_TYPES];
+export type AxiosRetryerStatusRange = readonly [number, number];
+export type AxiosRetryerRetryableStatus = number | AxiosRetryerStatusRange;
+
+export interface AxiosRetryerRequestMetadata {
+  /** Current retry attempt count. Managed by the library; read-only for consumers. */
+  readonly retryAttempt?: number;
+  /** Override the max retry count for this specific request. */
+  requestRetries?: number;
+  /** Override the retry mode (automatic / manual) for this specific request. */
+  requestMode?: RetryMode;
+  /** Custom request identifier for cancellation targeting. */
+  requestId?: string;
+  /** Whether the request is currently in a retry cycle. Managed by the library. */
+  readonly isRetrying?: boolean;
+  /** Override request priority for queue ordering. */
+  priority?: AxiosRetryerRequestPriority;
+  /** Request creation timestamp (ms). Managed by the library. */
+  readonly timestamp?: number;
+  /** Override the backoff strategy for this specific request. */
+  backoffType?: AxiosRetryerBackoffType;
+  /** Override the retryable status codes for this specific request. */
+  retryableStatuses?: readonly AxiosRetryerRetryableStatus[];
+  /** Extra metadata for this request. */
+  extra?: unknown;
+}
+
+export type RetryEventArgs<TEvents extends object, K extends keyof TEvents> =
+  NonNullable<TEvents[K]> extends (...args: infer TArgs) => unknown ? TArgs : never;
+
+export type RetryEventListener<TEvents extends object, K extends keyof TEvents> = (
+  ...args: RetryEventArgs<TEvents, K>
+) => void;
 
 /**
- * Hooks to interact with RetryManager's lifecycle and states.
+ * Core events exposed by RetryManager without any plugins attached.
  */
-export interface RetryHooks {
+export interface CoreRetryEvents {
   /**
    * Triggered when the retry process begins.
    */
   onRetryProcessStarted?: () => void;
-  /**
-   * Triggered when manual retry process begins.
-   */
-  onManualRetryProcessStarted?: () => void;
   /**
    * Triggered before each retry attempt.
    * @param config The Axios request configuration being retried.
@@ -59,8 +99,16 @@ export interface RetryHooks {
    * Triggered after a retry attempt.
    * @param config The Axios request configuration being retried.
    * @param success Whether the retry was successful.
+   * @param error If the retry failed, the error that caused the failure.
    */
-  afterRetry?: (config: AxiosRequestConfig, success: boolean) => void;
+  afterRetry?: (config: AxiosRequestConfig, success: boolean, error?: AxiosError) => void;
+
+  /**
+   * Triggered when a retry is scheduled and waiting for the specified delay.
+   * @param delayMs The delay in milliseconds.
+   * @param config The Axios request configuration.
+   */
+  onRetryScheduled?: (delayMs: number, config: AxiosRequestConfig) => void;
 
   /**
    * Triggered for each failed retry attempt.
@@ -69,39 +117,45 @@ export interface RetryHooks {
   onFailure?: (config: AxiosRequestConfig) => void;
 
   /**
+   * Triggered when a request enters the queue.
+   *
+   * @param payload Queue entry metadata for this request.
+   */
+  onRequestQueued?: (payload: AxiosRetryerRequestQueuedEvent) => void;
+
+  /**
+   * Triggered when a queued request is dispatched from the queue to the network layer.
+   *
+   * @param payload Dispatch metadata including queue wait duration.
+   */
+  onRequestDispatched?: (payload: AxiosRetryerRequestDispatchedEvent) => void;
+
+  /**
+   * Triggered when a request succeeds (initial attempt or after retries).
+   *
+   * @param payload Success metadata for this request.
+   */
+  onRequestSucceeded?: (payload: AxiosRetryerRequestSucceededEvent) => void;
+
+  /**
+   * Triggered once when a request fails terminally (all retries exhausted or no-retry terminal path).
+   * Unlike `onFailure`, this event is emitted only for the final failure.
+   *
+   * @param payload Terminal error context for application-level handling.
+   */
+  onRequestError?: (payload: AxiosRetryerRequestErrorEvent) => void;
+
+  /**
    * Triggered when all retries are completed.
-   * @param metrics Metrics about retry performance.
    */
-  onRetryProcessFinished?: (metrics: AxiosRetryerDetailedMetrics) => void;
+  onRetryProcessFinished?: () => void;
 
-  /**
-   * Triggered when a request is removed from the store due to storage limits.
-   * @param request The removed Axios request configuration.
-   */
-  onRequestRemovedFromStore?: (request: AxiosRequestConfig) => void;
-
-  /**
-   * Triggered when a critical request fails.
-   * A critical request is defined by {@link RetryManagerOptions.blockingQueueThreshold}.
-   */
-  onCriticalRequestFailed?: () => void;
   /**
    * Triggered when a request cancelled.
    * @param requestId Id of the cancelled request.
    */
   onRequestCancelled?: (requestId: string) => void;
-  /**
-   * Triggered when metrics updated.
-   * @param metrics Axios Retryer metrics object.
-   */
-  onMetricsUpdated?: (metrics: AxiosRetryerDetailedMetrics) => void;
-  /**
-   * Triggered when all critical requests resolved.
-   */
-  onAllCriticalRequestsResolved?: () => void;
-  /**
-   * Triggered when internet connection error throw.
-   */
+
   /**
    * Called when a request fails due to network or connection issues, meaning
    * no valid server response was received (e.g., user is offline).
@@ -109,27 +163,96 @@ export interface RetryHooks {
    * @param request - The Axios request config that encountered a connection error.
    */
   onInternetConnectionError?: (request: AxiosRequestConfig) => void;
+
   /**
-   * Called immediately after a new token is successfully obtained from the refresh flow.
+   * Triggered when a blocking request (at or above `blockingPriorityThreshold`) fails terminally.
+   * Only fires when `blockingPriorityThreshold` is configured.
    *
-   * @param newToken - The newly acquired token string.
+   * @param config The Axios request config of the failed blocking request.
    */
-  onTokenRefreshed?: (newToken: string) => void;
+  onBlockingRequestFailed?: (config: AxiosRequestConfig) => void;
 
   /**
-   * Called when all token refresh attempts have failed (e.g., server returned errors,
-   * timed out, or other terminal conditions).
+   * Triggered when every in-flight blocking request (at or above `blockingPriorityThreshold`)
+   * has **succeeded** (terminal success) and none remain in the internal blocker set.
+   * Not emitted when a blocker fails (`onBlockingRequestFailed`) or is cancelled.
+   * Only fires when `blockingPriorityThreshold` is configured.
    */
-  onTokenRefreshFailed?: () => void;
-
-  /**
-   * Called right before the token refresh process begins, allowing you to perform
-   * any necessary logging, UI updates, or other side effects prior to refresh attempts.
-   */
-  onBeforeTokenRefresh?: () => void;
+  onAllBlockingRequestsResolved?: () => void;
 }
 
-export interface RetryManagerOptions {
+/**
+ * Terminal request error payload emitted by `onRequestError`.
+ */
+export interface AxiosRetryerRequestErrorEvent {
+  /** Final Axios error object that caused request failure. */
+  error: AxiosError;
+  /** Final Axios request config that failed. */
+  config: AxiosRequestConfig;
+  /** HTTP status if available, otherwise `null` for network-level failures. */
+  status: number | null;
+  /** Request identifier if available. */
+  requestId?: string;
+  /** Total attempts performed including the initial attempt. */
+  attempts: number;
+  /** Whether the final error shape is considered retryable by the active strategy. */
+  retryable: boolean;
+}
+
+/**
+ * Queue-entry payload emitted by `onRequestQueued`.
+ */
+export interface AxiosRetryerRequestQueuedEvent {
+  /** Request identifier generated or assigned by RetryManager. */
+  requestId: string;
+  /** Request config entering the queue. */
+  config: AxiosRequestConfig;
+  /** Resolved priority used for queue ordering. */
+  priority: AxiosRetryerRequestPriority;
+  /** Queue size immediately after this request was enqueued. */
+  queueSize: number;
+}
+
+/**
+ * Queue-dispatch payload emitted by `onRequestDispatched`.
+ */
+export interface AxiosRetryerRequestDispatchedEvent {
+  /** Request identifier generated or assigned by RetryManager. */
+  requestId: string;
+  /** Request config dispatched from the queue. */
+  config: AxiosRequestConfig;
+  /** Resolved priority used for queue ordering. */
+  priority: AxiosRetryerRequestPriority;
+  /** Time spent waiting in the queue before dispatch (milliseconds). */
+  queuedForMs: number;
+}
+
+/**
+ * Success payload emitted by `onRequestSucceeded`.
+ */
+export interface AxiosRetryerRequestSucceededEvent {
+  /** Request identifier generated or assigned by RetryManager. */
+  requestId?: string;
+  /** Final request config that succeeded. */
+  config: AxiosRequestConfig;
+  /** Final HTTP status code. */
+  status: number;
+  /** Total attempts performed including the initial attempt. */
+  attempts: number;
+}
+
+export type RetryManagerEvents<TPluginEvents extends object = {}> = {
+  [K in keyof CoreRetryEvents | keyof TPluginEvents]:
+    K extends keyof TPluginEvents
+      ? K extends keyof CoreRetryEvents
+        ? CoreRetryEvents[K] & TPluginEvents[K]
+        : TPluginEvents[K]
+      : K extends keyof CoreRetryEvents
+        ? CoreRetryEvents[K]
+        : never;
+};
+
+export interface RetryManagerOptions<TPluginEvents extends object = {}> {
   /**
    * The mode of retrying requests.
    * - 'automatic': Automatically retry requests that meet the retry conditions.
@@ -138,7 +261,7 @@ export interface RetryManagerOptions {
    * @default 'automatic'
    *
    * @example
-   * mode: 'automatic'
+   * mode: RETRY_MODES.AUTOMATIC
    * Requests will retry automatically if conditions are met.
    */
   mode?: RetryMode;
@@ -162,18 +285,6 @@ export interface RetryManagerOptions {
    * retryStrategy: new CustomRetryStrategy()
    */
   retryStrategy?: RetryStrategy;
-
-  /**
-   * Hooks to interact with the internal states of the RetryManager.
-   * These hooks can be used to add custom behavior at different stages of the retry process.
-   *
-   * @example
-   * hooks: {
-   *   onRetryProcessStarted: () => console.log('Retry process started'),
-   *   onFailure: (config) => console.log('Request failed', config),
-   * }
-   */
-  hooks?: RetryHooks;
 
   /**
    * Custom Axios instance to use for making requests.
@@ -223,43 +334,31 @@ export interface RetryManagerOptions {
    * Status codes or ranges of status codes that are considered retryable.
    *
    * @example
-   * retryableStatuses: [408, 429, [500, 599]]
+   * retryableStatuses: [408, 429, [500, 599] as const]
    * This allows retrying requests with status codes 408, 429, and any status code between 500 and 599 (inclusive).
    */
-  retryableStatuses?: (number | [number, number])[];
+  retryableStatuses?: readonly AxiosRetryerRetryableStatus[];
 
   /**
    * HTTP methods that are considered retryable.
    *
    * @example
-   * retryableMethods: ['get', 'head', 'options']
+   * retryableMethods: [AXIOS_RETRYER_HTTP_METHODS.GET, AXIOS_RETRYER_HTTP_METHODS.HEAD]
    * Only requests using these methods will be retried.
    */
-  retryableMethods?: string[];
+  retryableMethods?: readonly AxiosRetryerHttpMethod[];
 
   /**
    * The backoff strategy used to calculate the delay between retries.
    *
-   * @type {'static' | 'linear' | 'exponential'}
-   * @default 'exponential'
+   * @type {AxiosRetryerBackoffType}
+   * @default AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL
    *
    * @example
-   * backoffType: 'exponential'
+   * backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL
    * Delays double with each retry attempt: 1s, 2s, 4s, etc.
    */
   backoffType?: AxiosRetryerBackoffType;
-
-  /**
-   * The maximum number of requests to store in the internal request store.
-   * Older requests will be removed when the store reaches its limit.
-   *
-   * @default 200
-   *
-   * @example
-   * maxRequestsToStore: 300
-   * Allows storing up to 300 requests in memory.
-   */
-  maxRequestsToStore?: number;
 
   /**
    * The maximum number of requests that can be processed concurrently.
@@ -285,19 +384,6 @@ export interface RetryManagerOptions {
   queueDelay?: number;
 
   /**
-   * The priority level threshold for blocking other requests.
-   * Requests with priority greater than or equal to this value will block lower-priority requests
-   * until they are resolved or retried to their maximum attempts.
-   *
-   * @default undefined (No threshold is set by default)
-   *
-   * @example
-   * blockingQueueThreshold: 3
-   * Requests with priority >= 3 (critical) block lower-priority requests until resolved.
-   */
-  blockingQueueThreshold?: AxiosRetryerRequestPriority;
-
-  /**
    * The maximum number of requests that can be queued.
    * When the queue reaches this limit, subsequent requests will be rejected with a QueueFullError.
    *
@@ -310,30 +396,43 @@ export interface RetryManagerOptions {
   maxQueueSize?: number;
 
   /**
-   * Options for sanitizing sensitive information in built-in logs and diagnostics.
-   * Controls how tokens, passwords, and other sensitive data are redacted when the library logs request details.
+   * Custom logger implementation.
+   * When provided, all log output is routed through this logger instead of
+   * the built-in console-based logger.
    *
-   * @default undefined (Uses default sanitization settings)
+   * @default undefined (uses built-in console logger)
    *
    * @example
-   * sanitizeOptions: {
-   *   sensitiveHeaders: ['my-custom-token-header'],
-   *   redactionChar: '#'
+   * logger: {
+   *   log: (msg, data) => myLogger.info(msg, data),
+   *   error: (msg, err) => myLogger.error(msg, err),
+   *   warn: (msg, data) => myLogger.warn(msg, data),
+   *   debug: (msg, meta) => myLogger.debug(msg, meta),
    * }
    */
-  sanitizeOptions?: SanitizeOptions;
+  logger?: Logger;
 
   /**
-   * Whether to enable sanitization of sensitive data in built-in logs and diagnostics.
-   * When enabled, sensitive information like tokens and passwords will be redacted in the library's own logging paths.
+   * When set, requests with priority at or above this threshold are treated as
+   * "blocking". While any blocking request is in flight, lower-priority requests
+   * wait in the queue until all blockers complete.
    *
-   * @default true
+   * Fires `onBlockingRequestFailed` when a blocking request fails terminally, and
+   * `onAllBlockingRequestsResolved` when all in-flight blocking requests have **succeeded**.
    *
    * @example
-   * enableSanitization: false
-   * Disables all sanitization of sensitive data.
+   * blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL
+   * // CRITICAL requests will block all lower-priority requests in the queue
    */
-  enableSanitization?: boolean;
+  blockingPriorityThreshold?: AxiosRetryerRequestPriority;
+
+  /**
+   * When `true` and a blocking request fails terminally, all queued non-blocking
+   * requests are cancelled. Has no effect if `blockingPriorityThreshold` is not set.
+   *
+   * @default true
+   */
+  cancelPendingOnDependencyFailure?: boolean;
 }
 
 /**
@@ -474,9 +573,71 @@ export interface RequestStore {
 }
 
 /**
+ * Context object passed to plugins during initialization and teardown.
+ * Provides the plugin-facing view of RetryManager capabilities including
+ * plugin-only wiring hooks that are not part of the public manager API.
+ */
+export interface PluginContext<TPluginEvents extends object = {}> {
+  /** The Axios instance managed by RetryManager. */
+  readonly axiosInstance: AxiosInstance;
+  /** Returns the configured logger. */
+  getLogger(): Logger;
+  /** Subscribe to a manager or plugin event. */
+  on<K extends keyof RetryManagerEvents<TPluginEvents>>(
+    event: K,
+    listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
+  ): void;
+  /** Unsubscribe from a manager or plugin event. */
+  off<K extends keyof RetryManagerEvents<TPluginEvents>>(
+    event: K,
+    listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
+  ): boolean;
+  /** Emit an event (fires listeners only, does not call hooks). */
+  emit<K extends keyof RetryManagerEvents<TPluginEvents>>(
+    event: K,
+    ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
+  ): void;
+  /** Call hooks and emit an event. */
+  triggerAndEmit<K extends keyof RetryManagerEvents<TPluginEvents>>(
+    event: K,
+    ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
+  ): void;
+  /** Cancel a specific in-flight or queued request by its ID. */
+  cancelRequest(requestId: string): void;
+  /** Cancel all active and queued requests. */
+  cancelAllRequests(): void;
+  /** Cancel only requests currently waiting in the queue. */
+  cancelQueuedRequests(): void;
+  /**
+   * Register a queue gate that must approve each request before it is dispatched.
+   * Used by plugins that need to block request processing under certain conditions.
+   */
+  registerQueueGate(name: string, canProcess: (request: AxiosRequestConfig) => boolean): void;
+  /** Remove a previously registered queue gate. */
+  unregisterQueueGate(name: string): boolean;
+  /** Trigger a queue drain pass. Useful after a gate condition changes. */
+  refreshQueue(): void;
+  /**
+   * Register or unregister a metrics recorder.
+   * Pass `null` to detach. Used by MetricsPlugin to expose metric data to the RetryManager's getMetrics() method.
+   */
+  registerMetricsRecorder(recorder: MetricsRecorder | null): void;
+  /**
+   * Return active timer counts.
+   * Used by MetricsPlugin to populate the timerHealth section of detailed metrics.
+   */
+  getTimerStats(): { activeTimers: number; activeRetryTimers: number };
+  /**
+   * Release lifecycle tracking for a request config and mark its queue slot complete.
+   * Used by TokenRefreshPlugin when a tracked request is intercepted for token refresh.
+   */
+  releaseRequestTracking(config: AxiosRequestConfig): void;
+}
+
+/**
  * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use} and removed with {@link RetryManager.unuse}
  * */
-export interface RetryPlugin {
+export interface RetryPlugin<TPluginEvents extends object = {}> {
   /**
    * Plugin name. Should be unique
    * */
@@ -486,18 +647,42 @@ export interface RetryPlugin {
    * */
   version: string;
   /**
-   * Called when the plugin is attached and initialized
-   * @param manager RetryManager instance
+   * Phantom covariant marker for TypeScript to infer `TPluginEvents` at call sites
+   * such as `manager.use(plugin)`. Never set this at runtime; implementations may
+   * simply omit it (it is always `undefined`).
    * */
-  initialize: (manager: RetryManager) => void;
+  readonly _events?: Readonly<TPluginEvents>;
   /**
-   * Called before the plugin is removed
-   * @param manager RetryManager instance
+   * Called when the plugin is attached and initialized.
+   * @param context Plugin context providing manager capabilities and plugin-only wiring hooks.
    * */
-  onBeforeDestroyed?: (manager: RetryManager) => void;
+  initialize: (context: PluginContext<TPluginEvents>) => void;
   /**
-   * @deprecated Use events instead {@link RetryManager.on} and {@link RetryManager.off}
-   * RetryManager lifecycle hooks {@link RetryHooks}
+   * Called before the plugin is removed.
+   * @param context Plugin context providing manager capabilities and plugin-only wiring hooks.
    * */
-  hooks?: RetryHooks;
+  onBeforeDestroyed?: (context: PluginContext<TPluginEvents>) => void;
+}
+
+/**
+ * Interface for pluggable metrics recording.
+ * The core library ships with no-op metrics by default.
+ * Use MetricsPlugin for full metrics collection.
+ */
+export interface MetricsRecorder {
+  reset(): void;
+  buildDetailedMetrics(timerStats: { activeTimers: number; activeRetryTimers: number }): AxiosRetryerDetailedMetrics;
+  emitMetricsUpdated?(): void;
+}
+
+/**
+ * Logger interface used by RetryManager and its collaborators.
+ * Supply a custom implementation via {@link RetryManagerOptions.logger}
+ * to redirect or suppress log output.
+ */
+export interface Logger {
+  log(message: string, data?: unknown): void;
+  error(message: string, error?: unknown): void;
+  warn(message: string, data?: unknown): void;
+  debug(message: string, meta?: unknown): void;
 }

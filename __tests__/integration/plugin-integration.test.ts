@@ -1,36 +1,48 @@
 import axios, { AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { createRetryer, RetryManager } from '../../src';
+import { createRetryer, RetryManager, type PluginContext } from '../../src';
+
+jest.setTimeout(15000);
 
 describe('Plugin Integration Tests', () => {
   let axiosInstance: AxiosInstance;
   let mock: AxiosMockAdapter;
+  let retryers: RetryManager[];
 
   beforeEach(() => {
+    retryers = [];
     axiosInstance = axios.create({ timeout: 5000 });
     mock = new AxiosMockAdapter(axiosInstance, { delayResponse: 0 });
   });
 
   afterEach(() => {
-    mock.reset();
+    retryers.forEach((retryer) => retryer.destroy());
+    mock.restore();
   });
+
+  const trackRetryer = (retryer: RetryManager): RetryManager => {
+    retryers.push(retryer);
+    return retryer;
+  };
 
   describe('TokenRefreshPlugin Integration', () => {
     it('should integrate token refresh with retry logic', async () => {
       // Import the actual TokenRefreshPlugin
       const { TokenRefreshPlugin } = await import('../../src/plugins/TokenRefreshPlugin');
 
-      const retryer = new RetryManager({
+      const retryer = trackRetryer(new RetryManager({
         axiosInstance,
         retries: 2,
         debug: false
-      });
+      }));
 
       let refreshCalls = 0;
       const tokenRefreshPlugin = new TokenRefreshPlugin(
-        async (axiosInst) => {
+        async (_axiosInst) => {
+          // Use the main axiosInstance (with mock adapter) for refresh calls in tests.
+          // In production, the sandboxed _axiosInst would call a real auth server.
           refreshCalls++;
-          const response = await axiosInst.post('/auth/refresh');
+          const response = await axiosInstance.post('/auth/refresh', {}, { __axiosRetryer: { isRetryRefreshRequest: true } } as any);
           return { token: response.data.access_token };
         },
         {
@@ -53,7 +65,6 @@ describe('Plugin Integration Tests', () => {
 
       // Mock the refresh endpoint
       mock.onPost('/auth/refresh').reply(() => {
-        refreshCalls++;
         return [200, { access_token: 'valid-token' }];
       });
 
@@ -73,11 +84,11 @@ describe('Plugin Integration Tests', () => {
       // Import the actual CircuitBreakerPlugin
       const { CircuitBreakerPlugin } = await import('../../src/plugins/CircuitBreakerPlugin');
 
-      const retryer = new RetryManager({
+      const retryer = trackRetryer(new RetryManager({
         axiosInstance,
         retries: 3,
         debug: false
-      });
+      }));
 
       const circuitBreaker = new CircuitBreakerPlugin({
         failureThreshold: 2,
@@ -124,11 +135,11 @@ describe('Plugin Integration Tests', () => {
       // Import the actual CachingPlugin
       const { CachingPlugin } = await import('../../src/plugins/CachingPlugin');
 
-      const retryer = new RetryManager({
+      const retryer = trackRetryer(new RetryManager({
         axiosInstance,
         retries: 2,
         debug: false
-      });
+      }));
 
       const cachingPlugin = new CachingPlugin({
         timeToRevalidate: 5000, // 5 seconds
@@ -174,16 +185,17 @@ describe('Plugin Integration Tests', () => {
       const { CachingPlugin } = await import('../../src/plugins/CachingPlugin');
       const { TokenRefreshPlugin } = await import('../../src/plugins/TokenRefreshPlugin');
 
-      const retryer = new RetryManager({
+      const retryer = trackRetryer(new RetryManager({
         axiosInstance,
         retries: 2,
         debug: false
-      });
+      }));
 
       // Add both plugins
       const cachingPlugin = new CachingPlugin({
         timeToRevalidate: 3000,
-        maxItems: 50
+        maxItems: 50,
+        skipWhenAuthPresent: false,
       });
 
       let apiCalls = 0;
@@ -191,9 +203,10 @@ describe('Plugin Integration Tests', () => {
 
       // Create TokenRefreshPlugin
       const tokenRefreshPlugin = new TokenRefreshPlugin(
-        async (axiosInst) => {
+        async (_axiosInst) => {
+          // Use the main axiosInstance (with mock adapter) for refresh calls in tests.
           refreshCalls++;
-          const response = await axiosInst.post('/auth/refresh');
+          const response = await axiosInstance.post('/auth/refresh', {}, { __axiosRetryer: { isRetryRefreshRequest: true } } as any);
           return { token: response.data.token };
         },
         {
@@ -243,10 +256,10 @@ describe('Plugin Integration Tests', () => {
 
   describe('Plugin Error Handling', () => {
     it('should handle plugin initialization errors gracefully', () => {
-      const retryer = createRetryer({
+      const retryer = trackRetryer(createRetryer({
         axiosInstance,
         retries: 2
-      });
+      }));
 
       const faultyPlugin = {
         name: 'FaultyPlugin',
@@ -263,20 +276,19 @@ describe('Plugin Integration Tests', () => {
     });
 
     it('should handle plugin hook errors without stopping retry logic', async () => {
-      const retryer = createRetryer({
+      const retryer = trackRetryer(createRetryer({
         axiosInstance,
         retries: 2,
         debug: false
-      });
+      }));
 
       const faultyHookPlugin = {
         name: 'FaultyHookPlugin',
         version: '1.0.0',
-        initialize: jest.fn(),
-        hooks: {
-          beforeRetry: () => {
+        initialize: (context: PluginContext) => {
+          context.on('beforeRetry', () => {
             throw new Error('Hook failed');
-          }
+          });
         }
       };
 
@@ -300,10 +312,10 @@ describe('Plugin Integration Tests', () => {
 
   describe('Plugin Lifecycle Management', () => {
     it('should properly manage plugin lifecycle', () => {
-      const retryer = createRetryer({
+      const retryer = trackRetryer(createRetryer({
         axiosInstance,
         retries: 1
-      });
+      }));
 
       const lifecyclePlugin = {
         name: 'LifecyclePlugin',
@@ -336,20 +348,20 @@ describe('Plugin Integration Tests', () => {
     });
 
     it('should handle removing non-existent plugins gracefully', () => {
-      const retryer = createRetryer({
+      const retryer = trackRetryer(createRetryer({
         axiosInstance,
         retries: 1
-      });
+      }));
 
       const removed = retryer.unuse('NonExistentPlugin');
       expect(removed).toBe(false);
     });
 
     it('should prevent duplicate plugin registration', () => {
-      const retryer = createRetryer({
+      const retryer = trackRetryer(createRetryer({
         axiosInstance,
         retries: 1
-      });
+      }));
 
       const plugin = {
         name: 'DuplicatePlugin',

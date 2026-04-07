@@ -6,16 +6,17 @@ import { RetryManager } from '../src';
 import { CachingPluginOptions } from '../src/plugins/CachingPlugin/CachingPlugin';
 import MockAdapter from 'axios-mock-adapter';
 
-// A minimal fake logger to capture debug calls
+import { createMinimalPluginContext } from './helpers/minimalPluginContext';
+
 const createFakeLogger = () => ({
   debug: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+  log: jest.fn(),
 });
 
-// A fake manager that exposes only what our plugin needs
-const createFakeManager = (axiosInstance: AxiosInstance, logger = createFakeLogger()) => ({
-  axiosInstance,
-  getLogger: () => logger,
-});
+const createFakeManager = (axiosInstance: AxiosInstance, logger = createFakeLogger()) =>
+  createMinimalPluginContext(axiosInstance, logger);
 
 describe('CachingPlugin', () => {
   let axiosInstance: AxiosInstance;
@@ -69,6 +70,25 @@ describe('CachingPlugin', () => {
     ).toBe(true);
   });
 
+  test('should serve immutable cache snapshots even if callers mutate prior results', async () => {
+    cachingPlugin = new CachingPlugin();
+    cachingPlugin.initialize(fakeManager as unknown as RetryManager);
+
+    const url = '/snapshot';
+    const responseData = { nested: { value: 1 } };
+
+    mock.onGet(url).replyOnce(200, responseData);
+
+    const firstResponse = await axiosInstance.get(url);
+    firstResponse.data.nested.value = 99;
+    responseData.nested.value = 42;
+
+    const secondResponse = await axiosInstance.get(url);
+
+    expect(secondResponse.data).toEqual({ nested: { value: 1 } });
+    expect(secondResponse.data).not.toBe(firstResponse.data);
+  });
+
   test('should not cache non-GET methods', async () => {
     cachingPlugin = new CachingPlugin();
     cachingPlugin.initialize(fakeManager as unknown as RetryManager);
@@ -92,7 +112,7 @@ describe('CachingPlugin', () => {
     expect(mock.history.post.length).toBe(2);
   });
 
-  test('should not cache when cacheOnlyRetriedRequests is true and __isRetrying is false', async () => {
+  test('should not cache when cacheOnlyRetriedRequests is true and __axiosRetryer.isRetrying is false', async () => {
     // Set cacheOnlyRetriedRequests option to true.
     const options: CachingPluginOptions = { cacheOnlyRetriedRequests: true };
     cachingPlugin = new CachingPlugin(options);
@@ -101,12 +121,12 @@ describe('CachingPlugin', () => {
     const url = '/test';
     const responseData = { data: 'response' };
 
-    // First GET: request does NOT have __isRetrying set.
+    // First GET: request does NOT have __axiosRetryer.isRetrying set.
     mock.onGet(url).replyOnce(200, responseData);
     const res1 = await axiosInstance.get(url);
     expect(res1.data).toEqual(responseData);
 
-    // Second GET: still without __isRetrying, so should not be cached.
+    // Second GET: still without __axiosRetryer.isRetrying, so should not be cached.
     mock.onGet(url).replyOnce(200, responseData);
     const res2 = await axiosInstance.get(url);
     expect(res2.data).toEqual(responseData);
@@ -115,7 +135,7 @@ describe('CachingPlugin', () => {
     expect(mock.history.get.length).toBe(2);
   });
 
-  test('should cache when cacheOnlyRetriedRequests is true and __isRetrying is true', async () => {
+  test('should cache when cacheOnlyRetriedRequests is true and __axiosRetryer.isRetrying is true', async () => {
     const options: CachingPluginOptions = { cacheOnlyRetriedRequests: true };
     cachingPlugin = new CachingPlugin(options);
     cachingPlugin.initialize(fakeManager as unknown as RetryManager);
@@ -123,13 +143,13 @@ describe('CachingPlugin', () => {
     const url = '/test';
     const responseData = { data: 'response' };
 
-    // First GET with __isRetrying true.
+    // First GET with __axiosRetryer.isRetrying true.
     mock.onGet(url).replyOnce(200, responseData);
-    const res1 = await axiosInstance.get(url, { __isRetrying: true });
+    const res1 = await axiosInstance.get(url, { __axiosRetryer: { isRetrying: true } });
     expect(res1.data).toEqual(responseData);
 
-    // Second GET with __isRetrying true should hit cache.
-    const res2 = await axiosInstance.get(url, { __isRetrying: true });
+    // Second GET with __axiosRetryer.isRetrying true should hit cache.
+    const res2 = await axiosInstance.get(url, { __axiosRetryer: { isRetrying: true } });
     expect(res2.data).toEqual(responseData);
 
     // Only one network call should have been made.
@@ -289,7 +309,7 @@ describe('CachingPlugin', () => {
       expect(initialStats.size).toBe(3);
       
       // Invalidate only user-related cache entries
-      cachingPlugin.invalidateCache('/users');
+      cachingPlugin.invalidateCache({ prefix: 'GET|/users' });
       
       // Should only have posts in cache now
       const afterStats = cachingPlugin.getCacheStats();
@@ -406,7 +426,7 @@ describe('CachingPlugin', () => {
       manager.use(plugin);
       
       // Now we can call invalidateCache
-      plugin.invalidateCache('/api/');
+      plugin.invalidateCache({ prefix: 'GET|/api/' });
       
       // Cleanup
       manager.unuse('CachingPlugin');
@@ -470,7 +490,7 @@ describe('CachingPlugin', () => {
       cachingPlugin.onBeforeDestroyed();
     });
 
-    test('should cache a POST request when explicitly enabled via __cachingOptions', async () => {
+    test('should cache a POST request when explicitly enabled via __axiosRetryer.cachingOptions', async () => {
       // Setup response for POST request
       const url = '/should-cache-post';
       const postData = { key: 'value' };
@@ -478,8 +498,10 @@ describe('CachingPlugin', () => {
 
       // Make POST request with cache enabled
       const res1 = await axiosInstance.post(url, postData, {
-        __cachingOptions: {
-          cache: true
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: true
+          }
         }
       });
       expect(res1.data).toEqual({ success: true });
@@ -487,25 +509,29 @@ describe('CachingPlugin', () => {
 
       // Second request should be served from cache
       const res2 = await axiosInstance.post(url, postData, {
-        __cachingOptions: {
-          cache: true
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: true
+          }
         }
       });
       expect(res2.data).toEqual({ success: true });
-      
+
       // No new network call should have been made
       expect(mockAxios.history.post.length).toBe(1);
     });
 
-    test('should not cache a GET request when explicitly disabled via __cachingOptions', async () => {
+    test('should not cache a GET request when explicitly disabled via __axiosRetryer.cachingOptions', async () => {
       // Setup response for GET request
       const url = '/do-not-cache-get';
       mockAxios.onGet(url).reply(200, { data: 'response' });
 
       // Make GET request with cache disabled
       const res1 = await axiosInstance.get(url, {
-        __cachingOptions: {
-          cache: false
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: false
+          }
         }
       });
       expect(res1.data).toEqual({ data: 'response' });
@@ -513,25 +539,29 @@ describe('CachingPlugin', () => {
 
       // Second request should NOT be served from cache
       const res2 = await axiosInstance.get(url, {
-        __cachingOptions: {
-          cache: false
+        __axiosRetryer: {
+          cachingOptions: {
+            cache: false
+          }
         }
       });
       expect(res2.data).toEqual({ data: 'response' });
-      
+
       // A new network call should have been made
       expect(mockAxios.history.get.length).toBe(2);
     });
 
-    test('should store custom TTR when provided in __cachingOptions', async () => {
+    test('should store custom TTR when provided in __axiosRetryer.cachingOptions', async () => {
       // This test just ensures TTR is stored in the cache map
       const url = '/custom-ttr';
       mockAxios.onGet(url).replyOnce(200, { data: 'response' });
-      
+
       // Make request with custom TTR
       await axiosInstance.get(url, {
-        __cachingOptions: {
-          ttr: 5000 // 5 seconds
+        __axiosRetryer: {
+          cachingOptions: {
+            ttr: 5000 // 5 seconds
+          }
         }
       });
       
@@ -539,7 +569,7 @@ describe('CachingPlugin', () => {
       expect(
         fakeLogger.debug.mock.calls.some(args => 
           args[0].includes('Caching response') && 
-          args[0].includes('custom TTR: 5000ms')
+          args[1]?.ttrMs === 5000
         )
       ).toBe(true);
     });

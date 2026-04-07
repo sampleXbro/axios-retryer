@@ -1,0 +1,43 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  maxConcurrentRequests: 6,   // At most 6 requests run simultaneously\n  queueDelay: 50,             // 50ms between dequeue ticks (0 for max throughput)\n  maxQueueSize: 200,          // Reject with QueueFullError if queue exceeds 200\n});";
+const _shikiCode1 = "import { AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';\n\n// CRITICAL: auth, checkout, user-initiated actions\nretryer.axiosInstance.post('/auth/login', creds, {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },\n});\n\n// HIGH: primary page content\nretryer.axiosInstance.get('/api/dashboard', {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },\n});\n\n// MEDIUM: secondary data (default when omitted)\nretryer.axiosInstance.get('/api/sidebar');\n\n// LOW: background prefetch, analytics events\nretryer.axiosInstance.post('/api/analytics', event, {\n  __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },\n});";
+const _shikiCode2 = "import { createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,\n  cancelPendingOnDependencyFailure: true,  // Abort queued LOW/MEDIUM if CRITICAL fails\n});";
+const _shikiCode3 = "import { QueueFullError } from 'axios-retryer';\n\ntry {\n  await retryer.axiosInstance.get('/api/resource');\n} catch (err) {\n  if (err instanceof QueueFullError) {\n    // Apply backpressure \u2014 don't alert Sentry for this\n    showToast('System is busy. Please wait a moment.');\n    return;\n  }\n  throw err;\n}";
+const _shikiCode4 = "// Third-party API allows 20 req/s\nconst externalApi = createRetryer({\n  maxConcurrentRequests: 20,\n  queueDelay: 0,            // No artificial pacing \u2014 let the concurrency cap do the work\n  maxQueueSize: 1000,\n  retries: 3,\n});\n\n// Bulk operation: fan out across the queue, respect concurrency\nasync function processItems(items: string[]) {\n  return Promise.allSettled(\n    items.map(id => externalApi.axiosInstance.get(`/items/${id}`))\n  );\n  // Up to 20 run concurrently; the rest queue automatically\n}";
+const _shikiCode5 = "const retryer = createRetryer({ maxConcurrentRequests: 3 });\n\n// Fire 10 requests of mixed priority simultaneously\nconst requests = [\n  ...Array(4).fill(null).map(() =>\n    retryer.axiosInstance.get('/api/data', {\n      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW },\n    })\n  ),\n  ...Array(3).fill(null).map(() =>\n    retryer.axiosInstance.get('/api/data', {\n      __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },\n    })\n  ),\n  retryer.axiosInstance.get('/api/critical', {\n    __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },\n  }),\n];\n// HIGH and CRITICAL complete well before LOW in the queue\nawait Promise.allSettled(requests);";
+---
+<DocsLayout title="Concurrency & Priority" section="Guides" description="Control request concurrency and priority with axios-retryer — max concurrent requests, priority queue, and blocking thresholds.">
+
+<h1 class="page-title">Concurrency &amp; Priority</h1>
+<p class="page-lead">Control how many requests run in parallel, which run first, and what blocks lower-priority work until critical requests resolve.</p>
+
+<h2>Setting concurrency limits</h2>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h2>Request priorities</h2>
+<p>Every request in the queue is sorted by priority. CRITICAL requests always dequeue before MEDIUM or LOW work:</p>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>Blocking high-priority work</h2>
+<p>Set <code>blockingPriorityThreshold</code> to hold all lower-priority requests in the queue until all blocking requests resolve:</p>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>Handling queue overflow</h2>
+<CodeBlock code={_shikiCode3} lang="typescript" />
+
+<h2>High-throughput backend services</h2>
+<p>For Node.js workers calling a rate-limited API, tune concurrency to match the upstream rate limit:</p>
+<CodeBlock code={_shikiCode4} lang="typescript" />
+
+<h2>Priority under contention</h2>
+<p>With 3 concurrent slots, multiple priorities in flight, and a slow API:</p>
+<CodeBlock code={_shikiCode5} lang="typescript" />
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/guides/migration')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Migration Guide →</a>
+  <a href={withBase('/docs/configuration')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Configuration reference →</a>
+</div>
+</DocsLayout>

@@ -16,6 +16,7 @@ const {
   silenceManager,
   sleep,
   summarizeLatency,
+  withPriority,
 } = require('./_utils');
 
 const BENCHMARK_NAME = 'stress-testing';
@@ -85,7 +86,7 @@ async function burstScenario(profile) {
     const batch = await measureRequests({
       items,
       concurrency,
-      execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+      execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
     });
     const burstDuration = performance.now() - burstStart;
 
@@ -178,9 +179,7 @@ async function sustainedScenario(profile) {
         const requestStartedAt = performance.now();
 
         try {
-          await manager.axiosInstance.get(`/sustained/${requestId}`, {
-            __priority: requestId % 3,
-          });
+          await manager.axiosInstance.get(`/sustained/${requestId}`, withPriority(requestId % 3));
           samples.push({
             ok: true,
             durationMs: performance.now() - requestStartedAt,
@@ -293,7 +292,7 @@ async function outageRecoveryScenario(profile) {
   const result = await measureRequests({
     items,
     concurrency,
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const finishedAt = performance.now();
 

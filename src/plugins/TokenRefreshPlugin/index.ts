@@ -1,23 +1,31 @@
 export { TokenRefreshPlugin } from './TokenRefreshPlugin';
-export type { TokenRefreshPluginOptions } from './types';
+export type { TokenRefreshPluginEvents } from './TokenRefreshPlugin';
+export { MissingTokenRefreshHandlerError } from './MissingTokenRefreshHandlerError';
+export { TokenRefreshAbortError } from './TokenRefreshAbortError';
+export { TokenRefreshFailedError } from './TokenRefreshFailedError';
+export { TokenRefreshTimeoutError } from './TokenRefreshTimeoutError';
+export type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
 
 import { TokenRefreshPlugin } from './TokenRefreshPlugin';
-import type { TokenRefreshPluginOptions } from './types';
-import type { AxiosInstance } from 'axios';
+import { TokenRefreshAbortError } from './TokenRefreshAbortError';
+import type { TokenRefreshHandler, TokenRefreshPluginOptions } from './types';
 
 /**
  * Creates a TokenRefreshPlugin instance.
  * Functional alternative to using the `new TokenRefreshPlugin()` constructor.
  *
- * @param refreshToken Function that performs the token refresh operation
+ * @param refreshToken Function that performs the token refresh operation. Return `{ token: string }` to apply a new token, or resolve with no usable `token` (`null`/`undefined`/omitted) to skip that cycle without failure events (see plugin docs).
  * @param options Configuration options for the TokenRefreshPlugin
  * @returns A configured TokenRefreshPlugin instance
- * 
+ *
  * @example
  * ```typescript
  * const tokenRefresher = createTokenRefreshPlugin(
  *   async (axiosInstance) => {
  *     const refreshToken = localStorage.getItem('refreshToken');
+ *     if (!refreshToken) {
+ *       throw new TokenRefreshAbortError('Refresh token not found');
+ *     }
  *     const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });
  *     return { token: data.accessToken };
  *   },
@@ -31,7 +39,7 @@ import type { AxiosInstance } from 'axios';
  * ```
  */
 export function createTokenRefreshPlugin(
-  refreshToken: (axiosInst: AxiosInstance) => Promise<{ token: string }>,
+  refreshToken: TokenRefreshHandler,
   options?: TokenRefreshPluginOptions
 ): TokenRefreshPlugin {
   return new TokenRefreshPlugin(refreshToken, options);

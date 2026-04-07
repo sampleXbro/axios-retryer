@@ -13,6 +13,7 @@ const {
   round,
   scaleCount,
   silenceManager,
+  withPriority,
 } = require('./_utils');
 
 const BENCHMARK_NAME = 'priority-queue';
@@ -71,9 +72,7 @@ async function main() {
     items,
     concurrency: items.length,
     execute: (item) =>
-      manager.axiosInstance.get(item.url, {
-        __priority: item.priority,
-      }),
+      manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const finishedAt = performance.now();
 

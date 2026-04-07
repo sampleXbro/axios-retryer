@@ -1,0 +1,78 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
+const _shikiCode0 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';";
+const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\nconst retryer = createRetryer({ retries: 3 });\n\nretryer.use(\n  createTokenRefreshPlugin(\n    // Refresh callback \u2014 called once per refresh cycle regardless of how many requests are queued\n    async (axiosInstance) => {\n      const refreshToken = localStorage.getItem('refreshToken');\n      if (!refreshToken) throw new Error('No refresh token');  // Aborts immediately\n\n      const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });\n      localStorage.setItem('accessToken', data.accessToken);\n      return { token: data.accessToken };\n    }\n  )\n);";
+const _shikiCode2 = "retryer.use(\n  createTokenRefreshPlugin(\n    async (axiosInstance) => {\n      const { data } = await axiosInstance.post('/auth/refresh');\n      return { token: data.accessToken };\n    },\n    {\n      authHeaderName: 'Authorization',  // Header to inject the token into (default: 'Authorization')\n      tokenPrefix: 'Bearer ',           // Prefix prepended to the token value (default: 'Bearer ')\n      refreshStatusCodes: [401],        // HTTP status codes that trigger a refresh (default: [401])\n      maxRefreshAttempts: 3,            // Max refresh attempts before giving up (default: 3)\n      // Note: in v2.x this is the exact number of attempts (v1.x had an off-by-one bug)\n\n      // Optional: detect auth errors inside 200 OK bodies (e.g. GraphQL)\n      customErrorDetector: (responseData) => {\n        if (typeof responseData !== 'object' || !responseData?.errors) return false;\n        return responseData.errors.some((e: any) =>\n          e.extensions?.code === 'UNAUTHENTICATED' ||\n          e.message?.includes('token expired')\n        );\n      },\n    }\n  )\n);";
+const _shikiCode3 = "createTokenRefreshPlugin(\n  async (axios) => {\n    const { data } = await axios.post('/graphql/refresh');\n    return { token: data.accessToken };\n  },\n  {\n    customErrorDetector: (body) => {\n      if (!body?.errors) return false;\n      return body.errors.some((e: any) =>\n        e.extensions?.code === 'UNAUTHENTICATED'\n      );\n    },\n  }\n)";
+const _shikiCode4 = "createTokenRefreshPlugin(async (axios) => {\n  const token = sessionStorage.getItem('refreshToken');\n  if (!token) {\n    // No retry \u2014 redirect to login right away\n    window.location.href = '/login';\n    throw new Error('No refresh token available');\n  }\n  const { data } = await axios.post('/auth/refresh', { token });\n  return { token: data.accessToken };\n})";
+const _shikiCode5 = "import { type TokenRefreshPluginEvents } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\nconst managed = retryer.use(createTokenRefreshPlugin(refreshFn));\n\nmanaged.on('onTokenRefreshed', (token) => {\n  console.log('New token:', token);\n});";
+const _shikiCode6 = "import {\n  TokenRefreshAbortError,     // Callback threw before making the request\n  TokenRefreshFailedError,    // All refresh attempts exhausted\n  TokenRefreshTimeoutError,   // Refresh request timed out\n  MissingTokenRefreshHandlerError, // No callback provided\n} from 'axios-retryer/plugins/TokenRefreshPlugin';\n\ntry {\n  await retryer.axiosInstance.get('/api/protected');\n} catch (err) {\n  if (err instanceof TokenRefreshAbortError) redirectToLogin();\n  if (err instanceof TokenRefreshFailedError) showRefreshFailedBanner();\n}";
+const _shikiCode7 = "// Resolve with no token to skip this refresh cycle (not a failure)\ncreateTokenRefreshPlugin(async (axiosInstance) => {\n  const allow = await shouldAttemptRefresh();\n  if (!allow) {\n    return { token: undefined }; // same as { token: null } or {}\n  }\n  const { data } = await axiosInstance.post('/auth/refresh');\n  return { token: data.accessToken };\n});";
+---
+<DocsLayout title="TokenRefreshPlugin" section="Plugins" description="Automatically refresh JWT/OAuth tokens on 401 with axios-retryer's TokenRefreshPlugin. Queue concurrent requests, replay after refresh.">
+
+<h1 class="page-title">TokenRefreshPlugin</h1>
+<p class="page-lead">Automatically refreshes access tokens when requests fail with 401. Queues all concurrent requests during the refresh and replays them transparently once a new token is available.</p>
+
+<h2>Install</h2>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h2>Basic usage</h2>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>All options</h2>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>How the refresh flow works</h2>
+<ol>
+  <li>A request returns 401 (or <code>customErrorDetector</code> returns <code>true</code>)</li>
+  <li>All subsequent requests queue while the refresh is in progress</li>
+  <li>The refresh callback is called <strong>once</strong> regardless of how many requests are waiting</li>
+  <li>On success: the new token is injected into all queued requests' headers, then they are replayed through the full <code>RetryManager</code> pipeline</li>
+  <li>On skip: the callback resolved with no usable token (<code>token</code> omitted, <code>null</code>, or <code>undefined</code>) — see <a href="#opt-out-of-refresh">Opt out of refresh</a> below</li>
+  <li>On failure: all queued requests are rejected with the refresh error</li>
+</ol>
+
+<div class="callout callout-info">
+  <div class="callout-icon">ℹ️</div>
+  <div class="callout-content">
+    <div class="callout-title">Replayed requests go through RetryManager</div>
+    <p>In v2.x, replayed requests re-enter the full RetryManager pipeline — they respect the concurrency queue, MetricsPlugin, and other plugin hooks. This was a bug in v1.x where replayed requests bypassed the manager entirely.</p>
+  </div>
+</div>
+
+<h2>GraphQL — customErrorDetector</h2>
+<p>GraphQL APIs often return auth errors in a successful 200 body. Use <code>customErrorDetector</code> to catch these:</p>
+<CodeBlock code={_shikiCode3} lang="typescript" />
+
+<h2>Abort on missing token</h2>
+<p>Throwing from the refresh callback before any network call aborts all queued requests immediately and does not count as a retry attempt:</p>
+<CodeBlock code={_shikiCode4} lang="typescript" />
+
+<h2 id="opt-out-of-refresh">Opt out of refresh (<code>null</code> / <code>undefined</code> token)</h2>
+<p>Sometimes you want to decide <em>after</em> async work that this cycle should not refresh (without treating it as a hard failure). If the callback <strong>resolves</strong> with <code>{'{'} token: null {'}'}</code>, <code>{'{'} token: undefined {'}'}</code>, or omits <code>token</code> entirely, the plugin <strong>skips</strong> that refresh cycle:</p>
+<ul>
+  <li>No <code>onTokenRefreshed</code> or <code>onTokenRefreshFailed</code></li>
+  <li>No update to the instance default auth header and no &ldquo;failed refresh&rdquo; short-circuit for the old token</li>
+  <li>No <code>TokenRefreshFailedError</code> for the refresh queue &mdash; this is not an exhausted-refresh failure</li>
+  <li><strong>401 path:</strong> the request that triggered refresh rejects with the <strong>original</strong> <code>AxiosError</code> (same 401)</li>
+  <li><strong>Requests waiting on the request interceptor</strong> (blocked because a refresh was in flight) are <strong>released</strong> with their config unchanged so they continue to the network</li>
+  <li><strong>Other requests already waiting as 401 follow-ups</strong> reject with <strong>their</strong> original <code>AxiosError</code></li>
+  <li><strong><code>customErrorDetector</code> / 200 responses:</strong> the handler returns the <strong>same response object</strong> (e.g. GraphQL error body); queued parallel calls get their stored response the same way</li>
+</ul>
+<p>Use <strong>throw</strong> (or <code>TokenRefreshAbortError</code>) when you want an immediate terminal failure; use <strong>resolve with no token</strong> when you want a silent no-op for this cycle.</p>
+<CodeBlock code={_shikiCode7} lang="typescript" />
+
+<h2>Plugin events</h2>
+<CodeBlock code={_shikiCode5} lang="typescript" />
+
+<h2>Error classes</h2>
+<CodeBlock code={_shikiCode6} lang="typescript" />
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/plugins/circuit-breaker')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CircuitBreakerPlugin →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

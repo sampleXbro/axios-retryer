@@ -62,34 +62,33 @@ describe('CachingPlugin Advanced Tests', () => {
       
       manager.use(cachingPlugin);
       
-      // Get direct access to cache for testing
-      const cache = cachingPlugin['cache'];
+      const storage = cachingPlugin['storage'];
       
       // Manually add test entries with expired timestamps
       const now = Date.now();
-      cache.set('test1-key', {
+      storage.set('test1-key', {
         response: { data: { data: 'test1' }, status: 200, headers: {}, config: {} },
         timestamp: now - 3000 // 3 seconds old (older than maxAge)
       });
       
-      cache.set('test2-key', {
+      storage.set('test2-key', {
         response: { data: { data: 'test2' }, status: 200, headers: {}, config: {} },
         timestamp: now - 1000 // 1 second old (fresher than maxAge)
       });
       
       // Initial cache size should be 2
-      expect(cache.size).toBe(2);
+      expect(storage.entries()).toHaveLength(2);
       
       // Run cleanup to remove expired items
-      (cachingPlugin as any).runCacheCleanup();
+      await (cachingPlugin as any).runCacheCleanup();
+      const entries = storage.entries();
       
       // Only the expired item should be removed
-      expect(cache.size).toBe(1);
-      expect(cache.has('test1-key')).toBe(false);
-      expect(cache.has('test2-key')).toBe(true);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].key).toBe('test2-key');
     }, 30000); // Increased timeout
     
-    test('runCacheCleanup should handle empty cache', () => {
+    test('runCacheCleanup should handle empty cache', async () => {
       cachingPlugin = new CachingPlugin({
         maxAge: 1000
       });
@@ -97,7 +96,7 @@ describe('CachingPlugin Advanced Tests', () => {
       manager.use(cachingPlugin);
       
       // Manually trigger cleanup (accessing private method for testing)
-      (cachingPlugin as any).runCacheCleanup();
+      await (cachingPlugin as any).runCacheCleanup();
       
       // Should not throw errors on empty cache
       expect(cachingPlugin.getCacheStats().size).toBe(0);
@@ -247,6 +246,53 @@ describe('CachingPlugin Advanced Tests', () => {
       expect(countRegex).toBe(0);
       
       // Cache should still have the item
+      expect(cachingPlugin.getCacheStats().size).toBe(1);
+    });
+
+    test('should keep cache keys stable when params object property order changes', async () => {
+      cachingPlugin = new CachingPlugin();
+      manager.use(cachingPlugin);
+
+      let networkCalls = 0;
+      mock.onGet('/api/search').reply(() => {
+        networkCalls++;
+        return [200, { ok: true, call: networkCalls }];
+      });
+
+      const first = await axiosInstance.get('/api/search', {
+        params: { page: 2, q: 'term' },
+      });
+      const second = await axiosInstance.get('/api/search', {
+        params: { q: 'term', page: 2 },
+      });
+
+      expect(first.data.call).toBe(1);
+      expect(second.data.call).toBe(1);
+      expect(networkCalls).toBe(1);
+      expect(cachingPlugin.getCacheStats().size).toBe(1);
+    });
+
+    test('should support explicit exact and prefix invalidation semantics', async () => {
+      cachingPlugin = new CachingPlugin();
+      manager.use(cachingPlugin);
+
+      mock.onGet('/api/users/1').reply(200, { user: 1 });
+      mock.onGet('/api/users/2').reply(200, { user: 2 });
+      mock.onGet('/api/products/1').reply(200, { product: 1 });
+
+      await axiosInstance.get('/api/users/1');
+      await axiosInstance.get('/api/users/2');
+      await axiosInstance.get('/api/products/1');
+
+      const exactUserOneKey = cachingPlugin.buildCacheKey({
+        method: 'get',
+        url: '/api/users/1',
+      });
+
+      expect(cachingPlugin.invalidateCache({ exact: exactUserOneKey })).toBe(1);
+      expect(cachingPlugin.getCacheStats().size).toBe(2);
+
+      expect(cachingPlugin.invalidateCache({ prefix: 'GET|/api/users/' })).toBe(1);
       expect(cachingPlugin.getCacheStats().size).toBe(1);
     });
   });

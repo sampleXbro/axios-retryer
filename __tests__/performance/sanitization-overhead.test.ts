@@ -1,6 +1,7 @@
 import { RetryManager } from '../../src';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { SanitizeOptions } from '../../src/utils/sanitize';
+import type { SanitizeOptions } from '../../src/plugins/DebugSanitizationPlugin/sanitize';
+import { DebugSanitizationPlugin } from '../../src/plugins/DebugSanitizationPlugin';
 
 describe('Sanitization Performance Tests', () => {
   let mock: AxiosMockAdapter;
@@ -13,11 +14,10 @@ describe('Sanitization Performance Tests', () => {
   test('should measure the overhead of sanitization on request throughput', async () => {
     // Create test scenarios
     const scenarios = [
-      { name: 'No sanitization', enableSanitization: false },
-      { name: 'Default sanitization', enableSanitization: true },
+      { name: 'No sanitization plugin' },
+      { name: 'Default sanitization plugin', sanitizeOptions: undefined },
       { 
-        name: 'Heavy sanitization', 
-        enableSanitization: true, 
+        name: 'Heavy sanitization plugin', 
         sanitizeOptions: { 
           sensitiveHeaders: ['x-custom-header', 'x-session-id'],
           sensitiveFields: ['token', 'password', 'secret', 'key', 'auth'],
@@ -71,9 +71,11 @@ describe('Sanitization Performance Tests', () => {
       const retryManager = new RetryManager({
         maxConcurrentRequests: 10,
         debug: true, // Enable debug to ensure sanitization is used
-        enableSanitization: scenario.enableSanitization,
-        sanitizeOptions: scenario.sanitizeOptions
       });
+
+      if (scenario.sanitizeOptions !== undefined || scenario.name !== 'No sanitization plugin') {
+        retryManager.use(new DebugSanitizationPlugin({ sanitizeOptions: scenario.sanitizeOptions }));
+      }
       
       // Setup mock
       mock = new AxiosMockAdapter(retryManager.axiosInstance);
@@ -90,17 +92,18 @@ describe('Sanitization Performance Tests', () => {
       
       // Clean up
       mock.restore();
+      retryManager.destroy();
     }
     
     // Output results
     console.log('Sanitization Performance Impact:');
-    const baseline = results['No sanitization'];
+    const baseline = results['No sanitization plugin'];
     
     for (const scenario of scenarios) {
       const time = results[scenario.name];
       console.log(`- ${scenario.name}: ${time.toFixed(2)}ms`);
       
-      if (scenario.name !== 'No sanitization') {
+      if (scenario.name !== 'No sanitization plugin') {
         const overhead = ((time - baseline) / baseline) * 100;
         console.log(`  Overhead: ${overhead.toFixed(2)}%`);
       }
@@ -115,14 +118,14 @@ describe('Sanitization Performance Tests', () => {
   test('should evaluate sanitization impact under high request volume', async () => {
     // Test parameters - reduced for test environments
     const scenarios = [
-      { name: 'No sanitization', enableSanitization: false },
-      { name: 'With sanitization', enableSanitization: true }
+      { name: 'No sanitization plugin' },
+      { name: 'With sanitization plugin', sanitizeOptions: {} as SanitizeOptions }
     ];
     
     const requestVolumes = [5, 20, 50]; // Reduced from [10, 50, 200]
     const results: Record<string, Record<number, number>> = {
-      'No sanitization': {},
-      'With sanitization': {}
+      'No sanitization plugin': {},
+      'With sanitization plugin': {}
     };
     
     // Create request with some sensitive data
@@ -150,8 +153,11 @@ describe('Sanitization Performance Tests', () => {
           maxConcurrentRequests: 20,
           queueDelay: 0, // Minimize queue delay to isolate sanitization impact
           debug: true,
-          enableSanitization: scenario.enableSanitization
         });
+
+        if (scenario.sanitizeOptions !== undefined) {
+          retryManager.use(new DebugSanitizationPlugin({ sanitizeOptions: scenario.sanitizeOptions }));
+        }
         
         // Setup mock
         mock = new AxiosMockAdapter(retryManager.axiosInstance);
@@ -172,6 +178,7 @@ describe('Sanitization Performance Tests', () => {
         
         // Clean up
         mock.restore();
+        retryManager.destroy();
       }
     }
     
@@ -179,8 +186,8 @@ describe('Sanitization Performance Tests', () => {
     console.log('\nSanitization Impact with Increasing Request Volume:');
     
     for (const volume of requestVolumes) {
-      const withoutSanitization = results['No sanitization'][volume];
-      const withSanitization = results['With sanitization'][volume];
+      const withoutSanitization = results['No sanitization plugin'][volume];
+      const withSanitization = results['With sanitization plugin'][volume];
       const overhead = ((withSanitization - withoutSanitization) / withoutSanitization) * 100;
       
       console.log(`\nRequest volume: ${volume}`);

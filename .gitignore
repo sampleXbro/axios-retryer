@@ -20,6 +20,8 @@ build/
 
 # TypeScript files
 *.tsbuildinfo
+.cache/
+.rts2_cache*
 *.d.ts.map
 *.d.ts
 
@@ -54,8 +56,17 @@ Thumbs.db
 
 # Generated documentation
 docs/
+internal-docs/
+# Allow website docs pages (tracked Astro source)
+!website/src/pages/docs/
+
+# Local assistant settings
+.claude/settings.local.json
 
 # TGZ files
 *.tgz
 
 stats/
+
+# Local browser playground (manual testing; not part of the published package)
+sandbox/

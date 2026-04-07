@@ -1,6 +1,14 @@
 import axios, { AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { createRetryer, createRetryStrategy, AXIOS_RETRYER_REQUEST_PRIORITIES, AXIOS_RETRYER_BACKOFF_TYPES } from '../../src';
+import {
+  createRetryer,
+  createRetryStrategy,
+  AXIOS_RETRYER_REQUEST_PRIORITIES,
+  AXIOS_RETRYER_BACKOFF_TYPES,
+  RetryManager,
+  type PluginContext,
+} from '../../src';
+import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
 describe('Functional API Integration Tests', () => {
   let axiosInstance: AxiosInstance;
@@ -47,6 +55,7 @@ describe('Functional API Integration Tests', () => {
         backoffType: AXIOS_RETRYER_BACKOFF_TYPES.LINEAR,
         maxConcurrentRequests: 10
       });
+      retryer.use(new MetricsPlugin());
 
       let attempts = 0;
       mock.onGet('/api/custom').reply(() => {
@@ -236,7 +245,10 @@ describe('Functional API Integration Tests', () => {
   describe('Combined Functional API Usage', () => {
     it('should work with custom strategy and plugin integration', async () => {
       const customStrategy = createRetryStrategy({
-        isRetryable: (error) => error.response?.status >= 500, // Only retry 5xx errors  
+        isRetryable: (error) => {
+          const status = error.response?.status;
+          return typeof status === 'number' && status >= 500;
+        }, // Only retry 5xx errors
         getDelay: (attempt) => attempt * 200
       });
 
@@ -251,11 +263,12 @@ describe('Functional API Integration Tests', () => {
       const requestTracker = {
         name: 'RequestTracker',
         version: '1.0.0',
-        initialize: jest.fn(),
-        hooks: {
-          beforeRetry: jest.fn(),
-          afterRetry: jest.fn()
-        }
+        beforeRetry: jest.fn(),
+        afterRetry: jest.fn(),
+        initialize: (context: PluginContext) => {
+          context.on('beforeRetry', requestTracker.beforeRetry);
+          context.on('afterRetry', requestTracker.afterRetry);
+        },
       };
 
       retryer.use(requestTracker);
@@ -274,8 +287,8 @@ describe('Functional API Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.data.data).toBe('success after retries');
       expect(attempts).toBe(3);
-      expect(requestTracker.hooks.beforeRetry).toHaveBeenCalledTimes(2);
-      expect(requestTracker.hooks.afterRetry).toHaveBeenCalledTimes(2);
+      expect(requestTracker.beforeRetry).toHaveBeenCalledTimes(2);
+      expect(requestTracker.afterRetry).toHaveBeenCalledTimes(2);
     });
 
     it('should handle complex scenarios with multiple features', async () => {
@@ -286,6 +299,7 @@ describe('Functional API Integration Tests', () => {
         queueDelay: 50,
         debug: false
       });
+      retryer.use(new MetricsPlugin());
 
       const results: string[] = [];
 
@@ -316,9 +330,9 @@ describe('Functional API Integration Tests', () => {
 
       // Send requests with different priorities
       const requests = [
-        retryer.axiosInstance.get('/api/fast', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH }),
-        retryer.axiosInstance.get('/api/slow', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM }),
-        retryer.axiosInstance.get('/api/retry', { __priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL })
+        retryer.axiosInstance.get('/api/fast', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH } }),
+        retryer.axiosInstance.get('/api/slow', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM } }),
+        retryer.axiosInstance.get('/api/retry', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL } })
       ];
 
       const responses = await Promise.all(requests);

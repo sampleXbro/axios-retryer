@@ -1,0 +1,64 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
+const _shikiCode0 = "import { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';";
+const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\nconst retryer = createRetryer();\n\nretryer.use(\n  createCircuitBreaker({\n    failureThreshold: 5,      // Consecutive failures before tripping open\n    openTimeout: 30_000,      // ms to wait before testing (half-open)\n    halfOpenMax: 2,           // Probe requests allowed in half-open state\n  })\n);";
+const _shikiCode2 = "createCircuitBreaker({\n  failureThreshold: 5,         // Failures before circuit trips (default: 5)\n  openTimeout: 30_000,         // ms in OPEN state before going HALF-OPEN (default: 30000)\n  halfOpenMax: 2,              // Test requests in HALF-OPEN before deciding (default: 1)\n  successThreshold: 2,         // Successes in HALF-OPEN to close again (default: 1)\n  useSlidingWindow: true,      // Count failures within a time window (default: false)\n  slidingWindowSize: 60_000,   // Window size in ms (default: 60000)\n  excludeUrls: [               // URL patterns that bypass the breaker\n    /\\/healthcheck/,\n    '/api/status',\n  ],\n})";
+const _shikiCode3 = "const breaker = createCircuitBreaker({ failureThreshold: 5, openTimeout: 30_000 });\nretryer.use(breaker);\n\n// Current state\nconst state = breaker.getState();\nconsole.log(state);  // 'CLOSED' | 'OPEN' | 'HALF_OPEN'\n\n// Per-URL and global metrics\nconst metrics = breaker.getMetrics();\nconsole.log(metrics.totalFailures);\nconsole.log(metrics.totalSuccesses);";
+const _shikiCode4 = "import { CircuitBreakerStateError } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\ntry {\n  await retryer.axiosInstance.get('/api/orders');\n} catch (err) {\n  if (err instanceof CircuitBreakerStateError) {\n    // Don't alert \u2014 this is expected circuit-breaker behaviour\n    return cachedFallback ?? { orders: [] };\n  }\n  throw err;  // Surface other errors normally\n}";
+const _shikiCode5 = "createCircuitBreaker({\n  failureThreshold: 10,\n  openTimeout: 15_000,\n  useSlidingWindow: true,\n  slidingWindowSize: 60_000,  // Trip open if 10 failures occur within 60 seconds\n})";
+const _shikiCode6 = "createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeout: 30_000,\n  excludeUrls: [/\\/health/, '/metrics', '/ping'],\n})";
+---
+<DocsLayout title="CircuitBreakerPlugin" section="Plugins" description="Protect failing upstreams with axios-retryer's CircuitBreakerPlugin — trip open on failures, fast-fail during recovery, probe with half-open requests.">
+
+<h1 class="page-title">CircuitBreakerPlugin</h1>
+<p class="page-lead">Prevents a failing upstream from being hammered during outages. Trips open after N failures, fast-fails all subsequent requests, and allows configurable test probes before closing again.</p>
+
+<h2>Install</h2>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h2>Basic usage</h2>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>All options</h2>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>Circuit states</h2>
+
+<table>
+  <thead><tr><th>State</th><th>Behaviour</th><th>Transition</th></tr></thead>
+  <tbody>
+    <tr><td><strong>CLOSED</strong></td><td>Normal operation — requests flow through</td><td>→ OPEN when failures ≥ <code>failureThreshold</code></td></tr>
+    <tr><td><strong>OPEN</strong></td><td>All requests fail fast with <code>CircuitBreakerStateError</code></td><td>→ HALF-OPEN after <code>openTimeout</code></td></tr>
+    <tr><td><strong>HALF-OPEN</strong></td><td>Up to <code>halfOpenMax</code> probe requests allowed</td><td>→ CLOSED after <code>successThreshold</code> successes; → OPEN on any failure</td></tr>
+  </tbody>
+</table>
+
+<h2>Inspecting breaker state</h2>
+<CodeBlock code={_shikiCode3} lang="typescript" />
+
+<h2>Handling the open circuit</h2>
+<CodeBlock code={_shikiCode4} lang="typescript" />
+
+<h2>Sliding window example</h2>
+<p>Count failures in a rolling 60-second window instead of a cumulative counter:</p>
+<CodeBlock code={_shikiCode5} lang="typescript" />
+
+<h2>Excluding URLs</h2>
+<p>Health-check and monitoring endpoints should bypass the breaker:</p>
+<CodeBlock code={_shikiCode6} lang="typescript" />
+
+<div class="callout callout-warning">
+  <div class="callout-icon">⚠️</div>
+  <div class="callout-content">
+    <div class="callout-title">openTimeout affects both detection and recovery</div>
+    <p><code>openTimeout</code> controls how long the circuit stays open before probing. Setting it very low means faster recovery attempts but can lead to repeated trips if the upstream is still unstable.</p>
+  </div>
+</div>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/plugins/caching')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">CachingPlugin →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

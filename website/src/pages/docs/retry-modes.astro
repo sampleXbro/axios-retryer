@@ -1,0 +1,58 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
+const _shikiCode0 = "import { createRetryer, RETRY_MODES, AXIOS_RETRYER_BACKOFF_TYPES } from 'axios-retryer';\n\nconst retryer = createRetryer({\n  mode: RETRY_MODES.AUTOMATIC,     // default, can omit\n  retries: 3,\n  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,\n  retryableStatuses: [408, 429, [500, 599] as const],\n});\n\n// This GET will retry up to 3 times on 5xx / 429 / timeout\nconst { data } = await retryer.axiosInstance.get('/api/products');";
+const _shikiCode1 = "import { createRetryer, RETRY_MODES } from 'axios-retryer';\nimport { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\n\nconst retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  maxRequestsToStore: 50,\n  manualRetryMaxAge: 5 * 60_000,   // Discard stored requests after 5 min\n});\nretryer.use(manualRetry);\n\n// Request fails \u2192 stored in ManualRetryPlugin\ntry {\n  await retryer.axiosInstance.get('/api/data');\n} catch {\n  console.log('Failed \u2014 stored for later replay');\n}\n\n// Later \u2014 replay all stored failures\nconst results = await manualRetry.retryFailedRequests();\nconsole.log(`${results.length} requests replayed`);";
+const _shikiCode2 = "window.addEventListener('online', async () => {\n  const results = await manualRetry.retryFailedRequests();\n  showToast(`Synced ${results.length} pending request(s)`);\n});";
+---
+<DocsLayout title="Retry Modes" description="Automatic and manual retry modes in axios-retryer — when to use each and how they work.">
+
+<h1 class="page-title">Retry Modes</h1>
+<p class="page-lead">axios-retryer supports two modes: <strong>Automatic</strong> (default) transparently retries failures; <strong>Manual</strong> stops after the first attempt and lets you decide when to replay.</p>
+
+<h2>Automatic mode</h2>
+<p>The default. Transient failures are retried up to <code>retries</code> times with configurable backoff, completely transparent to your application code.</p>
+
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h3>What triggers a retry</h3>
+<ul>
+  <li>Response status code matches <code>retryableStatuses</code></li>
+  <li>Request method is in <code>retryableMethods</code> (default: GET, HEAD, OPTIONS)</li>
+  <li>Network error with no response</li>
+  <li>Custom <code>retryStrategy.isRetryable()</code> returns <code>true</code></li>
+</ul>
+
+<h2>Manual mode</h2>
+<p>In manual mode the retry manager does not automatically retry. Each request either succeeds on the first attempt or fails immediately. Add <strong><code>ManualRetryPlugin</code></strong> when you want failed requests stored and replayed later — for example after reconnecting to the network.</p>
+
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h3>Offline / reconnect pattern</h3>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>Choosing a mode</h2>
+<table>
+  <thead><tr><th>Scenario</th><th>Mode</th></tr></thead>
+  <tbody>
+    <tr><td>Standard API client — just handle transient errors</td><td><code>AUTOMATIC</code></td></tr>
+    <tr><td>You want to surface errors to the user and let them retry</td><td><code>MANUAL</code></td></tr>
+    <tr><td>Offline-first SPA — queue when offline, sync on reconnect</td><td><code>MANUAL</code> + <code>ManualRetryPlugin</code></td></tr>
+    <tr><td>Background worker that should keep trying indefinitely</td><td><code>AUTOMATIC</code> with high <code>retries</code></td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-info">
+  <div class="callout-icon">ℹ️</div>
+  <div class="callout-content">
+    <div class="callout-title">Manual mode without ManualRetryPlugin</div>
+    <p><code>RETRY_MODES.MANUAL</code> alone means "don't retry automatically." You still get the concurrency queue and priority system — just no automatic replay. Add <code>ManualRetryPlugin</code> only when you need stored replay functionality.</p>
+  </div>
+</div>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/events')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Events →</a>
+  <a href={withBase('/docs/plugins/manual-retry')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">ManualRetryPlugin docs</a>
+</div>
+</DocsLayout>

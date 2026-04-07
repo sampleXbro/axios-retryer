@@ -10,13 +10,17 @@ jest.mock('../src/utils', () => ({
 }));
 
 import { DefaultRetryStrategy } from '../src/core/strategies/DefaultRetryStrategy';
-import { AXIOS_RETRYER_BACKOFF_TYPES } from '../src/types';
+import { AXIOS_RETRYER_BACKOFF_TYPES, AXIOS_RETRYER_HTTP_METHODS } from '../src/types';
 import { AxiosRetryerBackoffType } from '../src';
 import { RetryLogger } from '../src/services/logger';
 
 describe('DefaultRetryStrategy - Extended Tests', () => {
   const retryableStatuses: (number | [number, number])[] = [408, 429, 500, [502, 504]];
-  const retryableMethods = ['get', 'head', 'options'];
+  const retryableMethods = [
+    AXIOS_RETRYER_HTTP_METHODS.GET,
+    AXIOS_RETRYER_HTTP_METHODS.HEAD,
+    AXIOS_RETRYER_HTTP_METHODS.OPTIONS,
+  ] as const;
   const mockLogger = {
     log: jest.fn(),
     debug: jest.fn(),
@@ -143,7 +147,7 @@ describe('DefaultRetryStrategy - Extended Tests', () => {
       const customStrategy = new DefaultRetryStrategy(
         retryableStatuses,
         retryableMethods,
-        'UNKNOWN' as any,
+        'UNKNOWN' as unknown as AxiosRetryerBackoffType,
         ['Idempotency-Key'],
         mockLogger,
       );
@@ -189,7 +193,7 @@ describe('DefaultRetryStrategy - Extended Tests', () => {
     test('should handle invalid backoff type by falling back to default', () => {
       const attempt = 2;
       const maxRetries = 3;
-      const invalidBackoffType = 'invalid-type' as any;
+      const invalidBackoffType = 'invalid-type' as unknown as AxiosRetryerBackoffType;
       
       // Should not throw error with invalid type
       expect(() => {

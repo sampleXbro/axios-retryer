@@ -1,0 +1,440 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import '../styles/global.css';
+import CodeBlock from '../components/CodeBlock.astro';
+import { withBase } from '../utils/baseUrl';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\nconst retryer = createRetryer({\n  retries: 3,\n  maxConcurrentRequests: 10,\n});\n\nretryer.use(createTokenRefreshPlugin(async (axios) => {\n  const { data } = await axios.post('/auth/refresh');\n  return { token: data.accessToken };\n}));\n\nretryer.use(createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeout: 30_000,\n}));\n\n// Use exactly like Axios\nconst { data } = await retryer.axiosInstance.get('/api/users');";
+---
+<BaseLayout
+  title="axios-retryer — Resilient Axios Retry Library"
+  description="TypeScript-first Axios retry library with concurrency control, request prioritization, token refresh, response caching, circuit breaker, and plugin architecture."
+>
+<style>
+  /* Header */
+  .site-header {
+    position: sticky; top: 0; z-index: 50;
+    border-bottom: 1px solid var(--border);
+    background: rgba(13,17,23,.9);
+    backdrop-filter: blur(12px);
+    height: var(--header-height);
+    display: flex; align-items: center;
+    padding: 0 2rem;
+    gap: 2rem;
+  }
+  .logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; color: var(--text); text-decoration: none; }
+  .logo:hover { text-decoration: none; }
+  .logo img { width: fit-content; height: 40px; border-radius: 6px; }
+  .header-nav { display: flex; gap: 1.5rem; margin-left: 1.5rem; }
+  .header-nav a { color: var(--text-muted); font-size: 0.875rem; font-weight: 500; }
+  .header-nav a:hover { color: var(--text); text-decoration: none; }
+  .header-actions { margin-left: auto; display: flex; gap: 0.75rem; align-items: center; }
+  .btn { padding: 0.5rem 1.1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; }
+  .btn:hover { text-decoration: none; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text-muted); }
+  .btn-ghost:hover { border-color: var(--text-muted); color: var(--text); }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    padding: 5rem 2rem 4rem;
+    background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(88,166,255,.12), transparent);
+  }
+  .hero-label {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: rgba(88,166,255,.1); border: 1px solid rgba(88,166,255,.25);
+    color: var(--accent); border-radius: 100px; font-size: 0.8rem; font-weight: 600;
+    padding: 0.3rem 0.8rem; margin-bottom: 1.5rem;
+  }
+  .hero h1 {
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 800;
+    background: linear-gradient(135deg, #e6edf3 30%, #58a6ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 1.25rem;
+    line-height: 1.15;
+  }
+  .hero-sub {
+    font-size: 1.15rem; color: var(--text-muted);
+    max-width: 620px; margin: 0 auto 2.5rem;
+    line-height: 1.7;
+  }
+  .hero-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 3rem; }
+  .btn-lg { padding: 0.7rem 1.6rem; font-size: 1rem; border-radius: 10px; }
+  .hero-badges { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+  .hero-badge img { height: 20px; }
+
+  /* Quick install */
+  .install-strip {
+    max-width: 560px; margin: 0 auto;
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.85rem 1.25rem;
+    display: flex; align-items: center; gap: 1rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;
+  }
+  .install-strip span { color: var(--text-subtle); }
+  .install-cmd { color: var(--text); flex: 1; }
+  .copy-btn {
+    background: none; border: 1px solid var(--border); border-radius: 5px;
+    padding: 0.25rem 0.55rem; color: var(--text-muted); cursor: pointer; font-size: 0.75rem;
+    font-family: inherit;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Stats */
+  .stats {
+    display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap;
+    padding: 2.5rem 2rem;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+  .stat { text-align: center; }
+  .stat-value { font-size: 1.75rem; font-weight: 800; color: var(--text); }
+  .stat-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; }
+
+  /* Features */
+  .section { padding: 4rem 2rem; max-width: 1200px; margin: 0 auto; }
+  .section-label {
+    font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--accent); margin-bottom: 0.75rem;
+  }
+  .section-title { font-size: clamp(1.6rem,3vw,2.25rem); font-weight: 800; margin-bottom: 0.75rem; }
+  .section-sub { color: var(--text-muted); font-size: 1rem; max-width: 560px; margin-bottom: 3rem; }
+  .features-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 1.25rem; }
+  .feature-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .feature-card:hover { border-color: var(--accent-muted); box-shadow: 0 0 20px rgba(88,166,255,.06); }
+  .feature-icon { font-size: 1.5rem; margin-bottom: 0.75rem; }
+  .feature-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
+  .feature-desc { font-size: 0.875rem; color: var(--text-muted); line-height: 1.6; }
+
+  /* Quick start code */
+  .quickstart { background: var(--bg-secondary); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 4rem 2rem; }
+  .quickstart-inner { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.4fr; gap: 3rem; align-items: center; }
+  @media (max-width:780px) { .quickstart-inner { grid-template-columns: 1fr; } }
+  .quickstart-code pre { margin: 0; }
+
+  /* Comparison table */
+  .comparison { padding: 4rem 2rem; max-width: 1000px; margin: 0 auto; }
+  .comp-table th:first-child, .comp-table td:first-child { min-width: 220px; }
+  .check { color: var(--accent-2); }
+  .cross { color: var(--danger); opacity: .7; }
+  .partial { color: var(--warning); }
+
+  /* Plugin cards */
+  .plugins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 1rem; }
+  .plugin-card {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem; text-decoration: none; color: inherit;
+    display: flex; flex-direction: column; gap: 0.5rem;
+    transition: border-color .2s, transform .15s;
+  }
+  .plugin-card:hover { border-color: var(--accent-muted); text-decoration: none; transform: translateY(-2px); }
+  .plugin-card-header { display: flex; align-items: center; gap: 0.75rem; }
+  .plugin-icon { font-size: 1.4rem; }
+  .plugin-name { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+  .plugin-import { font-size: 0.75rem; color: var(--accent); font-family: monospace; }
+  .plugin-desc { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; }
+
+  /* CTA */
+  .cta {
+    text-align: center; padding: 5rem 2rem;
+    background: radial-gradient(ellipse 60% 60% at 50% 50%, rgba(88,166,255,.08), transparent);
+    border-top: 1px solid var(--border);
+  }
+  .cta h2 { font-size: clamp(1.8rem,3vw,2.5rem); margin-bottom: 1rem; }
+  .cta p { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 2rem; }
+
+  /* Footer */
+  .site-footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    background: var(--bg-secondary);
+  }
+  .site-footer a { color: var(--text-muted); }
+  .site-footer a:hover { color: var(--text); }
+  .footer-links { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1rem; }
+</style>
+
+<!-- Header -->
+<header class="site-header">
+  <a href={withBase('/')} class="logo">
+    <img src={withBase('/axios-retryer-logo.png')} alt="axios-retryer logo" />
+  </a>
+  <nav class="header-nav">
+    <a href={withBase('/docs')}>Docs</a>
+    <a href={withBase('/docs/plugins')}>Plugins</a>
+    <a href={withBase('/guides/production')}>Guides</a>
+    <a href="https://bundlephobia.com/package/axios-retryer" target="_blank" rel="noopener">Bundle size ↗</a>
+  </nav>
+  <div class="header-actions">
+    <a href="https://github.com/sampleXbro/axios-retryer" class="btn btn-ghost" target="_blank" rel="noopener">
+      GitHub
+    </a>
+    <a href={withBase('/docs/installation')} class="btn btn-primary">Get Started</a>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-label">⚡ v2.0 — Now with full plugin architecture</div>
+  <h1>Resilient Axios requests,<br />handled right</h1>
+  <p class="hero-sub">
+    TypeScript-first retry library with concurrency control, request prioritization,
+    token refresh, response caching, and circuit breaker — as composable plugins.
+  </p>
+  <div class="hero-actions">
+    <a href={withBase('/docs/installation')} class="btn btn-primary btn-lg">Get Started →</a>
+    <a href={withBase('/docs/quick-start')} class="btn btn-ghost btn-lg">Quick Start</a>
+    <a href="https://github.com/sampleXbro/axios-retryer" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">GitHub</a>
+  </div>
+  <div class="install-strip">
+    <span>$</span>
+    <code class="install-cmd" id="install-cmd">npm install axios-retryer</code>
+    <button class="copy-btn" id="copy-install">Copy</button>
+  </div>
+  <br/>
+  <div class="hero-badges">
+    <img src="https://img.shields.io/npm/v/axios-retryer.svg" alt="npm version" />
+    <img src="https://img.shields.io/npm/dm/axios-retryer.svg" alt="npm downloads" />
+    <img src="https://img.shields.io/bundlephobia/minzip/axios-retryer" alt="bundle size" />
+    <img src="https://img.shields.io/badge/TypeScript-First-blue" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" />
+  </div>
+</section>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat"><div class="stat-value">2,647</div><div class="stat-label">req/sec healthy path</div></div>
+  <div class="stat"><div class="stat-value">4,013</div><div class="stat-label">req/sec peak burst</div></div>
+  <div class="stat"><div class="stat-value">100%</div><div class="stat-label">cache hit rate</div></div>
+  <div class="stat"><div class="stat-value">675</div><div class="stat-label">tests passing</div></div>
+  <div class="stat"><div class="stat-value">6</div><div class="stat-label">plugins</div></div>
+</div>
+
+<!-- Features -->
+<section class="section">
+  <div class="section-label">Why axios-retryer?</div>
+  <h2 class="section-title">Everything your Axios client needs</h2>
+  <p class="section-sub">Most retry helpers stop at "try again after a delay." Real apps need more.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🔄</div>
+      <div class="feature-title">Intelligent Retries</div>
+      <div class="feature-desc">Automatic or manual modes with fully customizable strategies. Control which status codes, HTTP methods, and error types trigger retries.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🚦</div>
+      <div class="feature-title">Priority Queue</div>
+      <div class="feature-desc">CRITICAL → LOW request priorities. Important requests always go first. Binary-heap queue with O(log n) operations for high throughput.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔑</div>
+      <div class="feature-title">Token Refresh</div>
+      <div class="feature-desc">Refreshes auth tokens when 401s occur, queues concurrent requests during refresh, replays them with the new token. Works with GraphQL too.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">Concurrency Control</div>
+      <div class="feature-desc">Set <code>maxConcurrentRequests</code> to cap parallel traffic. Excess requests queue automatically with optional per-request priorities.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🛡️</div>
+      <div class="feature-title">Circuit Breaker</div>
+      <div class="feature-desc">Trips open after N failures, fast-fails requests during recovery, tests with configurable half-open probes. Sliding window analysis included.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💾</div>
+      <div class="feature-title">Response Caching</div>
+      <div class="feature-desc">In-memory cache with TTR, exact/prefix/regex invalidation, per-request overrides, and a custom storage adapter contract for Redis or Memcached.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title">Metrics & Observability</div>
+      <div class="feature-desc">Optional MetricsPlugin for retry counters, success rates, timer health, and <code>onMetricsUpdated</code> events for dashboards and alerting.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧩</div>
+      <div class="feature-title">Plugin Architecture</div>
+      <div class="feature-desc">Core stays small. Add token refresh, caching, circuit breaking, metrics, sanitization, and dependency gating only when you need them.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌳</div>
+      <div class="feature-title">Tree-Shakeable</div>
+      <div class="feature-desc">Each plugin ships as a focused entry point. Only what you import ends up in your bundle. No side effects at import time.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<div class="quickstart">
+  <div class="quickstart-inner">
+    <div>
+      <div class="section-label">Quick Start</div>
+      <h2 class="section-title" style="font-size:1.75rem">From zero to resilient in 5 lines</h2>
+      <p style="color:var(--text-muted); font-size:.95rem; margin-bottom:1.5rem">
+        Wrap your Axios instance, add plugins, make requests. The <code>axiosInstance</code> property is a drop-in replacement for your existing Axios usage.
+      </p>
+      <a href={withBase('/docs/quick-start')} class="btn btn-primary">Read full guide →</a>
+    </div>
+    <div class="quickstart-code">
+      <CodeBlock code={_shikiCode0} lang="typescript" />
+    </div>
+  </div>
+</div>
+
+<!-- Plugins -->
+<section class="section">
+  <div class="section-label">Plugin Ecosystem</div>
+  <h2 class="section-title">Add only what you need</h2>
+  <p class="section-sub">Each plugin is a separate tree-shakeable entry point. The core stays lean.</p>
+
+  <div class="plugins-grid">
+    <a href={withBase('/docs/plugins/token-refresh')} class="plugin-card">
+      <div class="plugin-card-header">
+        <div class="plugin-icon">🔑</div>
+        <div>
+          <div class="plugin-name">TokenRefreshPlugin</div>
+          <div class="plugin-import">axios-retryer/plugins/TokenRefreshPlugin</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Auto-refresh access tokens on 401. Queue concurrent requests during refresh, replay them with new token.</div>
+    </a>
+    <a href={withBase('/docs/plugins/circuit-breaker')} class="plugin-card">
+      <div class="plugin-card-header">
+        <div class="plugin-icon">🛡️</div>
+        <div>
+          <div class="plugin-name">CircuitBreakerPlugin</div>
+          <div class="plugin-import">axios-retryer/plugins/CircuitBreakerPlugin</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Trip open after N failures. Fail-fast during recovery. Test with half-open probes. Sliding window analysis.</div>
+    </a>
+    <a href={withBase('/docs/plugins/caching')} class="plugin-card">
+      <div class="plugin-card-header">
+        <div class="plugin-icon">💾</div>
+        <div>
+          <div class="plugin-name">CachingPlugin</div>
+          <div class="plugin-import">axios-retryer/plugins/CachingPlugin</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Cache GET responses. Exact/prefix invalidation, per-request TTR override, custom storage adapters.</div>
+    </a>
+    <a href={withBase('/docs/plugins/manual-retry')} class="plugin-card">
+      <div class="plugin-card-header">
+        <div class="plugin-icon">💾</div>
+        <div>
+          <div class="plugin-name">ManualRetryPlugin</div>
+          <div class="plugin-import">axios-retryer/plugins/ManualRetryPlugin</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Store failed requests, replay them on reconnect. Offline-first patterns, idempotency safeguards.</div>
+    </a>
+    <a href={withBase('/docs/plugins/metrics')} class="plugin-card">
+      <div class="plugin-card-header">
+        <div class="plugin-icon">📊</div>
+        <div>
+          <div class="plugin-name">MetricsPlugin</div>
+          <div class="plugin-import">axios-retryer/plugins/MetricsPlugin</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Retry counters, timer health, onMetricsUpdated events. Zero cost without the plugin.</div>
+    </a>
+    <a href={withBase('/docs/plugins/debug-sanitization')} class="plugin-card">
+      <div class="plugin-card-header">
+        <div class="plugin-icon">🔒</div>
+        <div>
+          <div class="plugin-name">DebugSanitizationPlugin</div>
+          <div class="plugin-import">axios-retryer/plugins/DebugSanitizationPlugin</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Redact headers, fields, and URL params in debug logs. Safe verbose logging in non-prod environments.</div>
+    </a>
+    <a href={withBase('/docs/configuration')} class="plugin-card">
+      <div class="plugin-card-header">
+        <div class="plugin-icon">🔗</div>
+        <div>
+          <div class="plugin-name">Priority blocking</div>
+          <div class="plugin-import">blockingPriorityThreshold option</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Block lower-priority requests until critical ones resolve. Built into the core — no plugin needed.</div>
+    </a>
+  </div>
+</section>
+
+<!-- Comparison -->
+<div style="background: var(--bg-secondary); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="comparison">
+    <div class="section-label">Comparison</div>
+    <h2 class="section-title">How does it compare?</h2>
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>axios-retryer</th>
+          <th>axios-retry</th>
+          <th>retry-axios</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Automatic & Manual Modes</td><td class="check">✅ Both</td><td class="cross">❌ Auto only</td><td class="cross">❌ Auto only</td></tr>
+        <tr><td>Concurrency Control</td><td class="check">✅ Yes</td><td class="cross">❌ No</td><td class="cross">❌ No</td></tr>
+        <tr><td>Priority Queue</td><td class="check">✅ CRITICAL→LOW</td><td class="cross">❌ No</td><td class="cross">❌ No</td></tr>
+        <tr><td>Token Refresh Plugin</td><td class="check">✅ Built-in</td><td class="cross">❌ Manual</td><td class="cross">❌ Manual</td></tr>
+        <tr><td>Circuit Breaker</td><td class="check">✅ Built-in</td><td class="cross">❌ No</td><td class="cross">❌ No</td></tr>
+        <tr><td>Response Caching</td><td class="check">✅ Built-in</td><td class="cross">❌ No</td><td class="cross">❌ No</td></tr>
+        <tr><td>Cancellation</td><td class="check">✅ Full</td><td class="cross">❌ No</td><td class="cross">❌ No</td></tr>
+        <tr><td>Plugin Architecture</td><td class="check">✅ Yes</td><td class="cross">❌ No</td><td class="cross">❌ No</td></tr>
+        <tr><td>Metrics & Observability</td><td class="check">✅ Rich</td><td class="partial">⚠️ Basic</td><td class="partial">⚠️ Basic</td></tr>
+        <tr><td>TypeScript Support</td><td class="check">✅ First-class</td><td class="partial">⚠️ Basic</td><td class="partial">⚠️ Basic</td></tr>
+        <tr><td>Tree-Shakeable</td><td class="check">✅ Yes</td><td class="cross">❌ No</td><td class="cross">❌ No</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CTA -->
+<section class="cta">
+  <h2>Ready to make your API calls resilient?</h2>
+  <p>Install in seconds. Add the plugins that make sense for your app.</p>
+  <div style="display:flex; gap:.75rem; justify-content:center; flex-wrap:wrap;">
+    <a href={withBase('/docs/installation')} class="btn btn-primary btn-lg">Get Started →</a>
+    <a href={withBase('/docs/quick-start')} class="btn btn-ghost btn-lg">View Examples</a>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="footer-links">
+    <a href={withBase('/docs')}>Documentation</a>
+    <a href={withBase('/docs/plugins')}>Plugins</a>
+    <a href={withBase('/guides/migration')}>Migration</a>
+    <a href="https://github.com/sampleXbro/axios-retryer" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://www.npmjs.com/package/axios-retryer" target="_blank" rel="noopener">npm</a>
+    <a href="https://github.com/sampleXbro/axios-retryer/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+  </div>
+  <p>MIT License · Made with ♥ by <a href="https://github.com/sampleXbro" target="_blank" rel="noopener">sampleX (Serhii Zhabskyi)</a></p>
+</footer>
+
+<script>
+  const btn = document.getElementById('copy-install');
+  const cmd = document.getElementById('install-cmd');
+  btn?.addEventListener('click', () => {
+    if (cmd?.textContent) {
+      navigator.clipboard.writeText(cmd.textContent).then(() => {
+        if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); }
+      });
+    }
+  });
+</script>
+</BaseLayout>

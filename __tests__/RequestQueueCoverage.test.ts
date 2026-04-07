@@ -5,9 +5,11 @@ import { AxiosError, AxiosRequestConfig } from 'axios';
 
 // Extend AxiosRequestConfig type to include our custom properties
 interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
-  __priority?: AxiosRetryerRequestPriority;
-  __timestamp?: number;
-  __requestId?: string;
+  __axiosRetryer?: {
+    priority?: AxiosRetryerRequestPriority;
+    timestamp?: number;
+    requestId?: string;
+  };
 }
 
 describe('RequestQueue Coverage Improvements', () => {
@@ -17,9 +19,11 @@ describe('RequestQueue Coverage Improvements', () => {
   const createConfig = (priority: AxiosRetryerRequestPriority, timestamp: number, requestId: string): ExtendedAxiosRequestConfig => ({
     url: 'https://example.com',
     method: 'get',
-    __priority: priority,
-    __timestamp: timestamp,
-    __requestId: requestId,
+    __axiosRetryer: {
+      priority,
+      timestamp,
+      requestId,
+    },
   });
 
   let queue: RequestQueue;
@@ -27,7 +31,7 @@ describe('RequestQueue Coverage Improvements', () => {
   beforeEach(() => {
     mockIsCriticalRequest.mockReset();
     mockHasActiveCriticalRequests.mockReset();
-    queue = new RequestQueue(2, 0, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    queue = new RequestQueue({ maxConcurrent: 2, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
   });
 
   it('should correctly identify if queue is busy', () => {
@@ -105,7 +109,7 @@ describe('RequestQueue Coverage Improvements', () => {
     const delay = 100;
     // Add a small buffer to account for timing fluctuations
     const minExpectedDelay = 95;
-    const delayedQueue = new RequestQueue(1, delay, mockHasActiveCriticalRequests, mockIsCriticalRequest, undefined);
+    const delayedQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: delay, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
     
     const startTime = Date.now();
     let endTime = 0;
@@ -139,7 +143,7 @@ describe('RequestQueue Coverage Improvements', () => {
     
     // Set up how isCriticalRequest will respond
     mockIsCriticalRequest.mockImplementation((config) => {
-      return config.__requestId?.includes('critical') ?? false;
+      return config.__axiosRetryer?.requestId?.includes('critical') ?? false;
     });
     
     const results: string[] = [];

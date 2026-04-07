@@ -2,7 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.5.4 - 01.04.2026
+## 2.0.0 - 07.04.2026
+
+> `1.5.4` was prepared but never published. The fixes and API cleanup planned for that release ship in `2.0.0`.
+
+### ⚠️ Breaking Changes
+- **Core sanitization options moved to `DebugSanitizationPlugin`.** The root `RetryManager` options no longer accept `enableSanitization` or `sanitizeOptions`; install the sanitization plugin explicitly when you need redacted debug logs.
+- **Populated retry metrics now require `MetricsPlugin`.** `getMetrics()` still returns the full metrics shape, but live counters and `onMetricsUpdated` reporting are now opt-in to keep the core smaller.
+- **`MetricsRecorder` was narrowed to a snapshot-oriented surface.** Implementations now provide `reset`, `buildDetailedMetrics`, and optional `emitMetricsUpdated` instead of the previous per-event recorder methods. Custom metrics integrations must be updated to match.
+- **Root manual replay moved fully to `ManualRetryPlugin`.** `retryFailedRequests()`, `maxRequestsToStore`, `requestStore`, and `beforeManualRetry` are no longer part of the core manager surface in `2.0`.
+- **`RetryManagerOptions.hooks` removed.** Register listeners with `retryer.on(...)` after construction (and after `use()` when you need plugin-typed events). The `RetryHooks` type is removed.
+- **Legacy `plugin.hooks` support was removed.** Plugins must subscribe through `retryer.on(...)` inside `initialize()`.
+- **`RequestDependencyPlugin` removed.** Dependency-style gating lives in the core: `blockingPriorityThreshold`, `cancelPendingOnDependencyFailure` (default `true`), and related events. Drop the separate plugin import and package export.
+- **`onRetryProcessFinished` is now lifecycle-only.** It no longer carries a metrics payload; use `onMetricsUpdated` with `MetricsPlugin` when you need snapshots.
+- **The browser bundle is now an optional local build.** Generate it with `npm run build:browser` when you need a script-tag artifact.
+- **`maxRefreshAttempts` now means the exact number of refresh attempts.** Previously the loop ran `maxRefreshAttempts + 1` times, so `maxRefreshAttempts: 3` silently produced 4 attempts. If you relied on the old (off-by-one) behavior, decrease your value by 1 (e.g. `3` → `2` to keep the same total attempts).
+- **`CriticalRequestPlugin` removed.** Prefer built-in request priority (`CRITICAL` / `RequestPriority`) and queue `canProcess` customization for similar behavior.
+- **`afterRetry` signature extended.** Handlers receive an optional third argument, `error`, when the retry attempt failed. Existing two-parameter listeners remain valid.
+- **`onAllBlockingRequestsResolved` is success-only.** It fires only when every in-flight blocking request (at or above `blockingPriorityThreshold`) completes with a **successful** HTTP outcome and the internal blocker set becomes empty. It is **not** emitted when a blocker fails terminally, when the last blocker is **cancelled**, or when queued dependents are cleared after `onBlockingRequestFailed`. The queue gate still refreshes so work can proceed; listen to `onBlockingRequestFailed` / `onRequestCancelled` for non-success paths.
+
+### ✨ Added
+- **Core lifecycle and resource management** (`RequestLifecycleManager`, `RetryManagerDisposer`, `TimerManager`) to clarify teardown and timer ownership
+- **Focused `tsconfig.build.json`** for production builds alongside root `tsconfig.json` for tooling and tests
+- **Pipeline-oriented core structure:** dedicated Axios interceptors (`RequestInterceptor`, `ResponseInterceptor`, `ErrorInterceptor`) and `DependencyGatekeeper` for blocking-priority coordination (internal layout; public behavior is the options and events above)
+- **Core observability events:** `onRequestQueued`, `onRequestDispatched`, `onRequestSucceeded`, `onRequestError` (terminal failure), `onRetryScheduled`, `onBlockingRequestFailed`, and `onAllBlockingRequestsResolved` (when `blockingPriorityThreshold` is set)
+- **Request metadata `extra` field** on `AxiosRetryerRequestMetadata` for app-specific attachment without mutating Axios config shape
+- **`TokenRefreshPlugin`:** refresh handler may resolve with `{ token: null }`, `{ token: undefined }`, or omit `token` to skip a refresh cycle without `onTokenRefreshed` / `onTokenRefreshFailed` or queue-wide `TokenRefreshFailedError` (documented on the plugin and events pages)
+- **`RetryPlugin` phantom `_events` marker** for improved TypeScript inference of plugin event maps at `use()` call sites
+- **Root package exports** for queue and terminal outcome event payloads (`AxiosRetryerRequestQueuedEvent`, `AxiosRetryerRequestDispatchedEvent`, `AxiosRetryerRequestSucceededEvent`, `AxiosRetryerRequestErrorEvent`)
 
 ### 🐛 Bug Fixes
 - Fixed `TokenRefreshPlugin` replay flow so refreshed business requests go back through `RetryManager` instead of bypassing queueing, metrics, cancellation handling, and other plugins
@@ -11,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - Fixed retry metrics initialization and empty-metrics snapshots so instances no longer share nested metric state and averages no longer return `NaN`
 - Fixed failure accounting for `retries: 0` and terminal failure paths so production metrics are now internally consistent
 - Fixed failed-request store eviction to remove the oldest stored request instead of the newest one
+- Standardized library-thrown errors into named classes across core and plugin flows, including config validation, plugin registration, queue state, circuit-breaker fail-fast responses, cache key generation, and token refresh failures
 
 ### ⚡ Performance & Benchmarking
 - Reworked the benchmark suite around deterministic, user-facing scenarios instead of noisy random demos
@@ -19,24 +47,19 @@ All notable changes to this project will be documented in this file.
 - Preserved runtime defaults for end users while explicitly benchmarking the low-latency queue configuration
 
 ### 🧪 Testing
-- Added regression coverage for token refresh replay, interceptor cleanup, queue wait metrics, retry-disabled terminal failures, request store eviction, and benchmark helper utilities
-- Full suite validated at `43/43` test suites and `439/439` tests passing
+- Added regression coverage for token refresh replay, interceptor cleanup, queue wait metrics, retry-disabled terminal failures, request store eviction, benchmark helper utilities, error standardization, auth and metadata safety, lifecycle teardown, caching storage adapters, dependency gatekeeping, and expanded event-surface typing tests
+- Full suite validated at `67/67` test suites and `675/675` tests passing
 - Release benchmark suite validated at `7/7` benchmarks passing
 
-## 1.5.3 - 04.05.2025
-
-### 🐛 **Bug Fixes**
-- **CRITICAL**: Fixed TokenRefreshPlugin concurrent request handling for `customErrorDetector`
-  - 🔧 **Issue**: When 4-5 requests simultaneously triggered custom auth errors (200 OK responses with auth errors in body), the plugin was calling token refresh for each request instead of queueing them
-  - ✅ **Fix**: Added missing `this.isRefreshing = true` in `handleSuccessResponse` method to properly queue concurrent requests during token refresh
-  - 🎯 **Impact**: Prevents multiple unnecessary token refresh calls, improves performance, and avoids potential rate limiting issues
-
-### 🧪 **Testing Improvements**
-- **Added comprehensive concurrent request tests** for TokenRefreshPlugin:
-  - ✅ Test for 4-5 concurrent 401 status code requests (already existing, verified)
-  - ✅ **NEW**: Test for 4-5 concurrent requests with custom auth errors in 200 OK responses  
-  - 📊 Both scenarios now properly verify only 1 token refresh call occurs regardless of concurrent request count
-  - 🔍 Tests validate proper queuing behavior and successful retry of all requests with refreshed token
+### 📚 Documentation
+- Updated the README to reflect the current core-vs-plugin public API, per-plugin entry points, core blocking (`blockingPriorityThreshold`), metrics and sanitization plugins, token-refresh no-token opt-out, and current benchmark and test counts
+- Added and refined the `1.x` → `2.0` migration guide (constructor `hooks` removal, `RequestDependencyPlugin` → core gating, metrics recorder shape, metrics vs manual-replay ordering, barrel deprecation notes)
+- Refreshed `SECURITY.md` supported-version policy for `2.x` and manual-replay wording after root replay removal
+- Refreshed `KNOWN_ISSUES.md` for `2.0` behavior, blocking-resolution semantics, and current test metadata
+- Removed obsolete `PRODUCTION_READINESS.md`; use `README.md` and `BENCHMARK_RESULTS.md` for performance and validation context
+- Added full documentation website (`website/`) built with Astro — covers all features, shipped plugins, guides, and API reference in detail
+- Minimized `README.md` to a concise NPM landing page with a link to the documentation website
+- Aligned agent manifests (`AGENTS.md`, `CLAUDE.md`) with the pipeline / interceptor architecture
 
 ## 1.5.2 - 27.05.2025
 
@@ -109,7 +132,7 @@ All notable changes to this project will be documented in this file.
 
 ## 1.4.1 - 09.04.2025
 - **Queue Size Limits**: Added the `maxQueueSize` option to limit the number of requests that can be queued. When the queue is full, new requests will be rejected with `QueueFullError`. Prevents memory issues during high load.
-- **Sensitive Data Protection**: Added automatic redaction of tokens, passwords, and other sensitive information in logs and error reporting. Configurable via `enableSanitization` and `sanitizeOptions`.
+- **Sensitive Data Protection**: Added redaction support for tokens, passwords, and other sensitive information in logs and error reporting. This now lives on the sanitization plugin surface.
 - **Enhanced CircuitBreakerPlugin**: Added advanced features to the CircuitBreaker including sliding window analysis, adaptive timeouts, URL exclusion patterns, configurable success thresholds, and detailed monitoring metrics for more sophisticated failure detection and recovery.
 - **Tree-Shakeable React Hooks**: Made React hooks individually importable via subpaths (e.g., `import { useGet } from 'axios-retryer/react/hooks/useGet'`) to reduce bundle size through tree shaking.
 - **Custom Error Detection for TokenRefreshPlugin**: Added support for detecting auth errors in 200 OK responses through customErrorDetector option, useful for GraphQL and other APIs that return errors in the response body rather than HTTP status codes.

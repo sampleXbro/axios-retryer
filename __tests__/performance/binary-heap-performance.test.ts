@@ -11,9 +11,11 @@ describe('Binary Heap Performance Tests', () => {
   });
 
   const createConfig = (priority: AxiosRetryerRequestPriority, timestamp: number, requestId: string) => ({
-    __priority: priority,
-    __timestamp: timestamp,
-    __requestId: requestId,
+    __axiosRetryer: {
+      priority,
+      timestamp,
+      requestId,
+    },
     url: `https://api.example.com/${requestId}`,
     method: 'GET' as const,
   });
@@ -27,13 +29,11 @@ describe('Binary Heap Performance Tests', () => {
     const validPriorities = Object.values(AXIOS_RETRYER_REQUEST_PRIORITIES);
 
     for (const size of queueSizes) {
-      const queue = new RequestQueue(
-        1, // maxConcurrent - keep low to build up queue
-        1000, // delay - keep high so items stay in queue
-        mockHasActiveCriticalRequests,
-        mockIsCriticalRequest,
-        size + 100 // maxQueueSize
-      );
+      const queue = new RequestQueue({
+        maxConcurrent: 1,
+        queueDelay: 1000,
+        maxQueueSize: size + 100,
+      });
 
       const startTime = process.hrtime.bigint();
       
@@ -80,13 +80,11 @@ describe('Binary Heap Performance Tests', () => {
   });
 
   it('should handle rapid insertions and extractions efficiently', async () => {
-    const queue = new RequestQueue(
-      10, // Higher concurrency to allow extractions
-      10, // Lower delay
-      mockHasActiveCriticalRequests,
-      mockIsCriticalRequest,
-      5000
-    );
+    const queue = new RequestQueue({
+      maxConcurrent: 10,
+      queueDelay: 10,
+      maxQueueSize: 5000,
+    });
 
     const operationCount = 1000;
     const startTime = process.hrtime.bigint();
@@ -118,13 +116,11 @@ describe('Binary Heap Performance Tests', () => {
   });
 
   it('should maintain priority ordering under stress', async () => {
-    const queue = new RequestQueue(
-      2, // Increased concurrency to process faster
-      20, // Reduced delay
-      mockHasActiveCriticalRequests,
-      mockIsCriticalRequest,
-      1000 // Reduced queue size
-    );
+    const queue = new RequestQueue({
+      maxConcurrent: 2,
+      queueDelay: 20,
+      maxQueueSize: 1000,
+    });
 
     const highPriorityCount = 50; // Reduced from 100
     const lowPriorityCount = 50; // Reduced from 100

@@ -2,18 +2,27 @@
 
 import type { AxiosError, AxiosRequestConfig } from 'axios';
 
-import type { RetryLogger } from '../../services/logger';
-import type { AxiosRetryerBackoffType, RetryStrategy } from '../../types';
-import { AXIOS_RETRYER_BACKOFF_TYPES } from '../../types';
+import type { AxiosRetryerBackoffType, AxiosRetryerHttpMethod, AxiosRetryerRetryableStatus, Logger, RetryStrategy } from '../../types';
+import { AXIOS_RETRYER_BACKOFF_TYPES, AXIOS_RETRYER_HTTP_METHODS } from '../../types';
 import { getBackoffDelay } from '../../utils';
+import { getRequestMetadata } from '../../utils/requestMetadata';
 
-const DEFAULT_RETRYABLE_STATUSES: (number | [number, number])[] = [408, 429, 500, 502, 503, 504, [520, 527]];
-const DEFAULT_RETRYABLE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
+const DEFAULT_RETRYABLE_STATUSES: readonly AxiosRetryerRetryableStatus[] = [408, 429, 500, 502, 503, 504, [520, 527]];
+const DEFAULT_RETRYABLE_METHODS: readonly AxiosRetryerHttpMethod[] = [
+  AXIOS_RETRYER_HTTP_METHODS.GET,
+  AXIOS_RETRYER_HTTP_METHODS.HEAD,
+  AXIOS_RETRYER_HTTP_METHODS.OPTIONS,
+];
 
 export class DefaultRetryStrategy implements RetryStrategy {
-  private retryableMethodsLower: string[];
+  private retryableMethodsLower: Set<string>;
   private defaultStatusSet: Set<number>;
   private defaultRanges: [number, number][];
+  // Cache parsed Set/Array per unique per-request retryableStatuses array reference.
+  private readonly overrideCache = new WeakMap<
+    readonly AxiosRetryerRetryableStatus[],
+    { set: Set<number>; ranges: [number, number][] }
+  >();
 
   /**
    * @param retryableStatuses - List of statuses or ranges that are considered retryable.
@@ -23,14 +32,14 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @param logger - Optional logger for debug information.
    */
   constructor(
-    private readonly retryableStatuses: (number | [number, number])[] = DEFAULT_RETRYABLE_STATUSES,
-    private readonly retryableMethods: string[] = DEFAULT_RETRYABLE_METHODS,
+    private readonly retryableStatuses: readonly AxiosRetryerRetryableStatus[] = DEFAULT_RETRYABLE_STATUSES,
+    private readonly retryableMethods: readonly AxiosRetryerHttpMethod[] = DEFAULT_RETRYABLE_METHODS,
     private readonly backoffType: AxiosRetryerBackoffType = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
-    private readonly idempotencyHeaders: string[] = ['Idempotency-Key'],
-    private readonly logger?: RetryLogger,
+    private readonly idempotencyHeaders: readonly string[] = ['Idempotency-Key'],
+    private readonly logger?: Logger,
   ) {
-    // Precompute lower-case methods once
-    this.retryableMethodsLower = this.retryableMethods.map((m) => m.toLowerCase());
+    // Precompute lower-case methods once as a Set for O(1) lookup
+    this.retryableMethodsLower = new Set(this.retryableMethods.map((m) => m.toLowerCase()));
 
     // Precompute default statuses as a Set and an array of ranges.
     this.defaultStatusSet = new Set<number>();
@@ -51,22 +60,26 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @param statuses - The statuses (or ranges) to test against.
    * @returns true if the status is considered retryable.
    */
-  private isRetryableStatus(status: number, statuses: (number | [number, number])[]): boolean {
+  private isRetryableStatus(status: number, statuses: readonly AxiosRetryerRetryableStatus[]): boolean {
     // If statuses is exactly the default, use precomputed values.
     if (statuses === this.retryableStatuses) {
       return (
         this.defaultStatusSet.has(status) || this.defaultRanges.some(([start, end]) => status >= start && status <= end)
       );
-    } else {
-      // Otherwise, recalc.
-      const statusMap = new Set<number>();
-      const ranges: [number, number][] = [];
-      statuses.forEach((s) => {
-        if (typeof s === 'number') statusMap.add(s);
-        else if (Array.isArray(s)) ranges.push(s);
-      });
-      return statusMap.has(status) || ranges.some(([start, end]) => status >= start && status <= end);
     }
+
+    let cached = this.overrideCache.get(statuses);
+    if (!cached) {
+      const set = new Set<number>();
+      const ranges: [number, number][] = [];
+      for (const s of statuses) {
+        if (typeof s === 'number') set.add(s);
+        else if (Array.isArray(s)) ranges.push(s);
+      }
+      cached = { set, ranges };
+      this.overrideCache.set(statuses, cached);
+    }
+    return cached.set.has(status) || cached.ranges.some(([start, end]) => status >= start && status <= end);
   }
 
   /**
@@ -76,6 +89,10 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @returns true if the error should be retried.
    */
   public getIsRetryable = (error: AxiosError): boolean => {
+    if (error.code === 'TOKEN_REFRESH_FAILED') {
+      return false;
+    }
+
     if (!error.response) {
       this.logger?.debug('Retrying due to network error');
       return true;
@@ -84,9 +101,9 @@ export class DefaultRetryStrategy implements RetryStrategy {
     const config = error.config as AxiosRequestConfig;
     const method = config?.method?.toLowerCase();
     const status = error.response.status;
-    const statuses = config?.__retryableStatuses ?? this.retryableStatuses;
+    const statuses = getRequestMetadata(config)?.retryableStatuses ?? this.retryableStatuses;
 
-    if (method && this.retryableMethodsLower.includes(method)) {
+    if (method && this.retryableMethodsLower.has(method)) {
       if (this.isRetryableStatus(status, statuses)) {
         this.logger?.debug(`Retrying request with status ${status} and method ${method}`);
         return true;

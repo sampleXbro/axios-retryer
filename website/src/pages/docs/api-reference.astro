@@ -1,0 +1,100 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nconst retryer = createRetryer({ retries: 3 });";
+const _shikiCode1 = "import { createRetryStrategy } from 'axios-retryer';\nconst strategy = createRetryStrategy({\n  isRetryable: (error) => error.response?.status === 503,\n  shouldRetry: (error, attempt, max) => attempt <= max,\n  getDelay: (attempt) => attempt * 500,\n});";
+const _shikiCode2 = "interface RetryMetrics {\n  totalRequests: number;\n  successfulRetries: number;\n  failedRetries: number;\n  completelyFailedRequests: number;\n  completelyFailedCriticalRequests: number;\n  totalRetryAttempts: number;\n  averageRetryDelay: number;\n  timerHealth: {\n    activeTimers: number;\n    activeRetryTimers: number;\n    healthScore: number;          // 0 = excellent, 100+ = potential leak\n  };\n}";
+const _shikiCode3 = "interface TimerStats {\n  activeTimers: number;\n  activeRetryTimers: number;\n}";
+const _shikiCode4 = "interface AxiosRetryerRequestConfig {\n  priority?: AXIOS_RETRYER_REQUEST_PRIORITIES;  // Queue priority\n  requestId?: string;                           // Stable ID for cancellation\n  retries?: number;                             // Override global retry count\n  backoffType?: AXIOS_RETRYER_BACKOFF_TYPES;\n  retryableStatuses?: RetryableStatuses;\n}\n\n// Usage:\nretryer.axiosInstance.get('/api', {\n  __axiosRetryer: {\n    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,\n    requestId: 'auth-check',\n  },\n});";
+const _shikiCode5 = "import {\n  RETRY_MODES,                        // AUTOMATIC | MANUAL\n  AXIOS_RETRYER_REQUEST_PRIORITIES,   // CRITICAL=4, HIGH=2, MEDIUM=1, LOW=0\n  AXIOS_RETRYER_BACKOFF_TYPES,        // STATIC | LINEAR | EXPONENTIAL\n  AXIOS_RETRYER_HTTP_METHODS,         // GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS\n} from 'axios-retryer';";
+---
+<DocsLayout title="API Reference" description="Complete API reference for the RetryManager class and all public methods in axios-retryer.">
+
+<h1 class="page-title">API Reference</h1>
+<p class="page-lead">Complete reference for <code>RetryManager</code> and its public methods.</p>
+
+<h2>Factory functions</h2>
+
+<h3><code>createRetryer(options?)</code></h3>
+<p>Creates and returns a <code>RetryManager</code> instance. Equivalent to <code>new RetryManager(options)</code>.</p>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h3><code>createRetryStrategy(config)</code></h3>
+<p>Creates a custom <code>IRetryStrategy</code> from a plain config object.</p>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>RetryManager instance</h2>
+
+<h3>Properties</h3>
+<table>
+  <thead><tr><th>Property</th><th>Type</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>axiosInstance</code></td><td><code>AxiosInstance</code></td><td>The wrapped Axios instance. Use this for all requests.</td></tr>
+  </tbody>
+</table>
+
+<h3>Request management</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>cancelRequest</code></td><td><code>(requestId: string) → void</code></td><td>Cancel a specific in-flight or queued request by its ID</td></tr>
+    <tr><td><code>cancelAllRequests</code></td><td><code>() → void</code></td><td>Cancel all in-flight and queued requests</td></tr>
+  </tbody>
+</table>
+
+<h3>Plugin management</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>use</code></td><td><code>(plugin, before?) → RetryManager</code></td><td>Register a plugin. Returns the same manager instance with widened event types.</td></tr>
+    <tr><td><code>unuse</code></td><td><code>(pluginName: string) → void</code></td><td>Unregister a plugin by name, running its cleanup hooks</td></tr>
+    <tr><td><code>listPlugins</code></td><td><code>() → &#123;name, version&#125;[]</code></td><td>List all registered plugins</td></tr>
+  </tbody>
+</table>
+
+<h3>Event management</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>on</code></td><td><code>(event, listener) → this</code></td><td>Subscribe to a lifecycle event. Chainable.</td></tr>
+    <tr><td><code>off</code></td><td><code>(event, listener) → this</code></td><td>Unsubscribe from an event</td></tr>
+    <tr><td><code>triggerAndEmit</code></td><td><code>(event, ...args) → Promise&lt;void&gt;</code></td><td>Programmatically trigger hooks and emit events (useful for plugins)</td></tr>
+  </tbody>
+</table>
+
+<h3>Metrics and diagnostics</h3>
+<table>
+  <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>getMetrics</code></td><td><code>() → RetryMetrics</code></td><td>Returns metrics snapshot. Counters are zero without <code>MetricsPlugin</code>.</td></tr>
+    <tr><td><code>getTimerStats</code></td><td><code>() → TimerStats</code></td><td>Returns active timer counts for health monitoring</td></tr>
+    <tr><td><code>getLogger</code></td><td><code>() → ILogger</code></td><td>Returns the internal logger instance</td></tr>
+  </tbody>
+</table>
+
+<h3>Lifecycle</h3>
+<table>
+  <thead><tr><th>Method</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>destroy()</code></td><td>Full cleanup: cancel all requests, clear all timers, eject interceptors, unregister all plugins. Makes the instance unusable.</td></tr>
+  </tbody>
+</table>
+
+<h2>RetryMetrics shape</h2>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>TimerStats shape</h2>
+<CodeBlock code={_shikiCode3} lang="typescript" />
+
+<h2>Request config extension</h2>
+<p>The <code>__axiosRetryer</code> field on <code>AxiosRequestConfig</code> carries per-request options:</p>
+<CodeBlock code={_shikiCode4} lang="typescript" />
+
+<h2>Constants</h2>
+<CodeBlock code={_shikiCode5} lang="typescript" />
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/plugins')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Plugins →</a>
+</div>
+</DocsLayout>

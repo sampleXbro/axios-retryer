@@ -1,0 +1,143 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+import { withBase } from '../../../utils/baseUrl';
+---
+<DocsLayout title="Plugins Overview" section="Plugins" description="Overview of all axios-retryer plugins — token refresh, circuit breaker, caching, manual retry, metrics, and sanitization.">
+
+<h1 class="page-title">Plugins</h1>
+<p class="page-lead">
+  The core stays lean. Plugins are independent, tree-shakeable entry points you add only when you need them.
+  Each plugin has its own documented import path.
+</p>
+
+<div class="callout callout-tip">
+  <div class="callout-icon">💡</div>
+  <div class="callout-content">
+    <div class="callout-title">Prefer subpath imports</div>
+    <p>Import from focused paths like <code>axios-retryer/plugins/TokenRefreshPlugin</code> so bundlers tree-shake unused plugins. The convenience barrel <code>axios-retryer/plugins</code> bundles everything unconditionally and will be removed in v3.</p>
+  </div>
+</div>
+
+<style>
+  .plugin-list { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 2rem; }
+  .plugin-row {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.5rem; display: grid; grid-template-columns: 3fr 2fr; gap: 2rem; align-items: start;
+  }
+  .plugin-row:hover { border-color: var(--accent-muted); }
+  @media (max-width: 680px) { .plugin-row { grid-template-columns: 1fr; } }
+  .plugin-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text); }
+  .plugin-entry { font-size: 0.8rem; color: var(--accent); font-family: monospace; margin-bottom: 0.5rem; }
+  .plugin-desc { font-size: 0.875rem; color: var(--text-muted); line-height: 1.6; }
+  .plugin-link { display: inline-block; margin-top: 0.75rem; font-size: 0.875rem; font-weight: 600; color: var(--accent); }
+  .plugin-when { font-size: 0.85rem; }
+  .plugin-when-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-subtle); margin-bottom: .5rem; }
+  .plugin-when ul { padding-left: 1.2rem; }
+  .plugin-when li { margin: .25rem 0; color: var(--text-muted); font-size: 0.83rem; }
+</style>
+
+<div class="plugin-list">
+
+  <div class="plugin-row">
+    <div>
+      <div class="plugin-title">🔑 TokenRefreshPlugin</div>
+      <div class="plugin-entry">axios-retryer/plugins/TokenRefreshPlugin</div>
+      <div class="plugin-desc">Automatically refreshes JWT/OAuth tokens when requests return 401. Queues all concurrent requests during the refresh, then replays them with the new token. Supports <code>customErrorDetector</code> for GraphQL APIs that return errors in 200 bodies. You can resolve the refresh callback with no <code>token</code> to skip a cycle without failure events.</div>
+      <a href={withBase('/docs/plugins/token-refresh')} class="plugin-link">View docs →</a>
+    </div>
+    <div class="plugin-when">
+      <div class="plugin-when-title">Use when</div>
+      <ul>
+        <li>Access tokens expire and protected routes need silent replay after refresh</li>
+        <li>Multiple concurrent requests can race on a 401</li>
+        <li>Auth errors appear in 200 response bodies (GraphQL)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="plugin-row">
+    <div>
+      <div class="plugin-title">🛡️ CircuitBreakerPlugin</div>
+      <div class="plugin-entry">axios-retryer/plugins/CircuitBreakerPlugin</div>
+      <div class="plugin-desc">Trips open after N failures, fast-fails all subsequent requests during the recovery window, then allows configurable half-open probes. Supports sliding window analysis and URL exclusion patterns.</div>
+      <a href={withBase('/docs/plugins/circuit-breaker')} class="plugin-link">View docs →</a>
+    </div>
+    <div class="plugin-when">
+      <div class="plugin-when-title">Use when</div>
+      <ul>
+        <li>A failing upstream should stop receiving requests while recovering</li>
+        <li>You want to reduce latency during partial outages</li>
+        <li>Downstream rate limits need enforced back-off at the client</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="plugin-row">
+    <div>
+      <div class="plugin-title">💾 CachingPlugin</div>
+      <div class="plugin-entry">axios-retryer/plugins/CachingPlugin</div>
+      <div class="plugin-desc">Caches responses in memory with configurable TTR, exact/prefix/regex invalidation, per-request overrides, and a pluggable storage adapter contract (e.g. Redis, Memcached).</div>
+      <a href={withBase('/docs/plugins/caching')} class="plugin-link">View docs →</a>
+    </div>
+    <div class="plugin-when">
+      <div class="plugin-when-title">Use when</div>
+      <ul>
+        <li>Repeated identical reads should be deduped or served from memory</li>
+        <li>You want to reduce server load for stable read data</li>
+        <li>Offline-first data should be available from a previous response</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="plugin-row">
+    <div>
+      <div class="plugin-title">💾 ManualRetryPlugin</div>
+      <div class="plugin-entry">axios-retryer/plugins/ManualRetryPlugin</div>
+      <div class="plugin-desc">Stores terminal failures (in <code>MANUAL</code> mode) and lets you replay them on demand. Built-in idempotency safeguards, auth-request skipping, and age limits.</div>
+      <a href={withBase('/docs/plugins/manual-retry')} class="plugin-link">View docs →</a>
+    </div>
+    <div class="plugin-when">
+      <div class="plugin-when-title">Use when</div>
+      <ul>
+        <li>Offline-first SPA needs to queue requests while disconnected</li>
+        <li>User should manually trigger retry after reviewing failures</li>
+        <li>Failed mutations must survive a page reload</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="plugin-row">
+    <div>
+      <div class="plugin-title">📊 MetricsPlugin</div>
+      <div class="plugin-entry">axios-retryer/plugins/MetricsPlugin</div>
+      <div class="plugin-desc">Activates live retry counters, success rates, failure counts, and timer health reporting. Without this plugin <code>getMetrics()</code> returns a zeroed snapshot.</div>
+      <a href={withBase('/docs/plugins/metrics')} class="plugin-link">View docs →</a>
+    </div>
+    <div class="plugin-when">
+      <div class="plugin-when-title">Use when</div>
+      <ul>
+        <li>You need real-time retry metrics for dashboards or alerting</li>
+        <li><code>onMetricsUpdated</code> events are required in your monitoring pipeline</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="plugin-row">
+    <div>
+      <div class="plugin-title">🔒 DebugSanitizationPlugin</div>
+      <div class="plugin-entry">axios-retryer/plugins/DebugSanitizationPlugin</div>
+      <div class="plugin-desc">Redacts sensitive headers, body fields, and URL params from plugin-managed debug logs. Safe <code>debug: true</code> in non-prod environments.</div>
+      <a href={withBase('/docs/plugins/debug-sanitization')} class="plugin-link">View docs →</a>
+    </div>
+    <div class="plugin-when">
+      <div class="plugin-when-title">Use when</div>
+      <ul>
+        <li>Debug logs must not leak tokens, passwords, or PII</li>
+        <li>Verbose logging is needed in staging but logs are shipped externally</li>
+      </ul>
+    </div>
+  </div>
+
+
+</div>
+</DocsLayout>

@@ -1,38 +1,62 @@
 import './global-axios-augmentation';
 
 export {
+  type CoreRetryEvents,
   type RetryMode,
-  type RetryHooks,
+  type RetryManagerEvents,
+  type RetryEventArgs,
+  type RetryEventListener,
   type RetryManagerOptions,
   type RetryStrategy,
-  type RequestStore,
   type RetryPlugin,
+  type PluginContext,
   type AxiosRetryerBackoffType,
+  type AxiosRetryerHttpMethod,
+  type AxiosRetryerRequestMetadata,
   type AxiosRetryerRequestPriority,
-  type AxiosRetryerMetrics,
+  type AxiosRetryerRetryableStatus,
+  type AxiosRetryerStatusRange,
+  type AxiosRetryerDetailedMetrics,
+  type AxiosRetryerRequestErrorEvent,
+  type AxiosRetryerRequestQueuedEvent,
+  type AxiosRetryerRequestDispatchedEvent,
+  type AxiosRetryerRequestSucceededEvent,
+  type Logger,
   RETRY_MODES,
+  AXIOS_RETRYER_HTTP_METHODS,
   AXIOS_RETRYER_REQUEST_PRIORITIES,
   AXIOS_RETRYER_BACKOFF_TYPES,
 } from './types';
 
 // Export core functionality
 export { RetryManager } from './core/RetryManager';
-export { QueueFullError } from './core/errors/QueueFullError';
+export {
+  AxiosRetryerError,
+  PluginRegistrationError,
+  QueueClearedError,
+  QueueDestroyedError,
+  QueueFullError,
+  QueuedRequestCanceledError,
+  RequestAbortedError,
+  RetryerConfigError,
+} from './core/errors';
 export { DefaultRetryStrategy } from './core/strategies/DefaultRetryStrategy';
 
-// Only export type definitions for plugins
-// The actual plugin implementations are exported from their own entry points
-export type { TokenRefreshPluginOptions } from './plugins/TokenRefreshPlugin/types/';
-
-// Note: Removed direct export of TokenRefreshPlugin to support tree-shaking
-// Users should import plugins directly from their individual entry points:
+// Note: Plugin-specific types and implementations are exported from documented plugin entry points.
+// Prefer dedicated subpaths such as:
 // import { TokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';
+// The `axios-retryer/plugins` barrel remains available as a documented convenience entry.
 
 // ========== Functional API ==========
 
 import { RetryManager } from './core/RetryManager';
 import { DefaultRetryStrategy } from './core/strategies/DefaultRetryStrategy';
-import type { RetryManagerOptions, RetryStrategy, AxiosRetryerBackoffType } from './types';
+import type { AxiosError } from 'axios';
+import type { AxiosRetryerBackoffType, RetryManagerOptions, RetryStrategy } from './types';
+
+// Prevents TypeScript from widening TPluginEvents based on call-site usage,
+// ensuring the type parameter is always inferred from the declaration site only.
+type NoInferType<T> = [T][T extends unknown ? 0 : never];
 
 /**
  * Creates a new RetryManager instance with the given options.
@@ -47,8 +71,10 @@ import type { RetryManagerOptions, RetryStrategy, AxiosRetryerBackoffType } from
  * retryer.axiosInstance.get('/api/data').then(response => console.log(response.data));
  * ```
  */
-export function createRetryer(options?: RetryManagerOptions): RetryManager {
-  return new RetryManager(options);
+export function createRetryer<TPluginEvents extends object = {}>(
+  options?: RetryManagerOptions<NoInferType<TPluginEvents>>,
+): RetryManager<TPluginEvents> {
+  return new RetryManager<TPluginEvents>(options);
 }
 
 /**
@@ -58,12 +84,12 @@ export interface RetryStrategyConfig {
   /**
    * Custom function to determine if an error is retryable
    */
-  isRetryable?: (error: any) => boolean;
+  isRetryable?: (error: AxiosError) => boolean;
   
   /**
    * Custom function to determine if a request should be retried
    */
-  shouldRetry?: (error: any, attempt: number, maxRetries: number) => boolean;
+  shouldRetry?: (error: AxiosError, attempt: number, maxRetries: number) => boolean;
   
   /**
    * Custom function to calculate the delay between retry attempts
@@ -81,7 +107,7 @@ export interface RetryStrategyConfig {
  * @example
  * ```typescript
  * const customStrategy = createRetryStrategy({
- *   isRetryable: (error) => error.response?.status >= 500,
+ *   isRetryable: (error) => (error.response?.status ?? 0) >= 500,
  *   getDelay: (attempt) => attempt * 1000 // linear backoff
  * });
  * 
@@ -94,14 +120,14 @@ export function createRetryStrategy(config: RetryStrategyConfig = {}): RetryStra
   const baseStrategy = new DefaultRetryStrategy();
   
   return {
-    getIsRetryable(error: any): boolean {
+    getIsRetryable(error: AxiosError): boolean {
       if (config.isRetryable) {
         return config.isRetryable(error);
       }
       return baseStrategy.getIsRetryable(error);
     },
     
-    shouldRetry(error: any, attempt: number, maxRetries: number): boolean {
+    shouldRetry(error: AxiosError, attempt: number, maxRetries: number): boolean {
       if (config.shouldRetry) {
         return config.shouldRetry(error, attempt, maxRetries);
       }

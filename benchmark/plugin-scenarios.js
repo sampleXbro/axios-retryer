@@ -15,6 +15,7 @@ const {
   silenceManager,
   sleep,
   summarizeLatency,
+  withPriority,
 } = require('./_utils');
 
 const FAST_RETRY_DELAY_MS = 20;
@@ -102,14 +103,14 @@ async function runCacheScenario(profile = getProfile()) {
   const warmup = await measureRequests({
     items: warmupItems,
     concurrency: Math.min(12, warmupItems.length),
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const upstreamAfterWarmup = harness.stats.upstreamCalls;
 
   const hotReads = await measureRequests({
     items: hotItems,
     concurrency: Math.min(scaleCount(profile, 24), hotItems.length),
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const upstreamAfterHotReads = harness.stats.upstreamCalls;
 
@@ -118,7 +119,7 @@ async function runCacheScenario(profile = getProfile()) {
   const staleReads = await measureRequests({
     items: staleItems,
     concurrency: Math.min(10, staleItems.length),
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const finishedAt = performance.now();
 
@@ -195,17 +196,17 @@ async function runCircuitBreakerScenario(profile = getProfile()) {
   const healthy = await measureRequests({
     items: healthyItems,
     concurrency: 4,
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const trip = await measureRequests({
     items: tripItems,
     concurrency: 1,
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const blocked = await measureRequests({
     items: blockedItems,
     concurrency: blockedItems.length,
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
 
   await sleep(550);
@@ -213,7 +214,7 @@ async function runCircuitBreakerScenario(profile = getProfile()) {
   const recovery = await measureRequests({
     items: recoveryItems,
     concurrency: 1,
-    execute: (item) => manager.axiosInstance.get(item.url, { __priority: item.priority }),
+    execute: (item) => manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const finishedAt = performance.now();
 
@@ -295,10 +296,9 @@ async function runTokenRefreshScenario(profile = getProfile()) {
     items,
     concurrency: Math.min(requestCount, scaleCount(profile, 24)),
     execute: (item) =>
-      manager.axiosInstance.get(item.url, {
+      manager.axiosInstance.get(item.url, withPriority(item.priority, {
         headers: item.headers,
-        __priority: item.priority,
-      }),
+      })),
   });
   const finishedAt = performance.now();
 
@@ -380,10 +380,9 @@ async function runCombinedPluginScenario(profile = getProfile()) {
     items: authWarmItems,
     concurrency: Math.min(authWarmItems.length, 12),
     execute: (item) =>
-      manager.axiosInstance.get(item.url, {
+      manager.axiosInstance.get(item.url, withPriority(item.priority, {
         headers: item.headers,
-        __priority: item.priority,
-      }),
+      })),
   });
   const upstreamAfterAuthWarm = harness.stats.upstreamCalls;
 
@@ -391,10 +390,9 @@ async function runCombinedPluginScenario(profile = getProfile()) {
     items: cacheHotItems,
     concurrency: Math.min(cacheHotItems.length, 16),
     execute: (item) =>
-      manager.axiosInstance.get(item.url, {
+      manager.axiosInstance.get(item.url, withPriority(item.priority, {
         headers: item.headers,
-        __priority: item.priority,
-      }),
+      })),
   });
   const upstreamAfterHotCache = harness.stats.upstreamCalls;
   const finishedAt = performance.now();

@@ -1,0 +1,48 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
+const _shikiCode0 = "import { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';";
+const _shikiCode1 = "import { createRetryer } from 'axios-retryer';\nimport { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\n\nconst retryer = createRetryer({ debug: true });  // Enable verbose logs\n\nretryer.use(\n  createDebugSanitizationPlugin({\n    sanitizeOptions: {\n      sensitiveHeaders: ['Authorization', 'X-API-Key', 'Session-Token'],\n      sensitiveFields: ['password', 'creditCard', 'ssn', 'token'],\n      sensitiveParams: ['api_key', 'secret'],\n      redactionChar: '\u2588',          // Character used to replace sensitive values\n      sanitizeRequestData: true,   // Redact request body in logs\n      sanitizeResponseData: false, // Keep response body in logs (opt-in)\n      sanitizeUrlParams: true,     // Redact URL query params\n    },\n  })\n);";
+const _shikiCode2 = "{\n  sanitizeOptions: {\n    sensitiveHeaders: string[];      // Header names to redact (case-insensitive)\n    sensitiveFields: string[];       // Body field names to redact (nested paths supported)\n    sensitiveParams: string[];       // URL query param names to redact\n    redactionChar: string;           // Character to replace values (default: '*')\n    sanitizeRequestData: boolean;    // Sanitize request bodies in logs (default: true)\n    sanitizeResponseData: boolean;   // Sanitize response bodies in logs (default: false)\n    sanitizeUrlParams: boolean;      // Sanitize URL query params (default: true)\n  }\n}";
+---
+<DocsLayout title="DebugSanitizationPlugin" section="Plugins" description="Redact sensitive data from axios-retryer debug logs with DebugSanitizationPlugin.">
+
+<h1 class="page-title">DebugSanitizationPlugin</h1>
+<p class="page-lead">Moves sensitive-data redaction out of the core into an explicit plugin. Safe <code>debug: true</code> in staging and CI environments without risking credential leaks in shipped log pipelines.</p>
+
+<h2>Install</h2>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h2>Basic usage</h2>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>All options</h2>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>What gets redacted</h2>
+<p>The plugin intercepts the library's internal log calls and replaces sensitive values before they reach your logger:</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Example before</th><th>Example after</th></tr></thead>
+  <tbody>
+    <tr><td>Authorization header</td><td><code>Bearer eyJhbG...</code></td><td><code>[REDACTED]</code></td></tr>
+    <tr><td>Request body field</td><td><code>&#123;"password":"hunter2"&#125;</code></td><td><code>&#123;"password":"[REDACTED]"&#125;</code></td></tr>
+    <tr><td>URL param</td><td><code>?api_key=sk-abc123</code></td><td><code>?api_key=[REDACTED]</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Important caveat</h2>
+<div class="callout callout-warning">
+  <div class="callout-icon">⚠️</div>
+  <div class="callout-content">
+    <div class="callout-title">Logging safeguard only</div>
+    <p>This plugin only protects <strong>plugin-managed debug logs</strong>. It does not redact data stored in <code>ManualRetryPlugin</code>'s request store, cached responses in <code>CachingPlugin</code>, or objects passed to your own event handlers. Use <code>prepareRequestForStore</code> and avoid caching auth-scoped endpoints for in-memory safety.</p>
+  </div>
+</div>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/configuration')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Configuration →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">All Plugins</a>
+</div>
+</DocsLayout>

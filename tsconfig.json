@@ -3,7 +3,7 @@
     "target": "ES5",
     "lib": [
       "ESNext",
-      "DOM",
+      "DOM"
     ],
     "module": "ESNext",
     "strict": true,
@@ -12,17 +12,14 @@
     "skipLibCheck": true,
     "sourceMap": false,
     "types": ["jest", "node"],
-    "declaration": true,
+    "declaration": false,
     "outDir": "dist",
-    "declarationDir": "dist/types",
-    "declarationMap": false,
     "rootDir": "src"
   },
   "include": [
-    "src/**/*",
-    "src/global-axios-augmentation.ts"
+    "src/**/*"
   ],
   "exclude": [
-    "node_modules",
+    "node_modules"
   ]
 }

@@ -3,27 +3,25 @@ import commonjs from '@rollup/plugin-commonjs';
 import typescript from 'rollup-plugin-typescript2';
 import terser from '@rollup/plugin-terser';
 import { visualizer } from 'rollup-plugin-visualizer';
+import dtsImport from 'rollup-plugin-dts';
+// rollup-plugin-dts ships as ESM; when rollup transpiles this config as CJS
+// the default export lands on `.default`.
+const dts = dtsImport.default ?? dtsImport;
 
-// Common options for all builds
+const includeBrowserBuild = process.env.BUILD_BROWSER === 'true';
+
+// Common options for all JS builds
 const commonPlugins = (minify = true, name = 'core') => [
     resolve({
-        // Ensure we only include what's needed
         mainFields: ['module', 'main'],
         browser: true,
         preferBuiltins: false,
     }),
     commonjs(),
     typescript({
-        tsconfig: './tsconfig.json',
+        tsconfig: './tsconfig.build.json',
         useTsconfigDeclarationDir: true,
-        tsconfigOverride: {
-            compilerOptions: {
-                // Improve tree-shaking with these options
-                declaration: true,
-                target: 'ES2019',
-                module: 'ESNext'
-            }
-        }
+        cacheRoot: `.cache/rts2/${name}`,
     }),
     minify && terser({
         format: {
@@ -31,8 +29,6 @@ const commonPlugins = (minify = true, name = 'core') => [
         },
         compress: {
             pure_getters: true,
-            unsafe: true,
-            unsafe_comps: true,
             passes: 3
         }
     }),
@@ -47,23 +43,24 @@ const commonPlugins = (minify = true, name = 'core') => [
 const mainBundle = {
     input: 'src/index.ts',
     output: [
-        { 
-            file: 'dist/index.cjs.js', 
-            format: 'cjs', 
+        {
+            dir: 'dist',
+            entryFileNames: '[name].cjs.js',
+            chunkFileNames: 'chunks/[name]-[hash].cjs.js',
+            format: 'cjs',
             sourcemap: false,
-            exports: 'named',
-            name: 'AxiosRetryer'
+            exports: 'named'
         },
-        { 
-            file: 'dist/index.esm.js', 
-            format: 'es', 
-            sourcemap: false 
+        {
+            dir: 'dist',
+            entryFileNames: '[name].esm.js',
+            chunkFileNames: 'chunks/[name]-[hash].esm.js',
+            format: 'es',
+            sourcemap: false
         }
     ],
     plugins: commonPlugins(true, 'main'),
     external: ['axios'],
-    // Preserve module structure for better tree-shaking
-    preserveModules: false,
     treeshake: {
         moduleSideEffects: false,
         propertyReadSideEffects: false,
@@ -71,24 +68,23 @@ const mainBundle = {
     }
 };
 
-// Generate plugin configurations
-const generatePluginConfig = (pluginName) => ({
-    input: `./src/plugins/${pluginName}/index.ts`,
+const createPluginBundle = (input, outputName, bundleName) => ({
+    input,
     output: [
-        { 
-            file: `./dist/plugins/${pluginName}.cjs.js`, 
-            format: 'cjs', 
+        {
+            file: `./dist/plugins/${outputName}.cjs.js`,
+            format: 'cjs',
             sourcemap: false,
             exports: 'named'
         },
-        { 
-            file: `./dist/plugins/${pluginName}.esm.js`, 
-            format: 'es', 
-            sourcemap: false 
+        {
+            file: `./dist/plugins/${outputName}.esm.js`,
+            format: 'es',
+            sourcemap: false
         }
     ],
-    plugins: commonPlugins(true, pluginName),
-    external: ['axios', '../..'], // Ensure we don't bundle core library code
+    plugins: commonPlugins(true, bundleName),
+    external: ['axios'],
     treeshake: {
         moduleSideEffects: false,
         propertyReadSideEffects: false,
@@ -96,21 +92,31 @@ const generatePluginConfig = (pluginName) => ({
     }
 });
 
+// Generate plugin configurations
+const generatePluginConfig = (pluginName) =>
+    createPluginBundle(`./src/plugins/${pluginName}/index.ts`, pluginName, pluginName);
+
 // Generate all plugin configurations
 const pluginConfigs = [
     'CachingPlugin',
     'CircuitBreakerPlugin',
-    'TokenRefreshPlugin'
+    'TokenRefreshPlugin',
+    'ManualRetryPlugin',
+    'DebugSanitizationPlugin',
+    'MetricsPlugin',
 ].map(generatePluginConfig);
 
-// Create browser-optimized bundle with all functionality
+const pluginsEntryBundle = createPluginBundle('./src/plugins/index.ts', 'index', 'plugins');
+
+// Optional browser-optimized bundle with all functionality
 const browserBundle = {
     input: 'src/index.ts',
-    output: { 
-        file: 'dist/browser/axios-retryer.min.js', 
-        format: 'umd', 
+    output: {
+        file: 'dist/browser/axios-retryer.min.js',
+        format: 'umd',
         name: 'AxiosRetryer',
         sourcemap: false,
+        inlineDynamicImports: true,
         globals: {
             axios: 'axios'
         }
@@ -119,4 +125,33 @@ const browserBundle = {
     external: ['axios']
 };
 
-export default [mainBundle, ...pluginConfigs, browserBundle];
+// ─── Declaration bundles ──────────────────────────────────────────────────────
+// Each documented public entry point gets a single bundled .d.ts file so that
+// internal module paths (core/, store/, utils/) are never published.
+// These configs run after the JS builds so that dist/types/ already exists.
+
+const createDtsBundle = (input, output) => ({
+    input,
+    output: { file: output, format: 'es' },
+    plugins: [dts()],
+    external: ['axios'],
+});
+
+const dtsBundles = [
+    createDtsBundle('dist/types/index.d.ts', 'dist/index.d.ts'),
+    createDtsBundle('dist/types/plugins/index.d.ts', 'dist/plugins/index.d.ts'),
+    createDtsBundle('dist/types/plugins/CachingPlugin/index.d.ts', 'dist/plugins/CachingPlugin.d.ts'),
+    createDtsBundle('dist/types/plugins/CircuitBreakerPlugin/index.d.ts', 'dist/plugins/CircuitBreakerPlugin.d.ts'),
+    createDtsBundle('dist/types/plugins/TokenRefreshPlugin/index.d.ts', 'dist/plugins/TokenRefreshPlugin.d.ts'),
+    createDtsBundle('dist/types/plugins/ManualRetryPlugin/index.d.ts', 'dist/plugins/ManualRetryPlugin.d.ts'),
+    createDtsBundle('dist/types/plugins/DebugSanitizationPlugin/index.d.ts', 'dist/plugins/DebugSanitizationPlugin.d.ts'),
+    createDtsBundle('dist/types/plugins/MetricsPlugin/index.d.ts', 'dist/plugins/MetricsPlugin.d.ts'),
+];
+
+const builds = [mainBundle, pluginsEntryBundle, ...pluginConfigs, ...dtsBundles];
+
+if (includeBrowserBuild) {
+    builds.push(browserBundle);
+}
+
+export default builds;

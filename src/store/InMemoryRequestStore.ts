@@ -2,7 +2,15 @@
 
 import type { AxiosRequestConfig } from 'axios';
 
-import type { RequestStore, RetryHooks } from '../types';
+import type { RequestStore } from '../types';
+import { ensureRequestMetadata, getRequestMetadata } from '../utils/requestMetadata';
+
+type StoreEvents = {
+  onRequestRemovedFromStore?: (request: AxiosRequestConfig) => void;
+};
+
+type StoreEventArgs<K extends keyof StoreEvents> =
+  NonNullable<StoreEvents[K]> extends (...args: infer TArgs) => unknown ? TArgs : never;
 
 /**
  * A simple in-memory store for Axios request configurations.
@@ -17,9 +25,9 @@ export class InMemoryRequestStore implements RequestStore {
    */
   constructor(
     private readonly maxStoreSize = 200,
-    private readonly emit: <K extends keyof RetryHooks>(
+    private readonly emit: <K extends keyof StoreEvents>(
       event: K,
-      ...args: Parameters<NonNullable<RetryHooks[K]>>
+      ...args: StoreEventArgs<K>
     ) => void,
   ) {}
 
@@ -30,6 +38,7 @@ export class InMemoryRequestStore implements RequestStore {
    * @param request - The Axios request configuration to store.
    */
   add(request: AxiosRequestConfig): void {
+    ensureRequestMetadata(request);
     this.requests.push(request);
 
     // If the store exceeds maxStoreSize, remove the oldest request first.
@@ -47,8 +56,8 @@ export class InMemoryRequestStore implements RequestStore {
    * @param request - The request configuration to remove.
    */
   remove(request: AxiosRequestConfig): void {
-    const requestId = request.__requestId;
-    this.requests = this.requests.filter((req) => req.__requestId !== requestId);
+    const requestId = getRequestMetadata(request)?.requestId;
+    this.requests = this.requests.filter((req) => getRequestMetadata(req)?.requestId !== requestId);
   }
 
   /**

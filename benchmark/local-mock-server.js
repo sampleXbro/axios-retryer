@@ -17,6 +17,7 @@ const {
   round,
   scaleCount,
   silenceManager,
+  withPriority,
 } = require('./_utils');
 
 const BENCHMARK_NAME = 'local-mock-server';
@@ -72,10 +73,9 @@ async function runManagerBatch({ manager, items, concurrency }) {
     items,
     concurrency,
     execute: (item) =>
-      manager.axiosInstance.get(item.url, {
+      manager.axiosInstance.get(item.url, withPriority(item.priority, {
         headers: item.headers,
-        __priority: item.priority,
-      }),
+      })),
   });
 
   return {
@@ -317,9 +317,7 @@ async function priorityScenario(profile) {
     items,
     concurrency: requestCount,
     execute: (item) =>
-      manager.axiosInstance.get(item.url, {
-        __priority: item.priority,
-      }),
+      manager.axiosInstance.get(item.url, withPriority(item.priority)),
   });
   const finishedAt = performance.now();
 

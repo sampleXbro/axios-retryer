@@ -1,0 +1,77 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
+const _shikiCode0 = "npm install axios-retryer axios";
+const _shikiCode1 = "yarn add axios-retryer axios";
+const _shikiCode2 = "pnpm add axios-retryer axios";
+const _shikiCode3 = "// Core \u2014 retry manager, types, constants, error classes\nimport { createRetryer, RETRY_MODES, AXIOS_RETRYER_REQUEST_PRIORITIES } from 'axios-retryer';\n\n// Plugins \u2014 import only what you use\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\nimport { createCachePlugin } from 'axios-retryer/plugins/CachingPlugin';\nimport { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\nimport { createDebugSanitizationPlugin } from 'axios-retryer/plugins/DebugSanitizationPlugin';\n\n// Convenience barrel (imports all plugins \u2014 loses tree-shaking)\nimport { createTokenRefreshPlugin, createMetricsPlugin } from 'axios-retryer/plugins';";
+const _shikiCode4 = "// tsconfig.json \u2014 recommended minimum\n{\n  \"compilerOptions\": {\n    \"target\": \"ES2019\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",  // or \"node16\" / \"nodenext\"\n    \"strict\": true\n  }\n}";
+---
+<DocsLayout title="Installation" description="Install axios-retryer via npm, yarn, or pnpm. Peer dependency is axios >= 1.7.4.">
+
+<h1 class="page-title">Installation</h1>
+<p class="page-lead">Install axios-retryer alongside Axios. The library has a single peer dependency.</p>
+
+<div class="callout callout-info">
+  <div class="callout-icon">ℹ️</div>
+  <div class="callout-content">
+    <div class="callout-title">Peer dependency</div>
+    <p>axios <strong>&gt;= 1.7.4</strong> is required. Earlier versions contain known security vulnerabilities (prototype pollution, DoS).</p>
+  </div>
+</div>
+
+<h2>Package managers</h2>
+
+<div class="code-tabs">
+  <div class="code-tabs-nav">
+    <button class="code-tab-btn active">npm</button>
+    <button class="code-tab-btn">yarn</button>
+    <button class="code-tab-btn">pnpm</button>
+  </div>
+  <div class="code-tab-content active">
+    <CodeBlock code={_shikiCode0} lang="bash" />
+  </div>
+  <div class="code-tab-content">
+    <CodeBlock code={_shikiCode1} lang="bash" />
+  </div>
+  <div class="code-tab-content">
+    <CodeBlock code={_shikiCode2} lang="bash" />
+  </div>
+</div>
+
+<h2>Entry points</h2>
+<p>The library ships a compact core and one entry point per plugin:</p>
+
+<CodeBlock code={_shikiCode3} lang="typescript" />
+
+<div class="callout callout-tip">
+  <div class="callout-icon">💡</div>
+  <div class="callout-content">
+    <div class="callout-title">Prefer subpath imports</div>
+    <p>Use focused subpath imports like <code>axios-retryer/plugins/CachingPlugin</code> so bundlers tree-shake unused plugins. The barrel <code>axios-retryer/plugins</code> bundles all plugins unconditionally (~52.6 KB raw / ~13.8 KB gzip). The barrel will be removed in v3.</p>
+  </div>
+</div>
+
+<h2>Build formats</h2>
+<table>
+  <thead>
+    <tr><th>Format</th><th>File</th><th>Use when</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>ESM</td><td><code>dist/index.esm.js</code></td><td>Modern bundlers (Vite, Rollup, Webpack 5)</td></tr>
+    <tr><td>CJS</td><td><code>dist/index.cjs.js</code></td><td>Node.js CommonJS (<code>require()</code>)</td></tr>
+    <tr><td>Types</td><td><code>dist/index.d.ts</code></td><td>TypeScript</td></tr>
+    <tr><td>UMD / Browser</td><td>generated locally</td><td>Run <code>npm run build:browser</code> in the repo</td></tr>
+  </tbody>
+</table>
+
+<h2>TypeScript</h2>
+<p>TypeScript 4.0+ is supported. All public APIs ship with types. No <code>@types/</code> package is needed.</p>
+
+<CodeBlock code={_shikiCode4} lang="typescript" />
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/quick-start')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Quick Start →</a>
+</div>
+</DocsLayout>

@@ -170,7 +170,7 @@ describe('Enhanced CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
       // Create fake responses with these timings
       for (const responseTime of responseTimes) {
         // Setup the request timestamp
-        const requestConfig = { url: '/api/slow', __timestamp: startTime };
+        const requestConfig = { url: '/api/slow', __axiosRetryer: { timestamp: startTime } };
         
         // Create a fake successful response
         const response = {

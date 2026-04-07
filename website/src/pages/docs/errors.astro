@@ -1,0 +1,50 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
+const _shikiCode0 = "import {\n  RetryerConfigError,        // Invalid RetryManager configuration\n  PluginRegistrationError,   // Duplicate or invalid plugin registration\n  QueueFullError,            // maxQueueSize exceeded\n  QueuedRequestCanceledError, // Request was in queue when cancelled\n  QueueClearedError,         // Queue was cleared (e.g. destroy())\n  QueueDestroyedError,       // Manager was destroyed before request processed\n  RequestAbortedError,       // Request aborted via AbortController\n} from 'axios-retryer';";
+const _shikiCode1 = "// CachingPlugin\nimport { InvalidCacheKeyError } from 'axios-retryer/plugins/CachingPlugin';\n\n// CircuitBreakerPlugin\nimport { CircuitBreakerStateError } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\n// TokenRefreshPlugin\nimport {\n  MissingTokenRefreshHandlerError,\n  TokenRefreshAbortError,\n  TokenRefreshFailedError,\n  TokenRefreshTimeoutError,\n} from 'axios-retryer/plugins/TokenRefreshPlugin';";
+const _shikiCode2 = "import {\n  QueueFullError,\n  RetryerConfigError,\n  PluginRegistrationError,\n} from 'axios-retryer';\nimport {\n  TokenRefreshAbortError,\n  TokenRefreshTimeoutError,\n} from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { CircuitBreakerStateError } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\ntry {\n  await retryer.axiosInstance.get('/api/data');\n} catch (error) {\n  if (error instanceof QueueFullError) {\n    // Show backpressure UI\n    showToast('Server busy \u2014 please try again shortly');\n  } else if (error instanceof CircuitBreakerStateError) {\n    // Circuit tripped open\n    showBanner('Service temporarily unavailable');\n  } else if (error instanceof TokenRefreshAbortError) {\n    // Auth refresh failed fatally\n    redirectToLogin();\n  } else if (error instanceof TokenRefreshTimeoutError) {\n    // Refresh request took too long\n    scheduleRetry();\n  } else {\n    throw error;  // Re-throw unrecognized errors\n  }\n}";
+---
+<DocsLayout title="Error Classes" description="Named error classes exported by axios-retryer for type-safe error handling.">
+
+<h1 class="page-title">Error Classes</h1>
+<p class="page-lead">Library-thrown errors use named classes so you can handle them with <code>instanceof</code> instead of string matching.</p>
+
+<h2>Core errors</h2>
+<p>Exported from <code>axios-retryer</code>:</p>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h2>Plugin errors</h2>
+<p>Exported from their respective plugin entry points:</p>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>Handling errors by type</h2>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>Error reference</h2>
+<table>
+  <thead>
+    <tr><th>Class</th><th>Entry point</th><th>When thrown</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>RetryerConfigError</code></td><td><code>axios-retryer</code></td><td>Invalid option combination in <code>createRetryer()</code></td></tr>
+    <tr><td><code>PluginRegistrationError</code></td><td><code>axios-retryer</code></td><td>Duplicate plugin name or invalid plugin object</td></tr>
+    <tr><td><code>QueueFullError</code></td><td><code>axios-retryer</code></td><td><code>maxQueueSize</code> exceeded</td></tr>
+    <tr><td><code>QueuedRequestCanceledError</code></td><td><code>axios-retryer</code></td><td>Request cancelled while waiting in queue</td></tr>
+    <tr><td><code>QueueClearedError</code></td><td><code>axios-retryer</code></td><td>Queue cleared (e.g. by <code>destroy()</code>)</td></tr>
+    <tr><td><code>QueueDestroyedError</code></td><td><code>axios-retryer</code></td><td>Manager destroyed before request could be processed</td></tr>
+    <tr><td><code>RequestAbortedError</code></td><td><code>axios-retryer</code></td><td>Request aborted via AbortController</td></tr>
+    <tr><td><code>InvalidCacheKeyError</code></td><td><code>CachingPlugin</code></td><td>Unable to build a stable cache key</td></tr>
+    <tr><td><code>CircuitBreakerStateError</code></td><td><code>CircuitBreakerPlugin</code></td><td>Request blocked because circuit is open</td></tr>
+    <tr><td><code>MissingTokenRefreshHandlerError</code></td><td><code>TokenRefreshPlugin</code></td><td>No refresh callback provided</td></tr>
+    <tr><td><code>TokenRefreshAbortError</code></td><td><code>TokenRefreshPlugin</code></td><td>Refresh callback threw before making the request</td></tr>
+    <tr><td><code>TokenRefreshFailedError</code></td><td><code>TokenRefreshPlugin</code></td><td>Refresh request failed after all attempts</td></tr>
+    <tr><td><code>TokenRefreshTimeoutError</code></td><td><code>TokenRefreshPlugin</code></td><td>Refresh request exceeded the timeout</td></tr>
+  </tbody>
+</table>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/api-reference')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">API Reference →</a>
+</div>
+</DocsLayout>

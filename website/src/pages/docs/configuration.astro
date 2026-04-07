@@ -1,0 +1,50 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
+const _shikiCode0 = "import {\n  createRetryer,\n  RETRY_MODES,\n  AXIOS_RETRYER_BACKOFF_TYPES,\n  AXIOS_RETRYER_HTTP_METHODS,\n  AXIOS_RETRYER_REQUEST_PRIORITIES,\n} from 'axios-retryer';\n\nconst retryer = createRetryer({\n  // \u2500\u2500 Retry behaviour \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  mode: RETRY_MODES.AUTOMATIC,            // AUTOMATIC | MANUAL (default: AUTOMATIC)\n  retries: 3,                             // Max retry attempts per request (default: 3)\n\n  // \u2500\u2500 Backoff \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  backoffType: AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,\n  // STATIC | LINEAR | EXPONENTIAL (default: EXPONENTIAL)\n\n  // \u2500\u2500 What to retry \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  retryableStatuses: [408, 429, [500, 599] as const], // Status codes / ranges to retry\n  retryableMethods: [                     // HTTP methods to retry (default: GET, HEAD, OPTIONS)\n    AXIOS_RETRYER_HTTP_METHODS.GET,\n    AXIOS_RETRYER_HTTP_METHODS.PUT,\n  ],\n\n  // \u2500\u2500 Concurrency \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  maxConcurrentRequests: 5,               // Parallel request cap (default: 5)\n  queueDelay: 100,                        // ms between dequeuing (default: 100)\n  maxQueueSize: 100,                      // Max queued requests; excess throws QueueFullError\n\n  // \u2500\u2500 Priority-based blocking \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,\n  // Requests at or above this priority block lower-priority work in the queue\n  cancelPendingOnDependencyFailure: true, // Cancel queued requests if a blocker fails (default: true)\n\n  // \u2500\u2500 Error handling \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  throwErrorOnFailedRetries: true,        // Throw after all retries fail (default: true)\n  throwErrorOnCancelRequest: true,        // Throw on cancellation (default: true)\n\n  // \u2500\u2500 Bring your own Axios instance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  axiosInstance: myBaseAxios,             // Existing axios instance to wrap\n\n  // \u2500\u2500 Custom retry strategy \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  retryStrategy: myCustomStrategy,        // IRetryStrategy implementation\n\n  // \u2500\u2500 Logging \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  debug: false,                           // Verbose internal logs (default: false)\n  logger: myLogger,                       // Custom logger (default: console-based)\n});";
+const _shikiCode1 = "import { AXIOS_RETRYER_REQUEST_PRIORITIES, AXIOS_RETRYER_BACKOFF_TYPES } from 'axios-retryer';\n\nretryer.axiosInstance.get('/api/data', {\n  __axiosRetryer: {\n    priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,   // Queue priority\n    requestId: 'fetch-data',                           // Stable ID for cancellation\n    retries: 5,                                        // Override global retry count\n    backoffType: AXIOS_RETRYER_BACKOFF_TYPES.LINEAR,   // Override backoff\n    retryableStatuses: [503],                          // Override retryable statuses\n  },\n});";
+const _shikiCode2 = "import { createRetryStrategy, createRetryer } from 'axios-retryer';\n\nconst strategy = createRetryStrategy({\n  isRetryable: (error) =>\n    !error.response || (error.response.status >= 500 && error.response.status < 600),\n\n  shouldRetry: (error, attempt, maxRetries) => {\n    if (error.config?.method?.toLowerCase() === 'post' && attempt >= 1) return false;\n    return attempt <= maxRetries;\n  },\n\n  getDelay: (attempt) => {\n    const base = attempt * 1000;\n    const jitter = Math.random() * 500;\n    return base + jitter;       // Linear with jitter\n  },\n});\n\nconst retryer = createRetryer({ retryStrategy: strategy });";
+const _shikiCode3 = "const retryer = createRetryer({\n  debug: true,\n  logger: {\n    log: (msg) => myMonitoring.info(msg),\n    warn: (msg) => myMonitoring.warn(msg),\n    error: (msg) => myMonitoring.error(msg),\n  },\n});";
+---
+<DocsLayout title="Configuration" description="Full reference for all RetryManager configuration options in axios-retryer.">
+
+<h1 class="page-title">Configuration</h1>
+<p class="page-lead">All options passed to <code>createRetryer()</code> or the <code>RetryManager</code> constructor. Every option is optional and ships with a sensible default.</p>
+
+<h2>Full options reference</h2>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h2>Retry modes</h2>
+<table>
+  <thead><tr><th>Mode</th><th>Behavior</th><th>When to use</th></tr></thead>
+  <tbody>
+    <tr><td><code>RETRY_MODES.AUTOMATIC</code></td><td>Retries transparently on failure</td><td>Most apps — transient failures handled for you</td></tr>
+    <tr><td><code>RETRY_MODES.MANUAL</code></td><td>Fails on first attempt; no automatic retry</td><td>Add <code>ManualRetryPlugin</code> when you want stored replay</td></tr>
+  </tbody>
+</table>
+
+<h2>Backoff types</h2>
+<table>
+  <thead><tr><th>Type</th><th>Delay formula</th><th>Example delays (attempts 1–3)</th></tr></thead>
+  <tbody>
+    <tr><td><code>STATIC</code></td><td>constant</td><td>1s, 1s, 1s</td></tr>
+    <tr><td><code>LINEAR</code></td><td>attempt × base</td><td>1s, 2s, 3s</td></tr>
+    <tr><td><code>EXPONENTIAL</code></td><td>base × 2^attempt</td><td>1s, 2s, 4s</td></tr>
+  </tbody>
+</table>
+
+<h2>Request-level overrides</h2>
+<p>Pass <code>__axiosRetryer</code> in the Axios request config to override behaviour per request:</p>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>Custom retry strategy</h2>
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>Custom logger</h2>
+<CodeBlock code={_shikiCode3} lang="typescript" />
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/retry-modes')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Retry Modes →</a>
+</div>
+</DocsLayout>

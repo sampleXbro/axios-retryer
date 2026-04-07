@@ -1,0 +1,59 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { withBase } from '../../utils/baseUrl';
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nconst retryer = createRetryer();\nretryer.use(createMetricsPlugin());\n\n// Chain multiple subscriptions\nretryer\n  .on('onRetryProcessStarted', () => {\n    console.log('Retry process started');\n  })\n  .on('beforeRetry', (config) => {\n    console.log(`About to retry: ${'${config.method?.toUpperCase()} ${config.url}'}`);\n  })\n  .on('afterRetry', (config, success, error) => {\n    console.log(`Retry attempt ${success ? 'succeeded' : 'failed'}`, error?.message);\n  })\n  .on('onRetryProcessFinished', () => {\n    console.log('All retry attempts complete');\n  })\n  .on('onFailure', (config) => {\n    analytics.track('api_failure', { url: config.url });\n  })\n  .on('onMetricsUpdated', (metrics) => {\n    // Requires MetricsPlugin\n    updateDashboard(metrics);\n  });";
+const _shikiCode1 = "const handler = (config: import('axios').AxiosRequestConfig) => console.log(config.url);\nretryer.on('beforeRetry', handler);\n\n// Later, when cleanup is needed:\nretryer.off('beforeRetry', handler);";
+const _shikiCode2 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\n// The return value of use() has the plugin's events typed\nconst retryerWithAuth = retryer.use(\n  createTokenRefreshPlugin(async (axios) => {\n    const { data } = await axios.post('/auth/refresh');\n    return { token: data.accessToken };\n  })\n);\n\nretryerWithAuth.on('onTokenRefreshed', (token) => {\n  console.log('Token refreshed:', token);\n});";
+const _shikiCode3 = "import { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nretryer.use(createMetricsPlugin());\n\nretryer.on('onMetricsUpdated', (metrics) => {\n  // metrics shape:\n  // {\n  //   totalRequests: number,\n  //   successfulRetries: number,\n  //   failedRetries: number,\n  //   completelyFailedRequests: number,\n  //   totalRetryAttempts: number,\n  //   averageRetryDelay: number,\n  //   timerHealth: { activeTimers, activeRetryTimers, healthScore }\n  // }\n\n  myDashboard.update({\n    successRate: metrics.successfulRetries / (metrics.totalRequests || 1),\n    failureRate: metrics.completelyFailedRequests,\n    avgDelay: metrics.averageRetryDelay,\n  });\n});";
+---
+<DocsLayout title="Events" description="Subscribe to lifecycle events in axios-retryer for monitoring, logging, and custom workflows.">
+
+<h1 class="page-title">Events</h1>
+<p class="page-lead">The event system lets you react to every stage of the retry lifecycle. Use it for logging, dashboards, analytics, and custom side effects — without touching request code.</p>
+
+<h2>Subscribing to events</h2>
+<CodeBlock code={_shikiCode0} lang="typescript" />
+
+<h2>Unsubscribing</h2>
+<CodeBlock code={_shikiCode1} lang="typescript" />
+
+<h2>Plugin-specific events</h2>
+<p>Plugin events become available after calling <code>use()</code>. The returned value has the widened event type:</p>
+
+<CodeBlock code={_shikiCode2} lang="typescript" />
+
+<h2>Event reference</h2>
+<table>
+  <thead><tr><th>Event</th><th>Payload</th><th>Plugin required</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>onRetryProcessStarted</code></td><td>—</td><td>—</td><td>Retry cycle begins for a request</td></tr>
+    <tr><td><code>beforeRetry</code></td><td><code>AxiosRequestConfig</code></td><td>—</td><td>Before each individual retry attempt</td></tr>
+    <tr><td><code>afterRetry</code></td><td><code>config, success, error?</code></td><td>—</td><td>After each individual retry attempt; <code>error</code> present when <code>success</code> is false</td></tr>
+    <tr><td><code>onRetryScheduled</code></td><td><code>delayMs, config</code></td><td>—</td><td>A retry was scheduled after the given delay</td></tr>
+    <tr><td><code>onFailure</code></td><td><code>AxiosRequestConfig</code></td><td>—</td><td>A single attempt failed (per-attempt hook)</td></tr>
+    <tr><td><code>onRetryProcessFinished</code></td><td>—</td><td>—</td><td>All retry attempts complete (success or terminal failure)</td></tr>
+    <tr><td><code>onRequestQueued</code></td><td><code>AxiosRetryerRequestQueuedEvent</code></td><td>—</td><td>Request entered the concurrency queue</td></tr>
+    <tr><td><code>onRequestDispatched</code></td><td><code>AxiosRetryerRequestDispatchedEvent</code></td><td>—</td><td>Request left the queue and was dispatched</td></tr>
+    <tr><td><code>onRequestSucceeded</code></td><td><code>AxiosRetryerRequestSucceededEvent</code></td><td>—</td><td>Request completed successfully (initial or after retries)</td></tr>
+    <tr><td><code>onRequestError</code></td><td><code>AxiosRetryerRequestErrorEvent</code></td><td>—</td><td>Terminal failure (all retries exhausted or no-retry path)</td></tr>
+    <tr><td><code>onRequestCancelled</code></td><td><code>requestId: string</code></td><td>—</td><td>A request was cancelled</td></tr>
+    <tr><td><code>onInternetConnectionError</code></td><td><code>AxiosRequestConfig</code></td><td>—</td><td>Network-level error (no response)</td></tr>
+    <tr><td><code>onMetricsUpdated</code></td><td><code>RetryMetrics</code></td><td>MetricsPlugin</td><td>Metrics snapshot after each request cycle</td></tr>
+    <tr><td><code>onBeforeTokenRefresh</code></td><td>—</td><td>TokenRefreshPlugin</td><td>Refresh cycle started (before the callback runs)</td></tr>
+    <tr><td><code>onTokenRefreshed</code></td><td><code>token: string</code></td><td>TokenRefreshPlugin</td><td>New token applied; not emitted if the callback skips by returning no <code>token</code> (<a href={withBase('/docs/plugins/token-refresh#opt-out-of-refresh')}>opt-out</a>)</td></tr>
+    <tr><td><code>onTokenRefreshFailed</code></td><td>—</td><td>TokenRefreshPlugin</td><td>All refresh attempts failed; not emitted on opt-out skip</td></tr>
+    <tr><td><code>onBlockingRequestFailed</code></td><td><code>config</code></td><td>—</td><td>A blocking request (≥ <code>blockingPriorityThreshold</code>) failed terminally</td></tr>
+    <tr><td><code>onAllBlockingRequestsResolved</code></td><td>—</td><td>—</td><td>All in-flight blocking requests (≥ threshold) <strong>succeeded</strong>; gate lifted. Not emitted on blocker failure or cancellation (see <a href={withBase('/guides/concurrency')}>concurrency guide</a>)</td></tr>
+    <tr><td><code>onManualRetryProcessStarted</code></td><td>—</td><td>ManualRetryPlugin</td><td>Manual replay begins</td></tr>
+  </tbody>
+</table>
+
+<h2>Real-time metrics dashboard pattern</h2>
+<CodeBlock code={_shikiCode3} lang="typescript" />
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem;">
+  <a href={withBase('/docs/errors')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Error Classes →</a>
+  <a href={withBase('/docs/plugins')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Plugins</a>
+</div>
+</DocsLayout>

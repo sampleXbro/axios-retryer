@@ -13,5 +13,6 @@ export class QueueFullError extends AxiosError {
       request as InternalAxiosRequestConfig,
     );
     this.name = 'QueueFullError';
+    Object.setPrototypeOf(this, new.target.prototype);
   }
-} 
+}
