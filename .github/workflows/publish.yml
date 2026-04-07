@@ -75,19 +75,18 @@ jobs:
 
       # Do not run `npm install -g npm@…` here: the runner’s preinstalled npm can be
       # broken (MODULE_NOT_FOUND: promise-retry in @npmcli/arborist). Bootstrap by
-      # extracting the npm tarball and invoking `npm-cli.js` with Node only, then
-      # reinstall npm globally from the registry via that CLI.
-      - name: Ensure npm supports trusted publishing
-        env:
-          NPM_BOOTSTRAP_VERSION: '11.5.2'
+      # fetching the npm tarball (which ships with bundled node_modules) into /tmp,
+      # then invoking npm-cli.js with bare node to install from the local tarball —
+      # no second registry round-trip and no workspace pollution.
+      - name: Ensure npm ≥ 11.5.1 for OIDC publishing
         run: |
           set -euo pipefail
-          curl -fsSL "https://registry.npmjs.org/npm/-/npm-${NPM_BOOTSTRAP_VERSION}.tgz" -o npm-bootstrap.tgz
-          tar xzf npm-bootstrap.tgz
-          node package/bin/npm-cli.js install -g "npm@${NPM_BOOTSTRAP_VERSION}"
-          rm -rf npm-bootstrap.tgz package
-          hash -r || true
-          npm -v
+          NPM_VER=11.5.2
+          curl -fsSL "https://registry.npmjs.org/npm/-/npm-${NPM_VER}.tgz" -o /tmp/npm-bootstrap.tgz
+          tar xzf /tmp/npm-bootstrap.tgz -C /tmp
+          node /tmp/package/bin/npm-cli.js install -g /tmp/npm-bootstrap.tgz
+          rm -rf /tmp/npm-bootstrap.tgz /tmp/package
+          npm --version
 
       - name: Install dependencies
         run: npm ci
