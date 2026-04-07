@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
 - **Root package exports** for queue and terminal outcome event payloads (`AxiosRetryerRequestQueuedEvent`, `AxiosRetryerRequestDispatchedEvent`, `AxiosRetryerRequestSucceededEvent`, `AxiosRetryerRequestErrorEvent`)
 
 ### 🐛 Bug Fixes
+- **Docs site (GitHub Pages):** fixed `withBase()` URL joining when `import.meta.env.BASE_URL` has no trailing slash, which produced broken links and asset paths such as `/axios-retryerdocs` on the deployed project site
 - Fixed `TokenRefreshPlugin` replay flow so refreshed business requests go back through `RetryManager` instead of bypassing queueing, metrics, cancellation handling, and other plugins
 - Fixed `TokenRefreshPlugin` teardown so request interceptors are ejected correctly and repeated `use/unuse` cycles do not leak behavior
 - Fixed invalid `RetryManager` option handling so bad config now throws the intended validation error instead of failing during logger setup
