@@ -7,6 +7,7 @@ import {
   ManualRetryPlugin,
   type ManualRetryPluginEvents,
 } from '../src/plugins/ManualRetryPlugin';
+import { MetricsPlugin } from '../src/plugins/MetricsPlugin';
 
 describe('RetryManager.use() and plugin event types', () => {
   const plugin = new ManualRetryPlugin({ maxRequestsToStore: 10 });
@@ -51,5 +52,15 @@ describe('RetryManager.use() and plugin event types', () => {
     retryManager.use(plugin);
     retryManager.on('onManualRetryProcessStarted', () => {});
     expect(retryManager.listPlugins().some((p) => p.name === 'ManualRetryPlugin')).toBe(true);
+  });
+
+  it('chains multiple use() calls so on() accepts every plugin event', () => {
+    const metrics = new MetricsPlugin();
+    const retryManager = new RetryManager({ retries: 0 }).use(metrics).use(plugin);
+    retryManager.on('onMetricsUpdated', () => {});
+    retryManager.on('onManualRetryProcessStarted', () => {});
+    expect(retryManager.listPlugins().map((p) => p.name).sort()).toEqual(
+      ['ManualRetryPlugin', 'MetricsPlugin'].sort(),
+    );
   });
 });

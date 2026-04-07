@@ -47,7 +47,7 @@ const _shikiCode5 = "import {\n  RETRY_MODES,                        // AUTOMATI
 <table>
   <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>use</code></td><td><code>(plugin, before?) → RetryManager</code></td><td>Register a plugin. Returns the same manager instance with widened event types.</td></tr>
+    <tr><td><code>use</code></td><td><code>(plugin, before?) → RetryManager</code></td><td>Register a plugin. Returns the same manager with widened event types — keep that value in your variable (chain <code>.use(a).use(b)</code> or reassign) so <code>on()</code> is typed for every plugin.</td></tr>
     <tr><td><code>unuse</code></td><td><code>(pluginName: string) → void</code></td><td>Unregister a plugin by name, running its cleanup hooks</td></tr>
     <tr><td><code>listPlugins</code></td><td><code>() → &#123;name, version&#125;[]</code></td><td>List all registered plugins</td></tr>
   </tbody>

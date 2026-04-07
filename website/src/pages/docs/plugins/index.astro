@@ -1,6 +1,10 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
 import { withBase } from '../../../utils/baseUrl';
+
+const _shikiChainPlugins =
+  "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';\n\nexport const api = createRetryer({ retries: 3 })\n  .use(createTokenRefreshPlugin(async (axios) => {\n    const { data } = await axios.post('/auth/refresh');\n    return { token: data.accessToken };\n  }))\n  .use(createCircuitBreaker({ failureThreshold: 5, openTimeout: 30_000 }))\n  .use(createMetricsPlugin());\n\napi.on('onTokenRefreshed', (token) => console.log(token));\napi.on('onMetricsUpdated', (m) => console.log(m.successfulRetries));";
 ---
 <DocsLayout title="Plugins Overview" section="Plugins" description="Overview of all axios-retryer plugins — token refresh, circuit breaker, caching, manual retry, metrics, and sanitization.">
 
@@ -17,6 +21,14 @@ import { withBase } from '../../../utils/baseUrl';
     <p>Import from focused paths like <code>axios-retryer/plugins/TokenRefreshPlugin</code> so bundlers tree-shake unused plugins. The convenience barrel <code>axios-retryer/plugins</code> bundles everything unconditionally and will be removed in v3.</p>
   </div>
 </div>
+
+<h2>Registering multiple plugins</h2>
+<p>
+  <code>use()</code> returns the same manager instance and widens the TypeScript event map.
+  Chain plugins on one expression (or reassign each <code>use()</code> result) so <code>on()</code> knows about every plugin’s events.
+  See <a href={withBase('/docs/events')}>Events</a> for the typing rules and an optional <code>RetryManager&lt;YourComposedEvents&gt;</code> pattern.
+</p>
+<CodeBlock code={_shikiChainPlugins} lang="typescript" />
 
 <style>
   .plugin-list { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 2rem; }

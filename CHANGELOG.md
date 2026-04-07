@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.0.1 - 07.04.2026
+
+### 📚 Documentation
+- Documented chaining `createRetryer().use(a).use(b)` (and `new RetryManager<ComposedEvents>()`) so TypeScript merges plugin event maps; aligned README, migration guide, Events/Plugins/API reference pages, production guide, and MetricsPlugin examples with that pattern
+- Regenerated `benchmark/latest-benchmark-report.json` (standard profile, `10/10` executables) and rewrote `BENCHMARK_RESULTS.md` for the full suite, including rollup peak vs HTTP-shaped throughput; synced README and site promo benchmark headline figures
+
+### 🧪 Testing
+- Added regression coverage for chained `.use()` merging multiple plugin event maps for `on()` typings
+
 ## 2.0.0 - 07.04.2026
 
 > `1.5.4` was prepared but never published. The fixes and API cleanup planned for that release ship in `2.0.0`.

@@ -117,8 +117,7 @@ After:
 import { createRetryer } from 'axios-retryer';
 import { createMetricsPlugin } from 'axios-retryer/plugins';
 
-const retryer = createRetryer();
-retryer.use(createMetricsPlugin());
+const retryer = createRetryer().use(createMetricsPlugin());
 
 retryer.on('onMetricsUpdated', (metrics) => {
   console.log(metrics.successfulRetries);
