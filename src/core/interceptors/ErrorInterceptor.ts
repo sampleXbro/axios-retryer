@@ -105,7 +105,7 @@ export class ErrorInterceptorHandler {
       attempt,
       maxRetries,
       delayMs: delay,
-      backoffType: metadata?.backoffType || 'default',
+      backoffType: metadata?.backoffType ?? 'default',
     });
 
     const sleepCompleted = await this.options.retryScheduler.waitForRetryDelay(config, delay);

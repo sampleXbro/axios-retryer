@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## 2.0.1 - 07.04.2026
 
+### 🐛 Bug Fixes
+- **Per-request `backoffType: STATIC` ignored after the first retry.** `AXIOS_RETRYER_BACKOFF_TYPES.STATIC` is numeric `0`; `getDelay` used `backoffType || this.backoffType`, so the override was treated as missing and the manager default (e.g. exponential) was used from the second retry onward. `getDelay` now uses nullish coalescing (`??`) so `0` is honored.
+
 ### 📚 Documentation
 - Documented chaining `createRetryer().use(a).use(b)` (and `new RetryManager<ComposedEvents>()`) so TypeScript merges plugin event maps; aligned README, migration guide, Events/Plugins/API reference pages, production guide, and MetricsPlugin examples with that pattern
 - Regenerated `benchmark/latest-benchmark-report.json` (standard profile, `10/10` executables) and rewrote `BENCHMARK_RESULTS.md` for the full suite, including rollup peak vs HTTP-shaped throughput; synced README and site promo benchmark headline figures

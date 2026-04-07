@@ -144,7 +144,8 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @returns The delay in milliseconds.
    */
   public getDelay = (attempt: number, maxRetries: number, backoffType?: AxiosRetryerBackoffType): number => {
-    const delay = getBackoffDelay(attempt, backoffType || this.backoffType);
+    // Use ?? not || — STATIC is enum value 0 and must not fall through to this.backoffType.
+    const delay = getBackoffDelay(attempt, backoffType ?? this.backoffType);
     this.logger?.debug(`Retry delay for attempt ${attempt}: ${delay}ms; MaxRetries: ${maxRetries}`);
     return delay;
   };

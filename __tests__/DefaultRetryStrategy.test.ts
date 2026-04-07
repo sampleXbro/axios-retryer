@@ -5,6 +5,7 @@ jest.mock('../src/utils', () => ({
   getBackoffDelay: jest.fn((attempt: number, type: AxiosRetryerBackoffType) => {
     if (type === AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL) return 100 * Math.pow(2, attempt - 1);
     if (type === AXIOS_RETRYER_BACKOFF_TYPES.LINEAR) return 100 * attempt;
+    if (type === AXIOS_RETRYER_BACKOFF_TYPES.STATIC) return 100;
     return 0;
   }),
 }));
@@ -123,13 +124,19 @@ describe('DefaultRetryStrategy - Extended Tests', () => {
   });
 
   describe('getDelay - Extended', () => {
-    it('should return exponential delay', () => {
-      const delay = strategy.getDelay(2, 2, 0);
+    it('should return exponential delay when override is omitted', () => {
+      const delay = strategy.getDelay(2, 2, undefined);
       expect(delay).toBe(200); // 100 * 2^(2-1)
       expect(mockLogger.debug).toHaveBeenCalledWith('Retry delay for attempt 2: 200ms; MaxRetries: 2');
     });
 
-    it('should handle LINEAR backoff type', () => {
+    it('should honor STATIC override (enum value 0 must not be treated as falsy)', () => {
+      const delay = strategy.getDelay(2, 2, AXIOS_RETRYER_BACKOFF_TYPES.STATIC);
+      expect(delay).toBe(100);
+      expect(mockLogger.debug).toHaveBeenCalledWith('Retry delay for attempt 2: 100ms; MaxRetries: 2');
+    });
+
+    it('should handle LINEAR backoff type when override is omitted', () => {
       const linearStrategy = new DefaultRetryStrategy(
         retryableStatuses,
         retryableMethods,
@@ -138,7 +145,7 @@ describe('DefaultRetryStrategy - Extended Tests', () => {
         mockLogger,
       );
 
-      const delay = linearStrategy.getDelay(3, 3, 0);
+      const delay = linearStrategy.getDelay(3, 3, undefined);
       expect(delay).toBe(300); // 100 * 3
       expect(mockLogger.debug).toHaveBeenCalledWith('Retry delay for attempt 3: 300ms; MaxRetries: 3');
     });
@@ -152,7 +159,7 @@ describe('DefaultRetryStrategy - Extended Tests', () => {
         mockLogger,
       );
 
-      const delay = customStrategy.getDelay(3, 3, 0);
+      const delay = customStrategy.getDelay(3, 3, undefined);
       expect(delay).toBe(0);
       expect(mockLogger.debug).toHaveBeenCalledWith('Retry delay for attempt 3: 0ms; MaxRetries: 3');
     });
