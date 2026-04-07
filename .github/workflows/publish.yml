@@ -86,6 +86,7 @@ jobs:
           tar xzf /tmp/npm-bootstrap.tgz -C /tmp
           node /tmp/package/bin/npm-cli.js install -g /tmp/npm-bootstrap.tgz
           rm -rf /tmp/npm-bootstrap.tgz /tmp/package
+          hash -r || true
           npm --version
 
       - name: Install dependencies
