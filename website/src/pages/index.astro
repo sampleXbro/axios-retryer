@@ -22,7 +22,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
   }
   .logo { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; color: var(--text); text-decoration: none; }
   .logo:hover { text-decoration: none; }
-  .logo img { width: 30px; height: 30px; border-radius: 6px; }
+  .logo img { width: fit-content; height: 40px; border-radius: 6px; }
   .header-nav { display: flex; gap: 1.5rem; margin-left: 1.5rem; }
   .header-nav a { color: var(--text-muted); font-size: 0.875rem; font-weight: 500; }
   .header-nav a:hover { color: var(--text); text-decoration: none; }
@@ -167,7 +167,6 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
 <header class="site-header">
   <a href="/" class="logo">
     <img src="/axios-retryer-logo.png" alt="axios-retryer logo" />
-    axios-retryer
   </a>
   <nav class="header-nav">
     <a href="/docs">Docs</a>
@@ -216,8 +215,8 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
   <div class="stat"><div class="stat-value">2,647</div><div class="stat-label">req/sec healthy path</div></div>
   <div class="stat"><div class="stat-value">4,013</div><div class="stat-label">req/sec peak burst</div></div>
   <div class="stat"><div class="stat-value">100%</div><div class="stat-label">cache hit rate</div></div>
-  <div class="stat"><div class="stat-value">630</div><div class="stat-label">tests passing</div></div>
-  <div class="stat"><div class="stat-value">7</div><div class="stat-label">plugins</div></div>
+  <div class="stat"><div class="stat-value">675</div><div class="stat-label">tests passing</div></div>
+  <div class="stat"><div class="stat-value">6</div><div class="stat-label">plugins</div></div>
 </div>
 
 <!-- Features -->
@@ -359,15 +358,15 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
       </div>
       <div class="plugin-desc">Redact headers, fields, and URL params in debug logs. Safe verbose logging in non-prod environments.</div>
     </a>
-    <a href="/docs/plugins/request-dependency" class="plugin-card">
+    <a href="/docs/configuration" class="plugin-card">
       <div class="plugin-card-header">
         <div class="plugin-icon">🔗</div>
         <div>
-          <div class="plugin-name">RequestDependencyPlugin</div>
-          <div class="plugin-import">axios-retryer/plugins/RequestDependencyPlugin</div>
+          <div class="plugin-name">Priority blocking</div>
+          <div class="plugin-import">blockingPriorityThreshold option</div>
         </div>
       </div>
-      <div class="plugin-desc">Block lower-priority requests until critical ones resolve. Essential for checkout and auth flows.</div>
+      <div class="plugin-desc">Block lower-priority requests until critical ones resolve. Built into the core — no plugin needed.</div>
     </a>
   </div>
 </section>

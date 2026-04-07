@@ -109,11 +109,6 @@
       "import": "./dist/plugins/DebugSanitizationPlugin.esm.js",
       "require": "./dist/plugins/DebugSanitizationPlugin.cjs.js"
     },
-    "./plugins/RequestDependencyPlugin": {
-      "types": "./dist/plugins/RequestDependencyPlugin.d.ts",
-      "import": "./dist/plugins/RequestDependencyPlugin.esm.js",
-      "require": "./dist/plugins/RequestDependencyPlugin.cjs.js"
-    },
     "./plugins/MetricsPlugin": {
       "types": "./dist/plugins/MetricsPlugin.d.ts",
       "import": "./dist/plugins/MetricsPlugin.esm.js",

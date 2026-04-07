@@ -10,7 +10,6 @@ const {
 const { CachingPlugin } = require('../dist/plugins/CachingPlugin.cjs.js');
 const { CircuitBreakerPlugin } = require('../dist/plugins/CircuitBreakerPlugin.cjs.js');
 const { TokenRefreshPlugin } = require('../dist/plugins/TokenRefreshPlugin.cjs.js');
-const { RequestDependencyPlugin } = require('../dist/plugins/RequestDependencyPlugin.cjs.js');
 const { DebugSanitizationPlugin } = require('../dist/plugins/DebugSanitizationPlugin.cjs.js');
 const {
   createAdapter,
@@ -37,7 +36,15 @@ function latency(seed, key, attempt, baseMs, spreadMs) {
   return Math.max(1, Math.round(baseMs + deterministicUnit(seed, key, attempt) * spreadMs));
 }
 
-function createManager({ adapter, plugins = [], retries = 1, maxConcurrentRequests = 16, throwOnCancel = true }) {
+function createManager({
+  adapter,
+  plugins = [],
+  retries = 1,
+  maxConcurrentRequests = 16,
+  throwOnCancel = true,
+  blockingPriorityThreshold,
+  cancelPendingOnDependencyFailure,
+}) {
   const manager = new RetryManager({
     retries,
     maxConcurrentRequests,
@@ -45,6 +52,8 @@ function createManager({ adapter, plugins = [], retries = 1, maxConcurrentReques
     debug: false,
     throwErrorOnCancelRequest: throwOnCancel,
     retryStrategy: createRetryStrategy({ getDelay: () => 20 }),
+    ...(blockingPriorityThreshold !== undefined ? { blockingPriorityThreshold } : {}),
+    ...(cancelPendingOnDependencyFailure !== undefined ? { cancelPendingOnDependencyFailure } : {}),
   });
   silenceManager(manager);
   manager.axiosInstance.defaults.adapter = adapter;
@@ -52,20 +61,15 @@ function createManager({ adapter, plugins = [], retries = 1, maxConcurrentReques
   return manager;
 }
 
-// RequestDependencyPlugin: HIGHEST-priority requests act as blockers — lower-priority
+// Core blockingPriorityThreshold: HIGHEST-priority requests act as blockers — lower-priority
 // requests are held in the queue until all blocking requests complete.
 //
-// The blocker is submitted first, then after a brief microtask yield (to let the request
+// The blocker is submitted first, then after a brief delay (to let the request
 // interceptor populate blockingRequestIds), dependents are submitted. This replicates
 // real usage where blocking requests are in-flight before their dependents arrive.
 async function runDependencyGatingScenario(profile) {
   const dependentCount = scaleCount(profile, 20, 8);
   const blockerLatencyMs = 120;
-
-  const depPlugin = new RequestDependencyPlugin({
-    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
-    cancelPendingOnDependencyFailure: false,
-  });
 
   const harness = createAdapter(({ key, attempt }) => {
     if (key.startsWith('/dep/blocker/')) {
@@ -76,9 +80,11 @@ async function runDependencyGatingScenario(profile) {
 
   const manager = createManager({
     adapter: harness.adapter,
-    plugins: [depPlugin],
+    plugins: [],
     retries: 0,
     maxConcurrentRequests: dependentCount + 2,
+    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
+    cancelPendingOnDependencyFailure: false,
   });
 
   const dependentItems = Array.from({ length: dependentCount }, (_, i) => ({
@@ -93,8 +99,6 @@ async function runDependencyGatingScenario(profile) {
   const blockerT0 = performance.now();
   const blockerPromise = manager.axiosInstance.get('/dep/blocker/0', withPriority(AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST));
   await sleep(5); // let the request interceptor fire and set blockingRequestIds
-
-  const peakBlockingCount = depPlugin.getActiveBlockingRequestCount();
 
   // Submit dependents — they should now be held in queue by the gate
   const depT0 = performance.now();
@@ -141,8 +145,8 @@ async function runDependencyGatingScenario(profile) {
   const gatingEffective = dependentDurations.every((d) => d >= expectedMinDepDuration * 0.7);
 
   const scenario = createScenarioSummary({
-    name: 'RequestDependencyPlugin: Blocker Gating',
-    description: 'HIGHEST-priority blocker holds MEDIUM dependents in queue; dependents start only after blocker completes.',
+    name: 'Core blocking: HIGHEST holds MEDIUM in queue',
+    description: 'blockingPriorityThreshold=HIGHEST: blocker holds MEDIUM dependents until blocker completes.',
     requestCount: 1 + dependentCount,
     concurrency: dependentCount,
     startedAt,
@@ -154,7 +158,6 @@ async function runDependencyGatingScenario(profile) {
       blockerLatencyMs: round(blockerResult.durationMs),
       dependentP50Ms: round(percentile(dependentDurations, 0.5)),
       dependentP95Ms: round(percentile(dependentDurations, 0.95)),
-      peakBlockingCount,
       gatingEffective,
     },
   });
@@ -165,15 +168,11 @@ async function runDependencyGatingScenario(profile) {
 
 // When a blocking request fails terminally with cancelPendingOnDependencyFailure:true,
 // queued dependents are cancelled via cancelQueuedRequests() and onBlockingRequestFailed fires.
+// onAllBlockingRequestsResolved is success-only (not emitted on terminal blocker failure).
 async function runDependencyFailureCascadeScenario(profile) {
   const dependentCount = scaleCount(profile, 16, 6);
   let blockingFailedFired = 0;
   let allResolvedFired = 0;
-
-  const depPlugin = new RequestDependencyPlugin({
-    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
-    cancelPendingOnDependencyFailure: true,
-  });
 
   // Blocker takes long enough for dependents to queue up before it fails
   const harness = createAdapter(({ key }) => {
@@ -185,10 +184,12 @@ async function runDependencyFailureCascadeScenario(profile) {
 
   const manager = createManager({
     adapter: harness.adapter,
-    plugins: [depPlugin],
+    plugins: [],
     retries: 0,
     maxConcurrentRequests: dependentCount + 2,
     throwOnCancel: false,
+    blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGHEST,
+    cancelPendingOnDependencyFailure: true,
   });
 
   manager.on('onBlockingRequestFailed', () => { blockingFailedFired += 1; });
@@ -236,8 +237,8 @@ async function runDependencyFailureCascadeScenario(profile) {
   };
 
   const scenario = createScenarioSummary({
-    name: 'RequestDependencyPlugin: Failure Cascade',
-    description: 'Blocker failure triggers cancelQueuedRequests() on dependents; onBlockingRequestFailed event fires.',
+    name: 'Core blocking: failure cascade + cancel dependents',
+    description: 'Blocker failure triggers cancelQueuedRequests(); onBlockingRequestFailed fires; onAllBlockingRequestsResolved does not (success-only).',
     requestCount: 1 + dependentCount,
     concurrency: dependentCount,
     startedAt,
@@ -250,7 +251,7 @@ async function runDependencyFailureCascadeScenario(profile) {
       cancelledDependents,
       blockingFailedEventFired: blockingFailedFired,
       allResolvedEventFired: allResolvedFired,
-      cascadeEffective: cancelledDependents > 0,
+      cascadeEffective: cancelledDependents > 0 && blockingFailedFired >= 1 && allResolvedFired === 0,
     },
   });
 

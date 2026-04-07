@@ -175,6 +175,16 @@ export interface CircuitBreakerStateAdapter {
   clear(): MaybePromise<void>;
 }
 
+export interface CircuitBreakerPluginEvents {
+  onCircuitStateChanged?: (payload: {
+    scopeKey: string;
+    from: CircuitBreakerState;
+    to: CircuitBreakerState;
+    reason: 'failure-threshold' | 'half-open-failure' | 'open-timeout-elapsed' | 'success-threshold-reached' | 'manual-reset';
+    nextAttemptIn?: number;
+  }) => void;
+}
+
 export class InMemoryCircuitBreakerStateAdapter implements CircuitBreakerStateAdapter {
   private readonly state = new Map<string, CircuitBreakerScopeState>();
 
@@ -243,11 +253,12 @@ function isPromiseLike<T>(value: unknown): value is Promise<T> {
  *
  * @implements {RetryPlugin}
  */
-export class CircuitBreakerPlugin implements RetryPlugin {
+export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEvents> {
   public static STATES = CIRCUIT_BREAKER_STATES;
 
   public readonly name = 'CircuitBreakerPlugin';
   public readonly version = '2.0.0';
+  public readonly _events?: Readonly<CircuitBreakerPluginEvents>;
 
   private readonly _options: Required<Omit<CircuitBreakerOptions, 'shouldCountError' | 'scope' | 'stateAdapter'>> & {
     shouldCountError?: CircuitBreakerOptions['shouldCountError'];
@@ -256,7 +267,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
   };
   private _requestInterceptorId?: number;
   private _responseInterceptorId?: number;
-  private _context!: PluginContext;
+  private _context!: PluginContext<CircuitBreakerPluginEvents>;
   private _responseMetrics: Record<string, ResponseTimeMetrics> = {};
   private readonly _scopeStateCache = new Map<string, CircuitBreakerScopeState>();
   private readonly _knownScopes = new Map<string, ScopeDetails>();
@@ -319,7 +330,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
    *
    * @param {RetryManager} manager - The RetryManager instance.
    */
-  public initialize(context: PluginContext): void {
+  public initialize(context: PluginContext<CircuitBreakerPluginEvents>): void {
     this._context = context;
     const axiosInstance = context.axiosInstance;
 
@@ -482,7 +493,7 @@ export class CircuitBreakerPlugin implements RetryPlugin {
    *
    * @param {RetryManager} manager - The RetryManager instance.
    */
-  public onBeforeDestroyed(context: PluginContext): void {
+  public onBeforeDestroyed(context: PluginContext<CircuitBreakerPluginEvents>): void {
     this._log('debug', 'Removing CircuitBreakerPlugin');
     const axiosInstance = context.axiosInstance;
     if (this._requestInterceptorId !== undefined) {
@@ -562,11 +573,15 @@ export class CircuitBreakerPlugin implements RetryPlugin {
     const scopeKeys = scopeKey ? [scopeKey] : Array.from(this._knownScopes.keys());
 
     scopeKeys.forEach((key) => {
+      const previousState = this._scopeStateCache.get(key)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
       const initialState = this._createInitialScopeState();
       this._scopeStateCache.set(key, initialState);
       const result = this._options.stateAdapter.set(key, cloneScopeState(initialState));
       if (isPromiseLike(result)) {
         void result;
+      }
+      if (previousState !== CIRCUIT_BREAKER_STATES.CLOSED) {
+        this._emitStateChange(key, previousState, CIRCUIT_BREAKER_STATES.CLOSED, 'manual-reset');
       }
     });
 
@@ -575,11 +590,19 @@ export class CircuitBreakerPlugin implements RetryPlugin {
 
   private async _tripScope(scopeKey: string, scopeState: CircuitBreakerScopeState): Promise<void> {
     if (scopeState.state !== CIRCUIT_BREAKER_STATES.OPEN) {
+      const previousState = scopeState.state;
       scopeState.state = CIRCUIT_BREAKER_STATES.OPEN;
       scopeState.nextAttempt = Date.now() + this._options.openTimeout;
       scopeState.successCount = 0;
       scopeState.halfOpenCount = 0;
       await this._writeScopeState(scopeKey, scopeState);
+      this._emitStateChange(
+        scopeKey,
+        previousState,
+        CIRCUIT_BREAKER_STATES.OPEN,
+        previousState === CIRCUIT_BREAKER_STATES.HALF_OPEN ? 'half-open-failure' : 'failure-threshold',
+        Math.max(0, scopeState.nextAttempt - Date.now()),
+      );
       this._log(
         'error',
         `Circuit tripped: entering OPEN state for ${scopeKey} until ${new Date(scopeState.nextAttempt).toISOString()}`,
@@ -588,8 +611,12 @@ export class CircuitBreakerPlugin implements RetryPlugin {
   }
 
   private async _resetScope(scopeKey: string): Promise<void> {
+    const previousState = this._scopeStateCache.get(scopeKey)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
     const initialState = this._createInitialScopeState();
     await this._writeScopeState(scopeKey, initialState);
+    if (previousState !== CIRCUIT_BREAKER_STATES.CLOSED) {
+      this._emitStateChange(scopeKey, previousState, CIRCUIT_BREAKER_STATES.CLOSED, 'success-threshold-reached');
+    }
     this._log('debug', `Circuit reset: entering CLOSED state for ${scopeKey}.`);
   }
 
@@ -597,12 +624,34 @@ export class CircuitBreakerPlugin implements RetryPlugin {
     scopeKey: string,
     scopeState: CircuitBreakerScopeState,
   ): Promise<CircuitBreakerScopeState> {
+    const previousState = scopeState.state;
     scopeState.state = CIRCUIT_BREAKER_STATES.HALF_OPEN;
     scopeState.halfOpenCount = 0;
     scopeState.successCount = 0;
     await this._writeScopeState(scopeKey, scopeState);
+    this._emitStateChange(scopeKey, previousState, CIRCUIT_BREAKER_STATES.HALF_OPEN, 'open-timeout-elapsed');
     this._log('debug', `Circuit transitioning to HALF_OPEN state for ${scopeKey}.`);
     return scopeState;
+  }
+
+  private _emitStateChange(
+    scopeKey: string,
+    from: CircuitBreakerState,
+    to: CircuitBreakerState,
+    reason: 'failure-threshold' | 'half-open-failure' | 'open-timeout-elapsed' | 'success-threshold-reached' | 'manual-reset',
+    nextAttemptIn?: number,
+  ): void {
+    if (from === to) {
+      return;
+    }
+
+    this._context?.triggerAndEmit?.('onCircuitStateChanged', {
+      scopeKey,
+      from,
+      to,
+      reason,
+      ...(nextAttemptIn !== undefined ? { nextAttemptIn } : {}),
+    });
   }
 
   private _rememberFailure(scopeState: CircuitBreakerScopeState, error: AxiosError): void {

@@ -5,7 +5,6 @@ import {
   AXIOS_RETRYER_HTTP_METHODS,
   RETRY_MODES,
   type PluginContext,
-  type RetryHooks,
   createRetryStrategy,
   createRetryer,
 } from '../src';
@@ -13,9 +12,7 @@ import {
   CIRCUIT_BREAKER_SCOPES,
   CircuitBreakerPlugin,
   type CircuitBreakerMetrics,
-  type ManualRetryPluginEvents,
   createCircuitBreaker,
-  type TokenRefreshPluginEvents,
   type TokenRefreshResult,
   createTokenRefreshPlugin,
 } from '../src/plugins';
@@ -34,22 +31,6 @@ const verifyPublicApiTyping = (): void => {
       AXIOS_RETRYER_HTTP_METHODS.PUT,
     ] as const,
   });
-  const coreHooks: RetryHooks = {
-    beforeRetry: (config) => {
-      expect(config.url).toBeDefined();
-    },
-  };
-  const manualRetryHooks: RetryHooks<ManualRetryPluginEvents> = {
-    onManualRetryProcessStarted: () => {
-      expect(true).toBe(true);
-    },
-  };
-  const tokenRefreshHooks: RetryHooks<TokenRefreshPluginEvents> = {
-    onTokenRefreshed: (token) => {
-      expect(token).toBe('fresh-token');
-    },
-  };
-
   const cachePlugin = createCachePlugin({
     cacheMethods: [AXIOS_RETRYER_HTTP_METHODS.GET] as const,
   });
@@ -98,20 +79,10 @@ const verifyPublicApiTyping = (): void => {
       ttr: 1000,
     },
   });
-  createRetryer({ hooks: coreHooks });
-  createRetryer<ManualRetryPluginEvents>({ hooks: manualRetryHooks });
-  createRetryer<TokenRefreshPluginEvents>({ hooks: tokenRefreshHooks });
   expect(circuitBreakerMetrics.state).toBeDefined();
 
   // @ts-expect-error retryableMethods only accepts supported HTTP methods.
   createRetryer({ retryableMethods: ['TRACE'] });
-
-  createRetryer({
-    hooks: {
-      // @ts-expect-error Plugin-specific hooks are not available on the untyped root manager.
-      onTokenRefreshed: () => undefined,
-    },
-  });
 
   // @ts-expect-error cacheMethods only accepts supported HTTP methods.
   createCachePlugin({ cacheMethods: ['TRACE'] });

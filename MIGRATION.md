@@ -20,8 +20,45 @@ If you are upgrading from any `1.x` release, use this checklist.
 6. Re-check `maxRefreshAttempts` if you use `TokenRefreshPlugin`.
 7. Move any manual replay usage to `ManualRetryPlugin`. Root `retryFailedRequests()`, `maxRequestsToStore`, `requestStore`, and `beforeManualRetry` are removed in `2.0`.
 8. If you used the browser bundle, build it locally with `npm run build:browser`.
+9. Replace `hooks: { ... }` on `createRetryer()` with `retryer.on(...)` after construction (and after `use()` when you need plugin-typed events).
+10. If you imported `RequestDependencyPlugin`, remove it and use `blockingPriorityThreshold` / `cancelPendingOnDependencyFailure` on `createRetryer()` instead.
 
 ## Breaking Changes
+
+### Constructor `hooks` removed from `RetryManagerOptions`
+
+In `1.x`, you could pass `hooks` into `createRetryer({ hooks: { ... } })`. In `2.0`, that option is removed — use the event API on the manager instance.
+
+Before:
+
+```typescript
+import { createRetryer } from 'axios-retryer';
+
+const retryer = createRetryer({
+  hooks: {
+    onFailure: (config) => console.log(config.url),
+  },
+});
+```
+
+After:
+
+```typescript
+import { createRetryer } from 'axios-retryer';
+
+const retryer = createRetryer();
+retryer.on('onFailure', (config) => {
+  console.log(config.url);
+});
+```
+
+### `RequestDependencyPlugin` removed
+
+The published package no longer includes `RequestDependencyPlugin` or the `./plugins/RequestDependencyPlugin` export. Use core options `blockingPriorityThreshold` and `cancelPendingOnDependencyFailure`, and listen to `onBlockingRequestFailed` / `onAllBlockingRequestsResolved` / `onRequestCancelled` as needed. See the [concurrency guide](https://samplexbro.github.io/axios-retryer/guides/concurrency) and configuration docs.
+
+### Custom `MetricsRecorder` implementations
+
+If you registered a custom metrics recorder (uncommon), update it to the new `MetricsRecorder` shape: `reset`, `buildDetailedMetrics`, and optional `emitMetricsUpdated` only.
 
 ### Sanitization moved to a plugin
 
@@ -127,7 +164,7 @@ const responses = await manualRetry.retryFailedRequests();
 
 ### Plugin event typing is no longer implied on the root manager
 
-In `1.x`, plugin-specific hook names were present on the shared hook type. In `2.0`, plugin-specific events are attached through plugin-aware types.
+In `1.x`, plugin-specific hook names were present on the shared hook type. In `2.0`, there is no `hooks` option — use `retryer.on(...)` after `use()` (or pass a generic to `createRetryer` for early core listeners only).
 
 Before:
 
@@ -147,24 +184,19 @@ After:
 
 ```typescript
 import { createRetryer } from 'axios-retryer';
-import { createTokenRefreshPlugin, type TokenRefreshPluginEvents } from 'axios-retryer/plugins';
+import { createTokenRefreshPlugin, type TokenRefreshPluginEvents } from 'axios-retryer/plugins/TokenRefreshPlugin';
 
-const retryer = createRetryer<TokenRefreshPluginEvents>({
-  hooks: {
-    onTokenRefreshed: (token) => {
-      console.log(token);
-    },
-  },
-});
-
-const retryerWithTokenRefresh = retryer.use(
+const retryer = createRetryer();
+const withRefresh = retryer.use(
   createTokenRefreshPlugin(async () => ({ token: 'fresh-token' })),
 );
 
-retryerWithTokenRefresh.on('onTokenRefreshed', (token) => {
+withRefresh.on('onTokenRefreshed', (token) => {
   console.log(token);
 });
 ```
+
+Optional: if you want the generic on the root manager before plugins attach, you can write `createRetryer<TokenRefreshPluginEvents>()` and still register plugin events only after `use()`.
 
 ### `maxRefreshAttempts` now means the exact number of refresh attempts
 
@@ -280,6 +312,7 @@ retryer.use(
 ## Notes
 
 - `1.5.4` was prepared but not published. The fixes and API cleanup tracked for that release are included in `2.0.0`.
+- **Dependency-style gating** (hold lower-priority work until blocking requests finish) is implemented in the core via `blockingPriorityThreshold` and `cancelPendingOnDependencyFailure`. There is no separate `RequestDependencyPlugin` in the published package; use the [concurrency guide](https://samplexbro.github.io/axios-retryer/guides/concurrency) and configuration docs.
 - The dedicated plugin barrel `axios-retryer/plugins` is kept for compatibility but is deprecated. Prefer focused subpath imports (e.g. `axios-retryer/plugins/CachingPlugin`) for better tree-shaking.
 
 ## axios-retryer/plugins barrel — deprecation roadmap

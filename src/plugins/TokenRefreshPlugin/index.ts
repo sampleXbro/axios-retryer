@@ -14,10 +14,10 @@ import type { TokenRefreshHandler, TokenRefreshPluginOptions } from './types';
  * Creates a TokenRefreshPlugin instance.
  * Functional alternative to using the `new TokenRefreshPlugin()` constructor.
  *
- * @param refreshToken Function that performs the token refresh operation
+ * @param refreshToken Function that performs the token refresh operation. Return `{ token: string }` to apply a new token, or resolve with no usable `token` (`null`/`undefined`/omitted) to skip that cycle without failure events (see plugin docs).
  * @param options Configuration options for the TokenRefreshPlugin
  * @returns A configured TokenRefreshPlugin instance
- * 
+ *
  * @example
  * ```typescript
  * const tokenRefresher = createTokenRefreshPlugin(

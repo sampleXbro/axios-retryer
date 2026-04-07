@@ -89,6 +89,10 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @returns true if the error should be retried.
    */
   public getIsRetryable = (error: AxiosError): boolean => {
+    if (error.code === 'TOKEN_REFRESH_FAILED') {
+      return false;
+    }
+
     if (!error.response) {
       this.logger?.debug('Retrying due to network error');
       return true;

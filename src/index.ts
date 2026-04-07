@@ -3,7 +3,6 @@ import './global-axios-augmentation';
 export {
   type CoreRetryEvents,
   type RetryMode,
-  type RetryHooks,
   type RetryManagerEvents,
   type RetryEventArgs,
   type RetryEventListener,
@@ -18,6 +17,10 @@ export {
   type AxiosRetryerRetryableStatus,
   type AxiosRetryerStatusRange,
   type AxiosRetryerDetailedMetrics,
+  type AxiosRetryerRequestErrorEvent,
+  type AxiosRetryerRequestQueuedEvent,
+  type AxiosRetryerRequestDispatchedEvent,
+  type AxiosRetryerRequestSucceededEvent,
   type Logger,
   RETRY_MODES,
   AXIOS_RETRYER_HTTP_METHODS,

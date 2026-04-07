@@ -22,5 +22,4 @@ export * from './CircuitBreakerPlugin';
 export * from './DebugSanitizationPlugin';
 export * from './ManualRetryPlugin';
 export * from './MetricsPlugin';
-export * from './RequestDependencyPlugin';
 export * from './TokenRefreshPlugin';

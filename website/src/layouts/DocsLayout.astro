@@ -39,7 +39,6 @@ const nav = [
       { label: 'ManualRetryPlugin', href: '/docs/plugins/manual-retry' },
       { label: 'MetricsPlugin', href: '/docs/plugins/metrics' },
       { label: 'DebugSanitizationPlugin', href: '/docs/plugins/debug-sanitization' },
-      { label: 'RequestDependencyPlugin', href: '/docs/plugins/request-dependency' },
     ],
   },
   {
@@ -87,7 +86,7 @@ const nav = [
       font-size: 1rem;
     }
     .sidebar-logo:hover { text-decoration: none; }
-    .sidebar-logo img { width: 28px; height: 28px; border-radius: 6px; }
+    .sidebar-logo img { width: fit-content; height: 40px; border-radius: 6px; }
     .sidebar-nav { padding: 1.25rem; flex: 1; }
     .nav-group { margin-bottom: 1.5rem; }
     .nav-group-label {
@@ -194,7 +193,6 @@ const nav = [
       <div class="sidebar-top">
         <a href="/" class="sidebar-logo">
           <img src="/axios-retryer-logo.png" alt="axios-retryer" />
-          axios-retryer
         </a>
       </div>
       <nav class="sidebar-nav">

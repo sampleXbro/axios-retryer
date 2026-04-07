@@ -21,9 +21,7 @@ import {
 import {
   MissingTokenRefreshHandlerError,
   TokenRefreshAbortError,
-  TokenRefreshFailedError,
   TokenRefreshPlugin,
-  TokenRefreshTimeoutError,
 } from '../src/plugins/TokenRefreshPlugin';
 
 describe('Error standardization', () => {
@@ -94,7 +92,7 @@ describe('Error standardization', () => {
     const retryer = createRetryer();
 
     await expect(
-      retryer['handleCancelAction']({ __axiosRetryer: { requestId: 'abort-me' } }),
+      (retryer as any).errorInterceptorHandler['handleCancelAction']({ __axiosRetryer: { requestId: 'abort-me' } }),
     ).rejects.toBeInstanceOf(RequestAbortedError);
 
     retryer.destroy();
@@ -143,7 +141,10 @@ describe('Error standardization', () => {
     faultyRetryer.use(new TokenRefreshPlugin(undefined as never, { refreshStatusCodes: [401] }));
     faultyMock.onGet('/protected').reply(401);
 
-    await expect(faultyRetryer.axiosInstance.get('/protected')).rejects.toBeInstanceOf(MissingTokenRefreshHandlerError);
+    const missingHandlerErr = await faultyRetryer.axiosInstance.get('/protected').catch((e) => e);
+    expect(missingHandlerErr).toBeInstanceOf(AxiosError);
+    expect(missingHandlerErr.code).toBe('TOKEN_REFRESH_FAILED');
+    expect(missingHandlerErr.cause).toBeInstanceOf(MissingTokenRefreshHandlerError);
     faultyRetryer.destroy();
     faultyMock.restore();
 
@@ -161,17 +162,33 @@ describe('Error standardization', () => {
     ));
     timeoutMock.onGet('/timeout-protected').reply(401);
 
-    await expect(timeoutRetryer.axiosInstance.get('/timeout-protected')).rejects.toBeInstanceOf(TokenRefreshTimeoutError);
+    const timeoutErr = await timeoutRetryer.axiosInstance.get('/timeout-protected').catch((e) => e);
+    expect(timeoutErr).toBeInstanceOf(AxiosError);
+    expect(timeoutErr.code).toBe('TOKEN_REFRESH_FAILED');
+    expect(timeoutErr.message).toBe('Token refresh timeout');
     timeoutRetryer.destroy();
     timeoutMock.restore();
 
     const plugin = new TokenRefreshPlugin(async () => ({ token: 'fresh-token' }));
     const reject = jest.fn();
-    plugin['refreshQueue'] = [{ reject, resolve: jest.fn() }];
-    plugin['context'] = { triggerAndEmit: jest.fn() } as any;
+    plugin['refreshQueue'] = [
+      {
+        kind: 'hold-request',
+        config: {},
+        resolveConfig: jest.fn(),
+        reject,
+      },
+    ];
+    plugin['context'] = { triggerAndEmit: jest.fn(), releaseRequestTracking: jest.fn() } as any;
     plugin['logger'] = { error: jest.fn() } as any;
-    plugin['handleRefreshFailure'](new AxiosError('network', 'ERR_NETWORK'));
+    const networkErr = new AxiosError('network', 'ERR_NETWORK');
+    plugin['handleRefreshFailure'](networkErr);
 
-    expect(reject).toHaveBeenCalledWith(expect.any(TokenRefreshFailedError));
+    expect(reject).toHaveBeenCalledTimes(1);
+    const rejected = reject.mock.calls[0][0] as AxiosError;
+    expect(rejected).toBeInstanceOf(AxiosError);
+    expect(rejected.code).toBe('TOKEN_REFRESH_FAILED');
+    expect(rejected.config).toEqual({});
+    expect((rejected as Error & { cause?: unknown }).cause).toBe(networkErr);
   });
 });

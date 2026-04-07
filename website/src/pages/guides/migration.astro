@@ -9,9 +9,16 @@ const _shikiCode4 = "const retryer = createRetryer({\n  mode: RETRY_MODES.MANUAL
 const _shikiCode5 = "import { createManualRetryPlugin } from 'axios-retryer/plugins/ManualRetryPlugin';\n\nconst retryer = createRetryer({ mode: RETRY_MODES.MANUAL });\n\nconst manualRetry = createManualRetryPlugin({\n  maxRequestsToStore: 100,\n  beforeRetry: (config) => config,\n});\n\nretryer.use(manualRetry);\n\nconst responses = await manualRetry.retryFailedRequests();";
 const _shikiCode6 = "// If you relied on the old behaviour (4 attempts):\ncreateTokenRefreshPlugin(refreshFn, { maxRefreshAttempts: 4 });  // Now truly 4 attempts\n\n// If your value was already tuned:\ncreateTokenRefreshPlugin(refreshFn, { maxRefreshAttempts: 3 });  // Now truly 3 attempts (was effectively 4)\n// \u2192 decrease by 1 if you want to keep the same total attempt count";
 const _shikiCode7 = "createRetryer({\n  hooks: {\n    onTokenRefreshed: (token) => console.log(token),\n  },\n});";
-const _shikiCode8 = "const retryerWithAuth = retryer.use(createTokenRefreshPlugin(refreshFn));\nretryerWithAuth.on('onTokenRefreshed', (token) => console.log(token));";
+const _shikiCode8 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\nconst retryer = createRetryer();\nconst withRefresh = retryer.use(createTokenRefreshPlugin(refreshFn));\nwithRefresh.on('onTokenRefreshed', (token) => console.log(token));";
+const _shikiCode8b = "const withRefresh = retryer.use(createTokenRefreshPlugin(refreshFn));\nwithRefresh.on('onTokenRefreshed', (token) => console.log(token));";
 const _shikiCode9 = "// Inside a custom plugin's initialize():\nplugin.initialize = (retryer) => {\n  retryer.on('beforeRetry', (config) => {\n    // Custom logic\n  });\n};";
 const _shikiCode10 = "npm run build:browser\n# Output: dist/browser/";
+const _shikiCode11 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';";
+const _shikiCode12 = "import { createTokenRefreshPlugin, createMetricsPlugin } from 'axios-retryer/plugins';";
+const _shikiCode13 = "const cachePlugin = createCachePlugin();\nconst userKey = cachePlugin.buildCacheKey({ method: 'get', url: '/users/1' });\n\ncachePlugin.invalidateCache({ exact: userKey });\ncachePlugin.invalidateCache({ prefix: 'GET|/users/' });";
+const _shikiCode14 = "import { createRetryer, RETRY_MODES } from 'axios-retryer';\nimport {\n  createDebugSanitizationPlugin,\n  createMetricsPlugin,\n  createTokenRefreshPlugin,\n} from 'axios-retryer/plugins';\n\nconst retryer = createRetryer({\n  mode: RETRY_MODES.AUTOMATIC,\n  retries: 3,\n  debug: true,\n});\n\nretryer.use(createMetricsPlugin());\nretryer.use(\n  createDebugSanitizationPlugin({\n    sanitizeOptions: {\n      sensitiveHeaders: ['Authorization'],\n    },\n  }),\n);\nretryer.use(\n  createTokenRefreshPlugin(async (axiosInstance) => {\n    const { data } = await axiosInstance.post('/auth/refresh');\n    return { token: data.accessToken };\n  }),\n);";
+const _shikiCode15 = "import { CachingPlugin, TokenRefreshPlugin } from 'axios-retryer/plugins';";
+const _shikiCode16 = "import { CachingPlugin } from 'axios-retryer/plugins/CachingPlugin';\nimport { TokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';";
 ---
 <DocsLayout title="Migration 1.x → 2.0" section="Guides" description="Migrate from axios-retryer 1.x to 2.0 — sanitization plugin, MetricsPlugin, ManualRetryPlugin replay, maxRefreshAttempts fix.">
 
@@ -23,10 +30,13 @@ const _shikiCode10 = "npm run build:browser\n# Output: dist/browser/";
   <li>Upgrade <code>axios</code> to <code>&gt;= 1.7.4</code></li>
   <li>Move sanitization config into <code>DebugSanitizationPlugin</code></li>
   <li>Install <code>MetricsPlugin</code> if you rely on live metric counters or <code>onMetricsUpdated</code></li>
-  <li>Move manual replay to <code>ManualRetryPlugin</code> (root replay surface removed)</li>
+  <li>Prefer documented imports from <code>axios-retryer/plugins/&lt;Plugin&gt;</code> (or the barrel for convenience)</li>
+  <li>Update TypeScript listeners for plugin events: widen the manager type via <code>use()</code> or <code>createRetryer&lt;PluginEvents&gt;()</code></li>
   <li>Re-check <code>maxRefreshAttempts</code> if you use <code>TokenRefreshPlugin</code></li>
-  <li>Update plugin event listeners to use the value returned from <code>use()</code></li>
+  <li>Move manual replay to <code>ManualRetryPlugin</code> (root replay surface removed)</li>
   <li>Build the browser bundle locally if you need it (<code>npm run build:browser</code>)</li>
+  <li>Replace <code>hooks: {'{'} ... {'}'}</code> on <code>createRetryer()</code> with <code>retryer.on(...)</code> after construction</li>
+  <li>Remove <code>RequestDependencyPlugin</code>; use <code>blockingPriorityThreshold</code> / <code>cancelPendingOnDependencyFailure</code> on the core manager</li>
 </ol>
 
 <h2>Sanitization → DebugSanitizationPlugin</h2>
@@ -38,7 +48,7 @@ const _shikiCode10 = "npm run build:browser\n# Output: dist/browser/";
 <CodeBlock code={_shikiCode1} lang="typescript" />
 
 <h2>Metrics → MetricsPlugin</h2>
-<p>The core still exposes <code>getMetrics()</code>, but counters stay at zero without the plugin.</p>
+<p>The core still exposes <code>getMetrics()</code>, but counters stay at zero without the plugin. <code>onRetryProcessFinished</code> remains a core lifecycle event but no longer carries a metrics payload — use <code>onMetricsUpdated</code> with <code>MetricsPlugin</code> when you need snapshots.</p>
 
 <h3>Before (1.x)</h3>
 <CodeBlock code={_shikiCode2} lang="typescript" />
@@ -59,26 +69,61 @@ const _shikiCode10 = "npm run build:browser\n# Output: dist/browser/";
 
 <CodeBlock code={_shikiCode6} lang="typescript" />
 
+<h2>Constructor <code>hooks</code> removed</h2>
+<p>In 2.0, <code>RetryManagerOptions.hooks</code> is gone. Register core and plugin listeners with <code>retryer.on(...)</code> on the instance (after <code>use()</code> when the event is plugin-specific).</p>
+
 <h2>Plugin event typing</h2>
-<p>Plugin events are typed through the value returned from <code>use()</code>:</p>
+<p>Plugin-specific events are typed on the manager returned from <code>use()</code>. You can pass a generic to <code>createRetryer&lt;Events&gt;()</code> for early core listeners, but plugin events are still registered with <code>.on()</code> after attaching the plugin.</p>
 
 <h3>Before (1.x)</h3>
 <CodeBlock code={_shikiCode7} lang="typescript" />
 
-<h3>After (2.0)</h3>
+<h3>After (2.0) — <code>use()</code> then <code>on()</code></h3>
 <CodeBlock code={_shikiCode8} lang="typescript" />
 
-<h2>Legacy plugin.hooks removed</h2>
+<h3>After (2.0) — listener after <code>use()</code> only</h3>
+<CodeBlock code={_shikiCode8b} lang="typescript" />
+
+<h2>Import guidance</h2>
+<p>Per-plugin subpaths are preferred for tree-shaking; the barrel is still supported.</p>
+<CodeBlock code={_shikiCode11} lang="typescript" />
+<CodeBlock code={_shikiCode12} lang="typescript" />
+<p>Avoid deep imports from <code>src/</code> or undocumented paths.</p>
+
+<h2>Legacy <code>plugin.hooks</code> removed</h2>
 <p>Plugins can no longer declare hooks via a <code>plugin.hooks</code> property. Use <code>retryer.on()</code> inside <code>initialize()</code>:</p>
 
 <CodeBlock code={_shikiCode9} lang="typescript" />
+
+<h2>Caching invalidation</h2>
+<p><code>CachingPlugin.invalidateCache()</code> uses explicit semantics: a bare string matches the <strong>exact</strong> cache key (not a substring). Prefer <code>exact</code> / <code>prefix</code> object matchers or a <code>RegExp</code> (see example below).</p>
+<CodeBlock code={_shikiCode13} lang="typescript" />
+
+<h2>Typical end state</h2>
+<p>Most 1.x apps end up close to this shape:</p>
+<CodeBlock code={_shikiCode14} lang="typescript" />
 
 <h2>Browser bundle</h2>
 <p>The UMD browser bundle is no longer published as a built artifact. Generate it locally:</p>
 <CodeBlock code={_shikiCode10} lang="bash" />
 
+<h2>Notes</h2>
+<ul>
+  <li><code>1.5.4</code> was prepared but not published; its planned fixes ship in <code>2.0.0</code>.</li>
+  <li>Dependency-style gating (block lower-priority work until blocking requests finish) is <strong>core</strong>: <code>blockingPriorityThreshold</code> and <code>cancelPendingOnDependencyFailure</code>. See the <a href="/guides/concurrency">Concurrency guide</a>.</li>
+  <li>The <code>axios-retryer/plugins</code> barrel is deprecated for tree-shaking; it may be removed in v3.</li>
+</ul>
+
+<h2><code>axios-retryer/plugins</code> barrel — v3 roadmap</h2>
+<p>The barrel pulls every plugin into one chunk (~52 KB raw / ~14 KB gzip). Subpath imports let bundlers drop unused plugins.</p>
+<p><strong>Migration:</strong> replace</p>
+<CodeBlock code={_shikiCode15} lang="typescript" />
+<p>with focused imports:</p>
+<CodeBlock code={_shikiCode16} lang="typescript" />
+
 <div style="display:flex; gap:.75rem; margin-top:2.5rem;">
   <a href="/docs" style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Back to Docs →</a>
+  <a href="https://github.com/sampleXbro/axios-retryer/blob/main/MIGRATION.md" target="_blank" rel="noopener" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">MIGRATION.md ↗</a>
   <a href="https://github.com/sampleXbro/axios-retryer/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">Changelog ↗</a>
 </div>
 </DocsLayout>

@@ -1,7 +1,7 @@
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://axios-retryer.dev',
+  site: 'https://samplexbro.github.io/axios-retryer',
   markdown: {
     syntaxHighlight: 'shiki',
     shikiConfig: {

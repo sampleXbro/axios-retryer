@@ -6,16 +6,17 @@ import { RetryManager } from '../src';
 import { CachingPluginOptions } from '../src/plugins/CachingPlugin/CachingPlugin';
 import MockAdapter from 'axios-mock-adapter';
 
-// A minimal fake logger to capture debug calls
+import { createMinimalPluginContext } from './helpers/minimalPluginContext';
+
 const createFakeLogger = () => ({
   debug: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+  log: jest.fn(),
 });
 
-// A fake manager that exposes only what our plugin needs
-const createFakeManager = (axiosInstance: AxiosInstance, logger = createFakeLogger()) => ({
-  axiosInstance,
-  getLogger: () => logger,
-});
+const createFakeManager = (axiosInstance: AxiosInstance, logger = createFakeLogger()) =>
+  createMinimalPluginContext(axiosInstance, logger);
 
 describe('CachingPlugin', () => {
   let axiosInstance: AxiosInstance;

@@ -15,7 +15,7 @@
 
 ---
 
-**[📖 Full Documentation & Website](https://axios-retryer.dev)** · [GitHub](https://github.com/sampleXbro/axios-retryer) · [npm](https://www.npmjs.com/package/axios-retryer) · [Changelog](./CHANGELOG.md)
+**[📖 Full Documentation & Website](https://samplexbro.github.io/axios-retryer)** · [GitHub](https://github.com/sampleXbro/axios-retryer) · [npm](https://www.npmjs.com/package/axios-retryer) · [Changelog](./CHANGELOG.md)
 
 ---
 
@@ -84,13 +84,12 @@ Import only what your app needs. Each plugin is a documented, tree-shakeable ent
 
 | Plugin | Import | Purpose |
 |--------|--------|---------|
-| `TokenRefreshPlugin` | `axios-retryer/plugins/TokenRefreshPlugin` | Auth token refresh on 401 |
+| `TokenRefreshPlugin` | `axios-retryer/plugins/TokenRefreshPlugin` | Auth token refresh on 401; optional [no-token opt-out](https://samplexbro.github.io/axios-retryer/docs/plugins/token-refresh#opt-out-of-refresh) |
 | `CircuitBreakerPlugin` | `axios-retryer/plugins/CircuitBreakerPlugin` | Fail-fast on repeated upstream failures |
 | `CachingPlugin` | `axios-retryer/plugins/CachingPlugin` | In-memory response cache with TTR |
 | `ManualRetryPlugin` | `axios-retryer/plugins/ManualRetryPlugin` | Store failures and replay on reconnect |
 | `MetricsPlugin` | `axios-retryer/plugins/MetricsPlugin` | Live retry counters and events |
 | `DebugSanitizationPlugin` | `axios-retryer/plugins/DebugSanitizationPlugin` | Redact secrets from debug logs |
-| `RequestDependencyPlugin` | `axios-retryer/plugins/RequestDependencyPlugin` | Block low-priority work until critical requests resolve |
 
 ---
 
@@ -118,7 +117,7 @@ Current release benchmarks (standard profile, local suite):
 - **Healthy-path throughput:** `2,647 req/sec`
 - **Peak burst throughput:** `4,013 req/sec`
 - **Cache hit rate:** `100%`
-- **Test suite:** `63/63` suites · `630/630` tests passing
+- **Test suite:** `67/67` suites · `675/675` tests passing
 
 ---
 
@@ -126,16 +125,16 @@ Current release benchmarks (standard profile, local suite):
 
 The full documentation — detailed API reference, all plugin options, guides, examples, and migration notes — lives at:
 
-**[https://axios-retryer.dev](https://axios-retryer.dev)**
+**[https://samplexbro.github.io/axios-retryer](https://samplexbro.github.io/axios-retryer)**
 
 Quick links:
-- [Installation](https://axios-retryer.dev/docs/installation)
-- [Configuration reference](https://axios-retryer.dev/docs/configuration)
-- [Plugins overview](https://axios-retryer.dev/docs/plugins)
-- [Production setup guide](https://axios-retryer.dev/guides/production)
-- [Offline support guide](https://axios-retryer.dev/guides/offline)
-- [Migration 1.x → 2.0](https://axios-retryer.dev/guides/migration)
-- [API reference](https://axios-retryer.dev/docs/api-reference)
+- [Installation](https://samplexbro.github.io/axios-retryer/docs/installation)
+- [Configuration reference](https://samplexbro.github.io/axios-retryer/docs/configuration)
+- [Plugins overview](https://samplexbro.github.io/axios-retryer/docs/plugins)
+- [Production setup guide](https://samplexbro.github.io/axios-retryer/guides/production)
+- [Offline support guide](https://samplexbro.github.io/axios-retryer/guides/offline)
+- [Migration 1.x → 2.0](https://samplexbro.github.io/axios-retryer/guides/migration)
+- [API reference](https://samplexbro.github.io/axios-retryer/docs/api-reference)
 - [SECURITY.md](./SECURITY.md) · [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) · [BENCHMARK_RESULTS.md](./BENCHMARK_RESULTS.md)
 
 ---

@@ -41,7 +41,7 @@ While we aim to make this library as secure as possible, there are specific nuan
 
 2. **Manual Retry Storage Keeps Replayable Request Data**
    - Failed requests stored for later replay may retain request bodies and custom config fields in process memory.
-   - `ManualRetryPlugin` now skips auth-bearing requests by default and strips sensitive auth headers before storage, but opting into auth-bearing replay or using the deprecated root replay path can still retain sensitive material.
+   - `ManualRetryPlugin` skips auth-bearing requests by default and strips sensitive auth headers before storage, but opting into auth-bearing replay (`storeAuthRequests`) can still retain sensitive material.
    - **Mitigation**: Prefer automatic mode for sensitive traffic, keep `maxRequestsToStore` low, leave `storeAuthRequests` disabled unless you truly need it, use `prepareRequestForStore` to redact payloads, and clear pending retries when they are no longer needed.
 
 3. **Request Retry Behavior**

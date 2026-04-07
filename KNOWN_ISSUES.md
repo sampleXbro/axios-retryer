@@ -38,6 +38,14 @@ This document outlines known issues, unexpected behaviors, and edge cases for **
 
 ## Unexpected behaviors (by design)
 
+### `onAllBlockingRequestsResolved` is success-only
+
+**Severity:** Low (by design)  
+**Component:** Core queue / `blockingPriorityThreshold`  
+**Description:** `onAllBlockingRequestsResolved` fires only when all in-flight blocking requests (at or above the configured threshold) finish with a **successful** HTTP outcome. It does **not** fire when a blocker fails, is cancelled, or when dependents are cleared after `onBlockingRequestFailed`.
+
+**Mitigation:** Use `onBlockingRequestFailed`, `onRequestCancelled`, and `onRequestError` for failure and cancellation paths; rely on the resolution event only for “all blockers succeeded” coordination.
+
 ### POST retries and idempotency
 
 **Severity:** Low (by design)  
@@ -90,5 +98,5 @@ CI and local development typically use current Node.js **18+** (22.x is commonly
 
 ---
 
-**Last updated:** 2026-04-05  
-**Last full test run:** 63 test suites, 630 tests passing (see `npm test` in CI or locally).
+**Last updated:** 2026-04-07  
+**Last full test run:** 67 test suites, 675 tests passing (see `npm test` in CI or locally).

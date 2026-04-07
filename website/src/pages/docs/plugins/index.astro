@@ -1,7 +1,7 @@
 ---
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 ---
-<DocsLayout title="Plugins Overview" section="Plugins" description="Overview of all axios-retryer plugins — token refresh, circuit breaker, caching, manual retry, metrics, sanitization, and request dependency.">
+<DocsLayout title="Plugins Overview" section="Plugins" description="Overview of all axios-retryer plugins — token refresh, circuit breaker, caching, manual retry, metrics, and sanitization.">
 
 <h1 class="page-title">Plugins</h1>
 <p class="page-lead">
@@ -41,7 +41,7 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
     <div>
       <div class="plugin-title">🔑 TokenRefreshPlugin</div>
       <div class="plugin-entry">axios-retryer/plugins/TokenRefreshPlugin</div>
-      <div class="plugin-desc">Automatically refreshes JWT/OAuth tokens when requests return 401. Queues all concurrent requests during the refresh, then replays them with the new token. Supports <code>customErrorDetector</code> for GraphQL APIs that return errors in 200 bodies.</div>
+      <div class="plugin-desc">Automatically refreshes JWT/OAuth tokens when requests return 401. Queues all concurrent requests during the refresh, then replays them with the new token. Supports <code>customErrorDetector</code> for GraphQL APIs that return errors in 200 bodies. You can resolve the refresh callback with no <code>token</code> to skip a cycle without failure events.</div>
       <a href="/docs/plugins/token-refresh" class="plugin-link">View docs →</a>
     </div>
     <div class="plugin-when">
@@ -137,21 +137,6 @@ import DocsLayout from '../../../layouts/DocsLayout.astro';
     </div>
   </div>
 
-  <div class="plugin-row">
-    <div>
-      <div class="plugin-title">🔗 RequestDependencyPlugin</div>
-      <div class="plugin-entry">axios-retryer/plugins/RequestDependencyPlugin</div>
-      <div class="plugin-desc">Blocks lower-priority requests while CRITICAL ones are in flight. Optionally cancels pending work when a blocking request fails.</div>
-      <a href="/docs/plugins/request-dependency" class="plugin-link">View docs →</a>
-    </div>
-    <div class="plugin-when">
-      <div class="plugin-when-title">Use when</div>
-      <ul>
-        <li>Checkout or auth flows should preempt background polling</li>
-        <li>Dependent requests must wait for a blocker to finish before proceeding</li>
-      </ul>
-    </div>
-  </div>
 
 </div>
 </DocsLayout>

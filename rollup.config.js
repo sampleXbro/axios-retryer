@@ -104,7 +104,6 @@ const pluginConfigs = [
     'ManualRetryPlugin',
     'DebugSanitizationPlugin',
     'MetricsPlugin',
-    'RequestDependencyPlugin',
 ].map(generatePluginConfig);
 
 const pluginsEntryBundle = createPluginBundle('./src/plugins/index.ts', 'index', 'plugins');
@@ -147,7 +146,6 @@ const dtsBundles = [
     createDtsBundle('dist/types/plugins/ManualRetryPlugin/index.d.ts', 'dist/plugins/ManualRetryPlugin.d.ts'),
     createDtsBundle('dist/types/plugins/DebugSanitizationPlugin/index.d.ts', 'dist/plugins/DebugSanitizationPlugin.d.ts'),
     createDtsBundle('dist/types/plugins/MetricsPlugin/index.d.ts', 'dist/plugins/MetricsPlugin.d.ts'),
-    createDtsBundle('dist/types/plugins/RequestDependencyPlugin/index.d.ts', 'dist/plugins/RequestDependencyPlugin.d.ts'),
 ];
 
 const builds = [mainBundle, pluginsEntryBundle, ...pluginConfigs, ...dtsBundles];

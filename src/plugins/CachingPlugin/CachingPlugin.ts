@@ -361,6 +361,12 @@ export interface CacheKeyBuilderContext {
 
 export type CacheKeyBuilder = (context: CacheKeyBuilderContext) => string;
 
+export interface CachingPluginEvents {
+  onCacheHit?: (payload: { keyFingerprint: string; config: AxiosRequestConfig; ageMs: number }) => void;
+  onCacheMiss?: (payload: { keyFingerprint: string; config: AxiosRequestConfig; reason: 'empty' | 'stale' }) => void;
+  onCacheInvalidated?: (payload: { count: number; matcher: 'all' | 'custom' }) => void;
+}
+
 export type CacheInvalidationMatcher =
   | string
   | RegExp
@@ -416,11 +422,12 @@ function cloneAxiosResponse(
   } as AxiosResponse<unknown>;
 }
 
-export class CachingPlugin implements RetryPlugin {
+export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   public name = 'CachingPlugin';
   public version = '1.0.0';
+  public readonly _events?: Readonly<CachingPluginEvents>;
 
-  private context!: PluginContext;
+  private context!: PluginContext<CachingPluginEvents>;
   private interceptorIdReq: number | null = null;
   private interceptorIdRes: number | null = null;
   private cleanupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -469,7 +476,7 @@ export class CachingPlugin implements RetryPlugin {
     }
   }
 
-  public initialize(context: PluginContext): void {
+  public initialize(context: PluginContext<CachingPluginEvents>): void {
     this.context = context;
     const axiosInstance = context.axiosInstance;
 
@@ -592,6 +599,11 @@ export class CachingPlugin implements RetryPlugin {
           cacheKeyFingerprint,
           ageMs,
         });
+        this.context.triggerAndEmit('onCacheHit', {
+          keyFingerprint: cacheKeyFingerprint,
+          config,
+          ageMs,
+        });
         this.servedFromCache.add(config);
         return {
           ...config,
@@ -603,7 +615,18 @@ export class CachingPlugin implements RetryPlugin {
         cacheKeyFingerprint,
         ageMs,
       });
+      this.context.triggerAndEmit('onCacheMiss', {
+        keyFingerprint: cacheKeyFingerprint,
+        config,
+        reason: 'stale',
+      });
       await this.deleteCacheEntry(cacheKey);
+    } else {
+      this.context.triggerAndEmit('onCacheMiss', {
+        keyFingerprint: cacheKeyFingerprint,
+        config,
+        reason: 'empty',
+      });
     }
 
     if (!this.options.dedupeConcurrentRequests) {
@@ -778,9 +801,11 @@ export class CachingPlugin implements RetryPlugin {
    * Manually clears all cache entries.
    */
   public clearCache(): void | Promise<void> {
+    const count = this.cache.size;
     this.cache.clear();
     this.inflightRequests.clear();
     this.context.getLogger()?.debug('[CachingPlugin] Cache cleared.');
+    this.context.triggerAndEmit('onCacheInvalidated', { count, matcher: 'all' });
 
     const clearResult = this.storage.clear();
     if (isPromiseLike(clearResult)) {
@@ -966,6 +991,10 @@ export class CachingPlugin implements RetryPlugin {
       this.context.getLogger()?.debug('[CachingPlugin] Invalidated cache entries', {
         count: keysToRemove.length,
         matcher: this.describeInvalidationMatcher(matcher),
+      });
+      this.context.triggerAndEmit('onCacheInvalidated', {
+        count: keysToRemove.length,
+        matcher: 'custom',
       });
 
       return keysToRemove.length;

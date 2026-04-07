@@ -4,6 +4,8 @@ import type { AxiosRetryerRequestMetadata } from '../types';
 
 export type InternalAxiosRetryerRequestMetadata = AxiosRetryerRequestMetadata & {
   isRetryRefreshRequest?: boolean;
+  /** Set by ManualRetryPlugin so TokenRefreshPlugin clears refresh-failure fast-fail for this attempt. */
+  manualReplayAttempt?: boolean;
   retryAfterMs?: number;
   silentlyCancelled?: boolean;
   cachingOptions?: {
@@ -16,7 +18,7 @@ export type InternalAxiosRetryerRequestMetadata = AxiosRetryerRequestMetadata & 
 const ALLOWED_METADATA_KEYS = new Set<string>([
   'retryAttempt', 'requestRetries', 'requestMode', 'requestId', 'isRetrying',
   'priority', 'timestamp', 'backoffType', 'retryableStatuses',
-  'isRetryRefreshRequest', 'retryAfterMs', 'silentlyCancelled', 'cachingOptions',
+  'isRetryRefreshRequest', 'manualReplayAttempt', 'retryAfterMs', 'silentlyCancelled', 'cachingOptions',
 ]);
 
 function isSafeMetadataKey(key: string): boolean {

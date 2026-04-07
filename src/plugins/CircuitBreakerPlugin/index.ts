@@ -13,6 +13,7 @@ export {
   type CircuitBreakerAdaptiveTimeoutMetrics,
   type CircuitBreakerScopeState,
   type CircuitBreakerStateAdapter,
+  type CircuitBreakerPluginEvents,
 } from './CircuitBreakerPlugin';
 
 import { CircuitBreakerPlugin, type CircuitBreakerOptions } from './CircuitBreakerPlugin';

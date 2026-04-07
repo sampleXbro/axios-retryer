@@ -59,19 +59,12 @@ export interface MetricsPluginEvents {
 export class MetricsPlugin implements RetryPlugin<MetricsPluginEvents> {
   public name = 'MetricsPlugin';
   public version = '1.0.0';
+  public readonly _events?: Readonly<MetricsPluginEvents>;
 
   private context: PluginContext<MetricsPluginEvents> | null = null;
   private metrics: AxiosRetryerMetrics = createInitialMetrics();
   private collector: MetricsCollector = new MetricsCollector(() => this.metrics);
   private readonly recorder: MetricsRecorder = {
-    recordRequestStart: (priority) => this.collector.recordRequestStart(priority),
-    recordQueueWait: (durationMs) => this.collector.recordQueueWait(durationMs),
-    recordRetrySuccess: (priority) => this.collector.recordRetrySuccess(priority),
-    recordRetryFailure: (priority, error) => this.collector.recordRetryFailure(priority, error),
-    recordRetryAttempt: (attempt, priority) => this.collector.recordRetryAttempt(attempt, priority),
-    recordRetryDelay: (durationMs) => this.collector.recordRetryDelay(durationMs),
-    recordCancellation: (includeErrorType) => this.collector.recordCancellation(includeErrorType),
-    recordTerminalFailure: (isCritical) => this.collector.recordTerminalFailure(isCritical),
     reset: () => this.collector.reset(),
     buildDetailedMetrics: (timerStats) => this.collector.buildDetailedMetrics(timerStats),
     emitMetricsUpdated: () => this.emitMetricsUpdated(),
@@ -80,6 +73,57 @@ export class MetricsPlugin implements RetryPlugin<MetricsPluginEvents> {
   public initialize(context: PluginContext<MetricsPluginEvents>): void {
     this.context = context;
     context.registerMetricsRecorder(this.recorder);
+
+    context.on('onRequestQueued', (payload) => {
+      this.collector.recordRequestStart(payload.priority);
+      this.emitMetricsUpdated();
+    });
+
+    context.on('onRequestDispatched', (payload) => {
+      this.collector.recordQueueWait(payload.queuedForMs);
+      this.emitMetricsUpdated();
+    });
+
+    context.on('onRequestCancelled', (requestId) => {
+      this.collector.recordCancellation(true);
+      this.emitMetricsUpdated();
+    });
+
+    context.on('beforeRetry', (config) => {
+      const priority = config.__axiosRetryer?.priority ?? 1; // MEDIUM priority as default
+      const attempt = config.__axiosRetryer?.retryAttempt ?? 1;
+      this.collector.recordRetryAttempt(attempt, priority);
+      this.emitMetricsUpdated();
+    });
+
+    context.on('afterRetry', (config, success, error) => {
+      const priority = config.__axiosRetryer?.priority ?? 1;
+      if (success) {
+        this.collector.recordRetrySuccess(priority);
+      } else if (error) {
+        this.collector.recordRetryFailure(priority, error);
+      }
+      this.emitMetricsUpdated();
+    });
+
+    context.on('onRetryScheduled', (delayMs) => {
+      this.collector.recordRetryDelay(delayMs);
+      this.emitMetricsUpdated();
+    });
+
+    context.on('onFailure', (config) => {
+      this.collector.recordTerminalFailure(false);
+      this.emitMetricsUpdated();
+    });
+
+    context.on('onBlockingRequestFailed', (config) => {
+      this.collector.recordTerminalFailure(true);
+      this.emitMetricsUpdated();
+    });
+
+    context.on('onRequestSucceeded', () => {
+      this.emitMetricsUpdated();
+    });
   }
 
   public onBeforeDestroyed(context: PluginContext<MetricsPluginEvents>): void {

@@ -5,6 +5,8 @@ import { CachingPlugin } from '../src/plugins/CachingPlugin';
 import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
 import { RetryManager } from '../src';
 
+import { createMinimalPluginContext } from './helpers/minimalPluginContext';
+
 const createFakeLogger = () => ({
   debug: jest.fn(),
   warn: jest.fn(),
@@ -12,10 +14,8 @@ const createFakeLogger = () => ({
   log: jest.fn(),
 });
 
-const createFakeManager = (axiosInstance: AxiosInstance, logger = createFakeLogger()) => ({
-  axiosInstance,
-  getLogger: () => logger,
-});
+const createFakeManager = (axiosInstance: AxiosInstance, logger = createFakeLogger()) =>
+  createMinimalPluginContext(axiosInstance, logger);
 
 // ────────────────────────────────────────────────────────────────────────────
 // T-013: CachingPlugin auth-aware guard

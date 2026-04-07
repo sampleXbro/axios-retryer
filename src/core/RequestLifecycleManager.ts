@@ -16,7 +16,6 @@ type RequestLifecycleManagerOptions = {
   logger: Logger;
   requestQueue: RequestQueue;
   retryScheduler: RetryScheduler;
-  getMetricsRecorder: () => MetricsRecorder | null;
   onRequestCancelled: (requestId: string) => void;
 };
 
@@ -103,7 +102,6 @@ export class RequestLifecycleManager {
       });
       controller.abort();
       this.removeById(requestId);
-      this.options.getMetricsRecorder()?.recordCancellation();
       this.options.onRequestCancelled(requestId);
     }
 
@@ -121,7 +119,6 @@ export class RequestLifecycleManager {
     this.activeRequests.forEach((controller, requestId) => {
       controller.abort();
       this.releaseAbortSignalLink(controller);
-      this.options.getMetricsRecorder()?.recordCancellation();
       this.options.requestQueue.cancelQueuedRequest(requestId);
       this.options.onRequestCancelled(requestId);
     });
@@ -135,7 +132,6 @@ export class RequestLifecycleManager {
     this.activeRequests.forEach((_, requestId) => {
       const wasCancelled = this.options.requestQueue.cancelQueuedRequest(requestId);
       if (wasCancelled) {
-        this.options.getMetricsRecorder()?.recordCancellation();
         this.options.onRequestCancelled(requestId);
       }
     });
@@ -147,10 +143,6 @@ export class RequestLifecycleManager {
 
   public getActiveRequests(): Map<string, TrackedRequestController> {
     return this.activeRequests;
-  }
-
-  public getActiveRequestConfigs(): IterableIterator<AxiosRequestConfig> {
-    return this.activeConfigs.values();
   }
 
   private generateRequestId(): string {

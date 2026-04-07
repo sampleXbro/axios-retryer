@@ -23,7 +23,7 @@ interface EnqueuedItem {
  */
 class PriorityHeap {
   private heap: EnqueuedItem[] = [];
-  private compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number;
+  private readonly compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number;
   private insertionCounter = 0; // To ensure stable ordering
   private sortedCache: EnqueuedItem[] | null = null;
 

@@ -67,3 +67,6 @@ internal-docs/
 *.tgz
 
 stats/
+
+# Local browser playground (manual testing; not part of the published package)
+sandbox/

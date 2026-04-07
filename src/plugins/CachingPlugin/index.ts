@@ -11,6 +11,7 @@ export {
   type CacheStorage,
   type CachedItem,
   type CachingPluginOptions,
+  type CachingPluginEvents,
   type CachingRequestOptions,
 } from './CachingPlugin';
 

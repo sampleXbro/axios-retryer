@@ -1,6 +1,6 @@
 // @ts-nocheck
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { RetryHooks, RetryManager } from '../src';
+import { RetryManager } from '../src';
 import type { RetryManagerOptions } from '../src';
 import axios from 'axios';
 import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
@@ -10,10 +10,14 @@ describe('RetryManager', () => {
   let mock: AxiosMockAdapter;
   let retryManager: RetryManager;
 
-  const hooks: RetryHooks = {
+  const hooks = {
     beforeRetry: jest.fn(),
     afterRetry: jest.fn(),
     onFailure: jest.fn(),
+    onRequestError: jest.fn(),
+    onRequestQueued: jest.fn(),
+    onRequestDispatched: jest.fn(),
+    onRequestSucceeded: jest.fn(),
     onRetryProcessFinished: jest.fn(),
   };
 
@@ -395,11 +399,11 @@ describe('RetryManager', () => {
     const options: RetryManagerOptions = {
       mode: 'automatic',
       retries: 1,
-      hooks,
       throwErrorOnFailedRetries: true,
       throwErrorOnCancelRequest: true,
     };
     retryManager = new RetryManager(options);
+    retryManager.on('onFailure', hooks.onFailure);
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
     // Ensure the mock matches exactly the request you are making
@@ -413,14 +417,139 @@ describe('RetryManager', () => {
     expect(hooks.onFailure).toHaveBeenCalledTimes(1);
   });
 
+  test('onRequestError is called once for terminal failure with status payload', async () => {
+    retryManager = new RetryManager({
+      mode: 'automatic',
+      retries: 1,
+      throwErrorOnFailedRetries: true,
+    });
+    retryManager.on('onRequestError', hooks.onRequestError);
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+
+    mock.onGet('/terminal-request-error').reply(500, 'Still failing');
+
+    await expect(retryManager.axiosInstance.get('/terminal-request-error')).rejects.toThrow(
+      'Request failed with status code 500',
+    );
+
+    expect(hooks.onRequestError).toHaveBeenCalledTimes(1);
+    expect(hooks.onRequestError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 500,
+        attempts: 2,
+        retryable: true,
+        config: expect.objectContaining({ url: '/terminal-request-error' }),
+      }),
+    );
+  });
+
+  test('onRequestError is not called when request succeeds after retry', async () => {
+    retryManager = new RetryManager({
+      mode: 'automatic',
+      retries: 2,
+      throwErrorOnFailedRetries: true,
+    });
+    retryManager.on('onRequestError', hooks.onRequestError);
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+
+    let attempt = 0;
+    mock.onGet('/recovers-before-terminal').reply(() => {
+      attempt++;
+      if (attempt === 1) {
+        return [500, 'Error'];
+      }
+      return [200, { ok: true }];
+    });
+
+    await expect(retryManager.axiosInstance.get('/recovers-before-terminal')).resolves.toMatchObject({
+      status: 200,
+    });
+
+    expect(hooks.onRequestError).not.toHaveBeenCalled();
+  });
+
+  test('onRequestQueued and onRequestDispatched fire with queue metadata', async () => {
+    retryManager = new RetryManager({
+      mode: 'automatic',
+      retries: 0,
+      maxConcurrentRequests: 1,
+      queueDelay: 0,
+    });
+    retryManager.on('onRequestQueued', hooks.onRequestQueued);
+    retryManager.on('onRequestDispatched', hooks.onRequestDispatched);
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+
+    let releaseSlowRequest: (() => void) | undefined;
+    mock.onGet('/queue-slow').reply(
+      () =>
+        new Promise((resolve) => {
+          releaseSlowRequest = () => resolve([200, { ok: 'slow' }]);
+        }),
+    );
+    mock.onGet('/queue-fast').reply(200, { ok: 'fast' });
+
+    const slowPromise = retryManager.axiosInstance.get('/queue-slow');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const fastPromise = retryManager.axiosInstance.get('/queue-fast');
+
+    releaseSlowRequest?.();
+    await Promise.all([slowPromise, fastPromise]);
+
+    expect(hooks.onRequestQueued).toHaveBeenCalledTimes(2);
+    expect(hooks.onRequestDispatched).toHaveBeenCalledTimes(2);
+
+    const queuedPayload = hooks.onRequestQueued.mock.calls[1][0];
+    expect(queuedPayload).toMatchObject({
+      config: expect.objectContaining({ url: '/queue-fast' }),
+      priority: 1,
+    });
+    expect(queuedPayload.queueSize).toBeGreaterThanOrEqual(1);
+
+    const dispatchedPayload = hooks.onRequestDispatched.mock.calls[1][0];
+    expect(dispatchedPayload).toMatchObject({
+      config: expect.objectContaining({ url: '/queue-fast' }),
+      priority: 1,
+    });
+    expect(dispatchedPayload.queuedForMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test('onRequestSucceeded fires for successful requests with attempt count', async () => {
+    retryManager = new RetryManager({
+      mode: 'automatic',
+      retries: 1,
+      throwErrorOnFailedRetries: true,
+    });
+    retryManager.on('onRequestSucceeded', hooks.onRequestSucceeded);
+    mock = new AxiosMockAdapter(retryManager.axiosInstance);
+
+    mock
+      .onGet('/succeeds-after-retry')
+      .replyOnce(500, 'Fail first')
+      .onGet('/succeeds-after-retry')
+      .replyOnce(200, { ok: true });
+
+    await expect(retryManager.axiosInstance.get('/succeeds-after-retry')).resolves.toMatchObject({
+      status: 200,
+    });
+
+    expect(hooks.onRequestSucceeded).toHaveBeenCalledTimes(1);
+    expect(hooks.onRequestSucceeded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 200,
+        attempts: 2,
+        config: expect.objectContaining({ url: '/succeeds-after-retry' }),
+      }),
+    );
+  });
+
   test('onRetryProcessFinished is called after no more retries are pending', async () => {
     const options: RetryManagerOptions = {
       mode: 'automatic',
       retries: 1,
-      hooks,
       throwErrorOnFailedRetries: true,
     };
     retryManager = new RetryManager(options);
+    retryManager.on('onRetryProcessFinished', hooks.onRetryProcessFinished);
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
     mock.onGet('/complete-all').reply(500, 'Fail');
@@ -438,9 +567,11 @@ describe('RetryManager', () => {
     const options: RetryManagerOptions = {
       mode: 'manual',
       retries: 2,
-      hooks,
     };
     retryManager = new RetryManager(options);
+    retryManager.on('onFailure', hooks.onFailure);
+    retryManager.on('beforeRetry', hooks.beforeRetry);
+    retryManager.on('afterRetry', hooks.afterRetry);
     retryManager.use(manualRetry);
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
@@ -487,7 +618,6 @@ describe('RetryManager', () => {
     const options: RetryManagerOptions = {
       mode: 'automatic',
       retries: 2,
-      hooks,
       throwErrorOnFailedRetries: true,
       throwErrorOnCancelRequest: true,
     };
@@ -535,10 +665,11 @@ describe('RetryManager', () => {
     const options: RetryManagerOptions = {
       mode: 'automatic',
       retries: 1,
-      hooks,
       throwErrorOnFailedRetries: true,
     };
     retryManager = new RetryManager(options);
+    retryManager.on('afterRetry', hooks.afterRetry);
+    retryManager.on('onFailure', hooks.onFailure);
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
     let callCount = 0;
@@ -595,7 +726,7 @@ describe('RetryManager', () => {
     ]);
   });
 
-  test('should trigger hooks for all registered plugins', () => {
+  test('should trigger events for all registered plugins', () => {
     const manager = new RetryManager({ mode: 'automatic' });
     const pluginOneBeforeRetry = jest.fn();
     const pluginTwoBeforeRetry = jest.fn();
@@ -624,7 +755,7 @@ describe('RetryManager', () => {
     expect(pluginTwoBeforeRetry).toHaveBeenCalledWith(config);
   });
 
-  test('should handle errors in plugin hooks gracefully', () => {
+  test('should handle errors in plugin event listeners gracefully', () => {
     const manager = new RetryManager({ mode: 'automatic' });
     const faultyListener = jest.fn(() => {
       throw new Error('Test error');
@@ -699,25 +830,23 @@ describe('RetryManager', () => {
     expect(controller2.signal.aborted).toBe(true);
   });
 
-  test('should trigger hooks in correct order', async () => {
-    const hooksOrder: string[] = [];
-    const hooks = {
-      beforeRetry: () => hooksOrder.push('beforeRetry'),
-      afterRetry: () => hooksOrder.push('afterRetry'),
-      onFailure: () => hooksOrder.push('onFailure'),
-    };
+  test('should trigger events in correct order', async () => {
+    const eventsOrder: string[] = [];
 
-    const options: RetryManagerOptions = { retries: 1, mode: 'automatic', hooks };
     retryManager = new RetryManager({
-      ...options,
-      axiosInstance: axios.create({ baseURL: 'http://localhost' }), // Ensure baseURL is set
+      retries: 1,
+      mode: 'automatic',
+      axiosInstance: axios.create({ baseURL: 'http://localhost' }),
     });
+    retryManager.on('beforeRetry', () => eventsOrder.push('beforeRetry'));
+    retryManager.on('afterRetry', () => eventsOrder.push('afterRetry'));
+    retryManager.on('onFailure', () => eventsOrder.push('onFailure'));
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
-    mock.onGet('/hooks-order').reply(500, 'Error'); // Mock the endpoint
+    mock.onGet('/events-order').reply(500, 'Error');
 
-    await expect(retryManager.axiosInstance.get('/hooks-order')).rejects.toThrow();
-    expect(hooksOrder).toEqual(['beforeRetry', 'afterRetry', 'onFailure']);
+    await expect(retryManager.axiosInstance.get('/events-order')).rejects.toThrow();
+    expect(eventsOrder).toEqual(['beforeRetry', 'afterRetry', 'onFailure']);
   });
 
   test('single request', async () => {

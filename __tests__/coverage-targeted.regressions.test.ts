@@ -13,7 +13,6 @@ import {
   CircuitBreakerState,
 } from '../src/plugins/CircuitBreakerPlugin';
 import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
-import { RequestDependencyPlugin } from '../src/plugins/RequestDependencyPlugin';
 import { TokenRefreshPlugin } from '../src/plugins/TokenRefreshPlugin';
 import { InMemoryRequestStore } from '../src/store/InMemoryRequestStore';
 import { assignRequestMetadata, getRequestMetadata } from '../src/utils/requestMetadata';
@@ -108,53 +107,42 @@ describe('Targeted Coverage Regressions', () => {
   });
 
   describe('EventBus', () => {
-    test('runs configured hooks and extracts request ids for logs', () => {
+    test('emits events to registered listeners', () => {
       const logger = new RetryLogger(true);
-      const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
-      const beforeRetry = jest.fn();
+      const listener = jest.fn();
 
-      const bus = new EventBus({
-        hooks: { beforeRetry },
-        logger,
-      });
+      const bus = new EventBus(logger);
 
       const config = {};
-      assignRequestMetadata(config, { requestId: 'hook-1' });
+      assignRequestMetadata(config, { requestId: 'event-1' });
 
-      expect(bus.getHook('beforeRetry')).toBe(beforeRetry);
-      bus.triggerHook('beforeRetry', config);
+      bus.on('beforeRetry', listener);
+      bus.emit('beforeRetry', config);
 
-      expect(beforeRetry).toHaveBeenCalledWith(config);
-      expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Hook "beforeRetry" executed', { requestId: 'hook-1' });
+      expect(listener).toHaveBeenCalledWith(config);
     });
 
-    test('handles hook and listener failures without crashing listeners management', () => {
+    test('handles listener failures without crashing other listeners', () => {
       const logger = new RetryLogger(true);
       const errorSpy = jest.spyOn(console, 'error').mockImplementation();
-      const bus = new EventBus({
-        hooks: {
-          beforeRetry: () => {
-            throw new Error('hook-boom');
-          },
-        },
-        logger,
-      });
+      const bus = new EventBus(logger);
 
-      const listener = () => {
+      const faultyListener = () => {
         throw new Error('listener-boom');
       };
       const survivingListener = jest.fn();
 
       expect(bus.off('beforeRetry', survivingListener)).toBe(false);
-      bus.on('beforeRetry', listener);
+      bus.on('beforeRetry', faultyListener);
       bus.on('beforeRetry', survivingListener);
-      expect(bus.off('beforeRetry', survivingListener)).toBe(true);
-      bus.triggerHook('beforeRetry', {});
-      bus.emit('beforeRetry', {});
-      bus.clear();
       bus.emit('beforeRetry', {});
 
+      expect(survivingListener).toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalled();
+
+      expect(bus.off('beforeRetry', survivingListener)).toBe(true);
+      bus.clear();
+      bus.emit('beforeRetry', {});
     });
   });
 
@@ -205,17 +193,7 @@ describe('Targeted Coverage Regressions', () => {
       expect(() => new RetryManager(options)).toThrow(message);
     });
 
-    test('logs and rejects request interceptor errors', async () => {
-      const manager = trackManager(new RetryManager());
-      const error = new AxiosError('request interceptor failed', 'ERR_REQUEST');
-      const errorSpy = jest.spyOn(manager.getLogger(), 'error').mockImplementation();
 
-      await expect(manager.onRequestError(error)).rejects.toBe(error);
-      expect(errorSpy).toHaveBeenCalledWith('Request interceptor error', expect.objectContaining({
-        code: 'ERR_REQUEST',
-        message: 'request interceptor failed',
-      }));
-    });
 
     test('returns null when a retry delay is cancelled and throwing is disabled', async () => {
       const manager = trackManager(new RetryManager({ throwErrorOnCancelRequest: false }));
@@ -228,7 +206,7 @@ describe('Targeted Coverage Regressions', () => {
         timestamp: Date.now(),
       });
 
-      await expect(manager['scheduleRetry'](config, 1, 3)).resolves.toBeNull();
+      await expect((manager as any).errorInterceptorHandler['scheduleRetry'](config, 1, 3)).resolves.toBeNull();
       expect(getRequestMetadata(config)?.isRetrying).toBe(false);
     });
 
@@ -243,13 +221,13 @@ describe('Targeted Coverage Regressions', () => {
         timestamp: Date.now(),
       });
 
-      await expect(manager['scheduleRetry'](config, 1, 3, true)).rejects.toThrow('Request aborted. ID: queue-cancelled');
+      await expect((manager as any).errorInterceptorHandler['scheduleRetry'](config, 1, 3, true)).rejects.toThrow('Request aborted. ID: queue-cancelled');
     });
 
     test('auto-retries with retry-after headers through the scheduler path', async () => {
       const manager = trackManager(new RetryManager());
-      const scheduleSpy = jest.spyOn(manager, 'scheduleRetry' as never).mockResolvedValue({ status: 200 } as never);
-      manager['retryStrategy'] = {
+      const scheduleSpy = jest.spyOn((manager as any).errorInterceptorHandler, 'scheduleRetry' as never).mockResolvedValue({ status: 200 } as never);
+      (manager as any).errorInterceptorHandler['options'].retryStrategy = {
         getDelay: () => 100,
         getIsRetryable: () => true,
         shouldRetry: () => true,
@@ -269,15 +247,17 @@ describe('Targeted Coverage Regressions', () => {
         statusText: 'Server Error',
       } as never);
 
-      await manager['handleError'](error);
+      await (manager as any).errorInterceptorHandler['handleError'](error);
 
       expect(getRequestMetadata(config)?.retryAfterMs).toBe(2000);
       expect(scheduleSpy).toHaveBeenCalledWith(config, 1, manager['retries'], false);
     });
 
     test('handles terminal critical offline failures without throwing when configured', async () => {
-      const manager = trackManager(new RetryManager({ throwErrorOnFailedRetries: false }));
-      manager.use(new RequestDependencyPlugin({ blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH }));
+      const manager = trackManager(new RetryManager({
+        throwErrorOnFailedRetries: false,
+        blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+      }));
       const internetListener = jest.fn();
       const blockingListener = jest.fn();
 
@@ -293,7 +273,7 @@ describe('Targeted Coverage Regressions', () => {
 
       const error = new AxiosError('offline', 'ERR_NETWORK', config);
 
-      await expect(manager['handleNoRetriesAction'](error, false)).resolves.toBeNull();
+      await expect((manager as any).errorInterceptorHandler['handleNoRetriesAction'](error, false)).resolves.toBeNull();
       expect(internetListener).toHaveBeenCalledWith(config);
       expect(blockingListener).toHaveBeenCalledWith(config);
     });
@@ -328,7 +308,7 @@ describe('Targeted Coverage Regressions', () => {
         isRetrying: true,
       });
 
-      expect(manager['buildRequestLogMeta'](config, 'loggable')).toEqual({
+      expect((manager as any).requestInterceptorHandler['buildRequestLogMeta'](config, 'loggable')).toEqual({
         method: 'POST',
         priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW,
         requestId: 'loggable',
@@ -336,7 +316,7 @@ describe('Targeted Coverage Regressions', () => {
       });
 
       expect(
-        manager['buildErrorMeta'](
+        (manager as any).errorInterceptorHandler['buildErrorMeta'](
           config,
           new AxiosError('boom', 'ERR_TEST', config, null, {
             config,
@@ -357,8 +337,8 @@ describe('Targeted Coverage Regressions', () => {
         url: '/users',
       });
 
-      expect(manager['getLogUrl']('/users#details')).toBe('/users');
-      expect(manager['getLogUrl']('/users')).toBe('/users');
+      expect((manager as any).requestInterceptorHandler['getLogUrl']('/users#details')).toBe('/users');
+      expect((manager as any).requestInterceptorHandler['getLogUrl']('/users')).toBe('/users');
     });
 
     test('retries stored requests selectively through ManualRetryPlugin', async () => {
@@ -530,7 +510,7 @@ describe('Targeted Coverage Regressions', () => {
         set: jest.fn(),
       };
       const plugin = new CachingPlugin({ storage });
-      plugin['context'] = { getLogger: () => logger };
+      plugin['context'] = { getLogger: () => logger, triggerAndEmit: jest.fn() };
 
       const firstConfig = { url: '/users', method: 'get' };
       expect(await plugin['handleRequest'](firstConfig)).toBe(firstConfig);
@@ -575,7 +555,10 @@ describe('Targeted Coverage Regressions', () => {
         dedupeConcurrentRequests: false,
         storage,
       });
-      plugin['context'] = { getLogger: () => ({ debug: jest.fn(), error: jest.fn(), warn: jest.fn() }) };
+      plugin['context'] = {
+        getLogger: () => ({ debug: jest.fn(), error: jest.fn(), warn: jest.fn(), log: jest.fn() }),
+        triggerAndEmit: jest.fn(),
+      };
 
       const passthroughConfig = { url: '/passthrough', method: 'get' };
       expect(await plugin['handleRequest'](passthroughConfig)).toBe(passthroughConfig);
@@ -640,6 +623,7 @@ describe('Targeted Coverage Regressions', () => {
       plugin['context'] = {
         axiosInstance: { defaults },
         triggerAndEmit,
+        releaseRequestTracking: jest.fn(),
       };
       plugin['logger'] = {
         debug: jest.fn(),
@@ -650,17 +634,28 @@ describe('Targeted Coverage Regressions', () => {
       plugin['updateAuthHeader']('fresh');
       expect(defaults.headers.common.Authorization).toBe('Bearer fresh');
 
-      const resolved = jest.fn();
-      plugin['refreshQueue'] = [{ resolve: resolved, reject: jest.fn() }];
-      plugin['retryQueuedRequests']('next-token');
-      expect(resolved).toHaveBeenCalledWith('next-token');
+      const resolveConfig = jest.fn();
+      const holdConfig = { headers: {} as Record<string, string> };
+      plugin['refreshQueue'] = [
+        {
+          kind: 'hold-request',
+          config: holdConfig,
+          resolveConfig,
+          reject: jest.fn(),
+        },
+      ];
+      plugin['flushQueuedWithToken']('next-token');
+      expect(resolveConfig).toHaveBeenCalledWith(holdConfig);
+      expect(holdConfig.headers.Authorization).toBe('Bearer next-token');
       expect(plugin['refreshQueue']).toEqual([]);
 
       let rejectedError;
       await new Promise((resolve) => {
         plugin['refreshQueue'] = [
           {
-            resolve: jest.fn(),
+            kind: 'hold-request',
+            config: {},
+            resolveConfig: jest.fn(),
             reject: (error) => {
               rejectedError = error;
               resolve(undefined);
@@ -671,6 +666,10 @@ describe('Targeted Coverage Regressions', () => {
       });
 
       expect(rejectedError.message).toBe('Token refresh failed');
+      expect(rejectedError).toMatchObject({
+        code: 'TOKEN_REFRESH_FAILED',
+        config: {},
+      });
       expect(triggerAndEmit).toHaveBeenCalledWith('onTokenRefreshFailed');
       expect(plugin['logger'].error).toHaveBeenCalled();
       expect(plugin['refreshQueue']).toEqual([]);

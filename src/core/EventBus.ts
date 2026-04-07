@@ -1,44 +1,13 @@
 import type { Logger, RetryEventArgs, RetryEventListener, RetryManagerEvents } from '../types';
-import { getRequestMetadata } from '../utils/requestMetadata';
 
 type HookListeners<TPluginEvents extends object> = {
   [K in keyof RetryManagerEvents<TPluginEvents>]?: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[];
 };
 
-type EventBusOptions<TPluginEvents extends object> = {
-  hooks?: Partial<RetryManagerEvents<TPluginEvents>>;
-  logger: Logger;
-};
-
 export class EventBus<TPluginEvents extends object = {}> {
   private listeners: HookListeners<TPluginEvents> = {};
 
-  constructor(
-    private readonly options: EventBusOptions<TPluginEvents>,
-  ) {}
-
-  public getHook<K extends keyof RetryManagerEvents<TPluginEvents>>(
-    hookName: K,
-  ): RetryManagerEvents<TPluginEvents>[K] | undefined {
-    return this.options.hooks?.[hookName];
-  }
-
-  public triggerHook<K extends keyof RetryManagerEvents<TPluginEvents>>(
-    hookName: K,
-    ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
-  ): void {
-    try {
-      const hook = this.options.hooks?.[hookName];
-      if (hook) {
-        (hook as (...hookArgs: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>) => unknown)(...args);
-        this.options.logger.debug(`Hook "${String(hookName)}" executed`, {
-          requestId: this.extractRequestId(args[0]),
-        });
-      }
-    } catch (error) {
-      this.options.logger.error(`Error executing "${String(hookName)}" hook:`, error);
-    }
-  }
+  constructor(private readonly logger: Logger) {}
 
   public emit<K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,
@@ -49,16 +18,19 @@ export class EventBus<TPluginEvents extends object = {}> {
       try {
         listener(...args);
       } catch (error) {
-        this.options.logger.error(`Error emitting "${String(event)}" listener:`, error);
+        this.logger.error(`Error in "${String(event)}" listener:`, error);
       }
     });
   }
 
+  /**
+   * Alias for `emit`. Kept for backward compatibility with plugins that call
+   * `context.triggerAndEmit(...)`.
+   */
   public triggerAndEmit<K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,
     ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
   ): void {
-    this.triggerHook(event, ...args);
     this.emit(event, ...args);
   }
 
@@ -69,7 +41,7 @@ export class EventBus<TPluginEvents extends object = {}> {
     const listeners = (this.listeners[event] ?? []) as RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[];
     listeners.push(listener);
     this.listeners[event] = listeners as HookListeners<TPluginEvents>[K];
-    this.options.logger.debug('Event listener added', { event });
+    this.logger.debug('Event listener added', { event });
   }
 
   public off<K extends keyof RetryManagerEvents<TPluginEvents>>(
@@ -77,21 +49,17 @@ export class EventBus<TPluginEvents extends object = {}> {
     listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
   ): boolean {
     const listeners = this.listeners[event] as RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[] | undefined;
-    if (!listeners) {
-      return false;
-    }
+    if (!listeners) return false;
 
     const index = listeners.indexOf(listener);
-    if (index === -1) {
-      return false;
-    }
+    if (index === -1) return false;
 
     listeners.splice(index, 1);
     if (listeners.length === 0) {
       delete this.listeners[event];
     }
 
-    this.options.logger.debug('Event listener removed', { event });
+    this.logger.debug('Event listener removed', { event });
     return true;
   }
 
@@ -101,21 +69,5 @@ export class EventBus<TPluginEvents extends object = {}> {
 
   public hasListeners<K extends keyof RetryManagerEvents<TPluginEvents>>(event: K): boolean {
     return Boolean(this.listeners[event]?.length);
-  }
-
-  public hasConfiguredHook<K extends keyof RetryManagerEvents<TPluginEvents>>(event: K): boolean {
-    return typeof this.options.hooks?.[event] === 'function';
-  }
-
-  public hasSubscriptions<K extends keyof RetryManagerEvents<TPluginEvents>>(event: K): boolean {
-    return this.hasConfiguredHook(event) || this.hasListeners(event);
-  }
-
-  private extractRequestId(value: unknown): string | undefined {
-    if (typeof value !== 'object' || value === null) {
-      return undefined;
-    }
-
-    return getRequestMetadata(value as never)?.requestId;
   }
 }

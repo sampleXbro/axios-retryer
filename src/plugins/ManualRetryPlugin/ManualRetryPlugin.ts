@@ -126,6 +126,7 @@ export interface ManualRetryPluginOptions {
 export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
   public name = 'ManualRetryPlugin';
   public version = '1.0.0';
+  public readonly _events?: Readonly<ManualRetryPluginEvents>;
 
   private context!: PluginContext<ManualRetryPluginEvents>;
   private store!: RequestStore;
@@ -235,6 +236,7 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
       delete transformedConfig.signal;
       setRequestMetadataValue(transformedConfig, 'retryAttempt', 0);
       setRequestMetadataValue(transformedConfig, 'isRetrying', false);
+      setRequestMetadataValue(transformedConfig, 'manualReplayAttempt', true);
 
       if (i > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, Math.min(200 * i, 2000)));

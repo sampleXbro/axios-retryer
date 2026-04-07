@@ -1,5 +1,5 @@
-import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import axios from 'axios';
+import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError } from 'axios';
 
 import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
 import { TimerManager } from '../../core/TimerManager';
@@ -33,7 +33,12 @@ import {
 import { TokenRefreshFailedError } from './TokenRefreshFailedError';
 import { MissingTokenRefreshHandlerError } from './MissingTokenRefreshHandlerError';
 import type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
-import { assignRequestMetadata, ensureRequestMetadata, getRequestMetadata } from '../../utils/requestMetadata';
+import {
+  assignRequestMetadata,
+  ensureRequestMetadata,
+  getRequestMetadata,
+  setRequestMetadataValue,
+} from '../../utils/requestMetadata';
 
 const PLUGIN_DEFAULTS: Required<Omit<TokenRefreshPluginOptions, 'customErrorDetector'>> = {
   maxRefreshAttempts: 3,
@@ -65,15 +70,36 @@ function hasHeader(config: AxiosRequestConfig, headerName: string): boolean {
   }
 
   const target = headerName.toLowerCase();
-  if ((headers as Record<string, unknown>)[headerName] !== undefined) {
+  const direct = (headers as Record<string, unknown>)[headerName];
+  if (direct !== undefined && direct !== null && direct !== false) {
     return true;
   }
 
-  if ((headers as Record<string, unknown>)[target] !== undefined) {
+  const directLower = (headers as Record<string, unknown>)[target];
+  if (directLower !== undefined && directLower !== null && directLower !== false) {
     return true;
   }
 
-  return Object.keys(headers).some((key) => key.toLowerCase() === target);
+  return Object.entries(headers as Record<string, unknown>).some(
+    ([key, value]) => key.toLowerCase() === target && value !== undefined && value !== null && value !== false,
+  );
+}
+
+function getHeader(config: AxiosRequestConfig, headerName: string): string | null {
+  const headers = config.headers;
+  if (!headers) return null;
+
+  if (typeof (headers as { get?: (name: string) => unknown }).get === 'function') {
+    const value = (headers as { get: (name: string) => unknown }).get(headerName);
+    if (typeof value === 'string') return value;
+  }
+
+  const target = headerName.toLowerCase();
+  const direct = (headers as Record<string, unknown>)[headerName] ?? (headers as Record<string, unknown>)[target];
+  if (typeof direct === 'string') return direct;
+
+  const entry = Object.entries(headers as Record<string, unknown>).find(([k]) => k.toLowerCase() === target);
+  return typeof entry?.[1] === 'string' ? entry[1] : null;
 }
 
 function setHeader(config: AxiosRequestConfig, headerName: string, value: string): void {
@@ -92,6 +118,34 @@ function setHeader(config: AxiosRequestConfig, headerName: string, value: string
 function sanitizeHeaderValue(value: string): string {
   return value.replace(/[\r\n\0]/g, '');
 }
+
+function extractTokenFromAuthHeader(authHeaderValue: string, tokenPrefix: string): string {
+  if (authHeaderValue.startsWith(tokenPrefix)) {
+    return authHeaderValue.slice(tokenPrefix.length);
+  }
+  return authHeaderValue;
+}
+
+type RefreshQueueEntry =
+  | {
+      kind: 'hold-request';
+      config: AxiosRequestConfig;
+      resolveConfig: (c: AxiosRequestConfig) => void;
+      reject: (e: Error) => void;
+    }
+  | {
+      kind: 'retry-after-error';
+      request: AxiosRequestConfig;
+      sourceError: AxiosError;
+      resolveResponse: (r: AxiosResponse) => void;
+      reject: (e: Error) => void;
+    }
+  | {
+      kind: 'retry-after-body-auth-error';
+      response: AxiosResponse;
+      resolveResponse: (r: AxiosResponse) => void;
+      reject: (e: Error) => void;
+    };
 
 function createRefreshAxios(
   context: { axiosInstance: AxiosInstance },
@@ -123,6 +177,7 @@ function createRefreshAxios(
 export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents> {
   public name = 'TokenRefreshPlugin';
   public version = '1.0.0';
+  public readonly _events?: Readonly<TokenRefreshPluginEvents>;
 
   private context!: PluginContext<TokenRefreshPluginEvents>;
   private requestInterceptorId: number | null = null;
@@ -130,10 +185,11 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   private responseInterceptorId: number | null = null;
   private refreshAxios!: AxiosInstance;
   private isRefreshing = false;
-  private refreshQueue: { resolve: (token: string) => void; reject: (err: Error) => void }[] = [];
+  private refreshQueue: RefreshQueueEntry[] = [];
   private teardownError: Error | null = null;
   private readonly teardownListeners = new Set<(error: Error) => void>();
   private timerManager = new TimerManager();
+  private failedAuthHeaderValue: string | null = null;
 
   private readonly refreshToken: TokenRefreshHandler;
   private readonly options: Required<Omit<TokenRefreshPluginOptions, 'customErrorDetector'>> & {
@@ -177,6 +233,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     this.refreshQueue = [];
     this.teardownError = null;
     this.teardownListeners.clear();
+    this.failedAuthHeaderValue = null;
     // Create a sandboxed axios instance for refresh calls.
     // Inherit transport defaults such as baseURL and adapter, but do not reuse
     // the manager interceptors or any default auth headers.
@@ -199,19 +256,39 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
 
     this.requestInterceptorId = this.context.axiosInstance.interceptors.request.use(async (config) => {
       const metadata = ensureRequestMetadata(config);
+      if (metadata.manualReplayAttempt) {
+        this.failedAuthHeaderValue = null;
+        setRequestMetadataValue(config, 'manualReplayAttempt', undefined);
+      }
       const { authHeaderName } = this.options;
       const currentToken = this.context.axiosInstance.defaults.headers.common[authHeaderName];
 
-      if (this.isRefreshing && !metadata.isRetryRefreshRequest && hasHeader(config, authHeaderName)) {
-        return new Promise((resolve, reject) => {
-          this.refreshQueue.push({
-            resolve: (token: string) => {
-              setHeader(config, authHeaderName, `${this.options.tokenPrefix}${token}`);
-              resolve(config);
-            },
-            reject,
+      if (!metadata.isRetryRefreshRequest && hasHeader(config, authHeaderName)) {
+        if (this.isRefreshing) {
+          // Refresh in progress — queue this request until the new token arrives.
+          return new Promise((resolve, reject) => {
+            this.refreshQueue.push({
+              kind: 'hold-request',
+              config,
+              resolveConfig: (c) => resolve(c as InternalAxiosRequestConfig),
+              reject,
+            });
           });
-        });
+        }
+
+        // The current token is known to have failed refresh — reject before hitting the network.
+        // Compare against the token THIS REQUEST is actually carrying, not the defaults, so that
+        // requests bearing a fresh token (e.g. from ManualRetryPlugin's rehydrateAuth) are not
+        // incorrectly fast-failed when the defaults haven't been updated yet.
+        const requestTokenValue = getHeader(config, authHeaderName);
+        if (
+          this.failedAuthHeaderValue !== null &&
+          requestTokenValue !== null &&
+          requestTokenValue === this.failedAuthHeaderValue
+        ) {
+          this.context.releaseRequestTracking(config);
+          return Promise.reject(this.bindRefreshErrorToRequest(new TokenRefreshFailedError(), config));
+        }
       }
 
       if (currentToken && hasHeader(config, authHeaderName)) {
@@ -229,12 +306,15 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
 
     if (this.requestInterceptorId !== null) {
       context.axiosInstance.interceptors.request.eject(this.requestInterceptorId);
+      this.requestInterceptorId = null;
     }
     if (this.interceptorId !== null) {
       context.axiosInstance.interceptors.response.eject(this.interceptorId);
+      this.interceptorId = null;
     }
     if (this.responseInterceptorId !== null) {
       context.axiosInstance.interceptors.response.eject(this.responseInterceptorId);
+      this.responseInterceptorId = null;
     }
   }
 
@@ -244,13 +324,25 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     }
 
     return new Promise<T>((resolve, reject) => {
-      const rejectOnTeardown = (error: Error) => {
-        reject(error);
+      let settled = false;
+      const safeResolve = (value: T | PromiseLike<T>): void => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      const safeReject = (reason: unknown): void => {
+        if (settled) return;
+        settled = true;
+        reject(reason);
+      };
+
+      const rejectOnTeardown = (error: Error): void => {
+        safeReject(error);
       };
 
       this.teardownListeners.add(rejectOnTeardown);
 
-      promise.then(resolve, reject).finally(() => {
+      promise.then(safeResolve, safeReject).finally(() => {
         this.teardownListeners.delete(rejectOnTeardown);
       });
     });
@@ -262,6 +354,39 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     }
   }
 
+  private bindRefreshErrorToRequest(
+    error: Error,
+    config: AxiosRequestConfig,
+    response?: AxiosResponse,
+  ): AxiosError {
+    const axiosError = new AxiosError(
+      error.message,
+      'TOKEN_REFRESH_FAILED',
+      config as InternalAxiosRequestConfig,
+      undefined,
+      response,
+    );
+
+    axiosError.name = error.name;
+    (axiosError as Error & { cause?: unknown }).cause =
+      (error as Error & { cause?: unknown }).cause ?? error;
+
+    return axiosError;
+  }
+
+  private rejectQueueEntryWithBoundError(logicalError: Error, entry: RefreshQueueEntry): void {
+    if (entry.kind === 'hold-request') {
+      this.context.releaseRequestTracking(entry.config);
+      entry.reject(this.bindRefreshErrorToRequest(logicalError, entry.config));
+    } else if (entry.kind === 'retry-after-error') {
+      entry.reject(
+        this.bindRefreshErrorToRequest(logicalError, entry.request, entry.sourceError.response),
+      );
+    } else {
+      entry.reject(this.bindRefreshErrorToRequest(logicalError, entry.response.config, entry.response));
+    }
+  }
+
   private dispose(error: Error): void {
     if (this.teardownError) {
       return;
@@ -270,7 +395,9 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     this.timerManager.destroy();
     this.teardownError = error;
     this.isRefreshing = false;
-    this.refreshQueue.forEach(({ reject }) => reject(error));
+    this.refreshQueue.forEach((entry) => {
+      this.rejectQueueEntryWithBoundError(error, entry);
+    });
     this.refreshQueue = [];
 
     this.teardownListeners.forEach((listener) => listener(error));
@@ -299,12 +426,9 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
         // Queue the request and wait for token refresh to complete
         return new Promise((resolve, reject) => {
           this.refreshQueue.push({
-            resolve: (token: string) => {
-              // Once we have the token, retry with it
-              this.retryRequest(response.config, token)
-                .then(resolve)
-                .catch(reject);
-            },
+            kind: 'retry-after-body-auth-error',
+            response,
+            resolveResponse: resolve,
             reject,
           });
         });
@@ -315,14 +439,18 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
         this.isRefreshing = true;
         const token = await this.withTeardown(this.executeTokenRefresh());
         this.ensureActive();
+        if (token === null) {
+          this.flushQueuedAfterSkippedRefresh();
+          return response;
+        }
         this.updateAuthHeader(token);
-        this.retryQueuedRequests(token);
-        
+        this.flushQueuedWithToken(token);
+
         // Retry the current request with new token
         return this.withTeardown(this.retryRequest(response.config, token));
       } catch (err) {
-        this.handleRefreshFailure(err);
-        throw err;
+        const refreshError = this.handleRefreshFailure(err);
+        throw this.bindRefreshErrorToRequest(refreshError, response.config, response);
       } finally {
         this.isRefreshing = false;
       }
@@ -337,22 +465,50 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
    * or starts a new refresh cycle.
    */
   private async handleResponseError(error: AxiosError): Promise<AxiosResponse> {
-    this.ensureActive();
     const originalRequest = error.config;
     if (!originalRequest) {
       return Promise.reject(error);
     }
+    if (error.code === 'TOKEN_REFRESH_FAILED') {
+      return Promise.reject(error);
+    }
+    this.ensureActive();
     if (getRequestMetadata(originalRequest)?.isRetryRefreshRequest) {
       return Promise.reject(error);
     }
     if (!this.isRefreshableError(error)) {
       return Promise.reject(error);
     }
+    // If this request carries the same token that previously failed to refresh,
+    // reject immediately — retrying the refresh endpoint would yield the same result.
+    if (
+      this.failedAuthHeaderValue !== null &&
+      getHeader(originalRequest, this.options.authHeaderName) === this.failedAuthHeaderValue
+    ) {
+      this.context.releaseRequestTracking(originalRequest);
+      return Promise.reject(
+        this.bindRefreshErrorToRequest(new TokenRefreshFailedError(), originalRequest, error.response),
+      );
+    }
+    // If this request used an older token than the current global auth header,
+    // replay once with the current token instead of triggering a second refresh cycle.
+    const latestAuthHeader = this.context.axiosInstance?.defaults?.headers?.common?.[this.options.authHeaderName];
+    const requestAuthHeader = getHeader(originalRequest, this.options.authHeaderName);
+    if (
+      typeof latestAuthHeader === 'string' &&
+      typeof requestAuthHeader === 'string' &&
+      latestAuthHeader.length > 0 &&
+      requestAuthHeader.length > 0 &&
+      latestAuthHeader !== requestAuthHeader
+    ) {
+      const latestToken = extractTokenFromAuthHeader(latestAuthHeader, this.options.tokenPrefix);
+      return this.withTeardown(this.retryRequest(originalRequest, latestToken));
+    }
     this.context.releaseRequestTracking(originalRequest);
     if (this.isRefreshing) {
-      return this.queueRefreshRequest(originalRequest);
+      return this.queueRefreshRequest(originalRequest, error);
     }
-    return this.handleTokenRefresh(originalRequest);
+    return this.handleTokenRefresh(originalRequest, error);
   }
 
   /**
@@ -370,20 +526,29 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
    *  3) On success, update the auth header and retry both queued and original requests.
    *  4) On failure, clear the queue and reject.
    */
-  private async handleTokenRefresh(originalRequest: AxiosRequestConfig): Promise<AxiosResponse> {
+  private async handleTokenRefresh(
+    originalRequest: AxiosRequestConfig,
+    originalError: AxiosError,
+  ): Promise<AxiosResponse> {
     this.isRefreshing = true;
     if (!getRequestMetadata(originalRequest)?.isRetryRefreshRequest) {
       this.context.triggerAndEmit('onBeforeTokenRefresh');
     }
     try {
-      const token = await this.withTeardown(this.executeTokenRefresh());
+      const token = await this.executeTokenRefresh();
       this.ensureActive();
+      if (token === null) {
+        this.flushQueuedAfterSkippedRefresh();
+        return Promise.reject(originalError);
+      }
       this.updateAuthHeader(token);
-      this.retryQueuedRequests(token);
+      this.flushQueuedWithToken(token);
       return this.withTeardown(this.retryRequest(originalRequest, token));
     } catch (err) {
-      this.handleRefreshFailure(err);
-      return Promise.reject(err);
+      const refreshError = this.handleRefreshFailure(err);
+      return Promise.reject(
+        this.bindRefreshErrorToRequest(refreshError, originalRequest, originalError.response),
+      );
     } finally {
       this.isRefreshing = false;
     }
@@ -395,7 +560,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
    * Throw a non-Axios error from the refresh handler to stop remaining refresh retries immediately,
    * for example when no refresh token is available in storage.
    */
-  private async executeTokenRefresh(): Promise<string> {
+  private async executeTokenRefresh(): Promise<string | null> {
     this.ensureActive();
     if (!this.refreshToken) {
       throw new MissingTokenRefreshHandlerError();
@@ -424,6 +589,10 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
         });
         const { token } = await this.withTeardown(refreshPromise);
         this.ensureActive();
+        if (token == null) {
+          this.logger?.debug(`[${this.name}] Refresh handler returned no token; skipping refresh`);
+          return null;
+        }
         this.context.triggerAndEmit('onTokenRefreshed', token);
         this.logger?.debug(`[${this.name}] Token successfully refreshed`);
         return token;
@@ -465,6 +634,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   private updateAuthHeader(token: string): void {
     const { authHeaderName, tokenPrefix } = this.options;
     this.context.axiosInstance.defaults.headers.common[authHeaderName] = `${tokenPrefix}${sanitizeHeaderValue(token)}`;
+    this.failedAuthHeaderValue = null;
   }
 
   /**
@@ -489,40 +659,88 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   /**
    * If a 401 is encountered while a refresh is already in progress, queue the request.
    */
-  private queueRefreshRequest(request: AxiosRequestConfig): Promise<AxiosResponse> {
+  private queueRefreshRequest(request: AxiosRequestConfig, sourceError: AxiosError): Promise<AxiosResponse> {
     return new Promise((resolve, reject) => {
       this.refreshQueue.push({
-        resolve: (token: string) => resolve(this.retryRequest(request, token)),
+        kind: 'retry-after-error',
+        request,
+        sourceError,
+        resolveResponse: resolve,
         reject,
       });
     });
   }
 
-  /**
-   * Once the token is refreshed, re-dispatch all queued requests.
-   */
-  private retryQueuedRequests(token: string): void {
-    this.refreshQueue.forEach(({ resolve }) => resolve(token));
+  private flushQueuedWithToken(token: string): void {
+    const { authHeaderName, tokenPrefix } = this.options;
+    const pending = this.refreshQueue;
     this.refreshQueue = [];
+    for (const entry of pending) {
+      if (entry.kind === 'hold-request') {
+        setHeader(entry.config, authHeaderName, `${tokenPrefix}${sanitizeHeaderValue(token)}`);
+        entry.resolveConfig(entry.config);
+      } else if (entry.kind === 'retry-after-error') {
+        this.retryRequest(entry.request, token).then(entry.resolveResponse).catch(entry.reject);
+      } else {
+        this.retryRequest(entry.response.config, token).then(entry.resolveResponse).catch(entry.reject);
+      }
+    }
+  }
+
+  /**
+   * When the refresh handler opts out (`token` null/undefined), release waiters without treating refresh as failed.
+   */
+  private flushQueuedAfterSkippedRefresh(): void {
+    const pending = this.refreshQueue;
+    this.refreshQueue = [];
+    for (const entry of pending) {
+      if (entry.kind === 'hold-request') {
+        entry.resolveConfig(entry.config);
+      } else if (entry.kind === 'retry-after-error') {
+        entry.reject(entry.sourceError);
+      } else {
+        entry.resolveResponse(entry.response);
+      }
+    }
   }
 
   /**
    * If the token refresh fails completely, reject all queued requests and emit an event.
+   * @returns The logical refresh failure error — callers must wrap with `bindRefreshErrorToRequest`
+   *          for the initiating request so RetryManager receives `config`.
    */
-  private handleRefreshFailure(error?: unknown): void {
+  private handleRefreshFailure(error?: unknown): Error {
     if (this.teardownError) {
       error = this.teardownError;
     }
 
-    const refreshError = shouldStopRefreshRetries(error) || !shouldRetryRefreshError(error)
-      ? toTokenRefreshError(error)
-      : new TokenRefreshFailedError();
-    this.refreshQueue.forEach(({ reject }) => reject(refreshError));
+    let refreshError: Error;
+    if (shouldStopRefreshRetries(error) || !shouldRetryRefreshError(error)) {
+      refreshError = toTokenRefreshError(error);
+    } else if (error instanceof AxiosError) {
+      // Real transport failures from the refresh call — match queued waiters; details on `cause`.
+      refreshError = new TokenRefreshFailedError();
+      (refreshError as Error & { cause?: unknown }).cause = error;
+    } else {
+      // Exhausted retryable refresh failures (e.g. custom errors, timeout) — preserve message/type.
+      refreshError = toTokenRefreshError(error);
+    }
+
+    this.refreshQueue.forEach((entry) => {
+      this.rejectQueueEntryWithBoundError(refreshError, entry);
+    });
     this.refreshQueue = [];
+    // Record the token that failed so subsequent requests with the same token fail fast.
+    const currentAuth = this.context.axiosInstance?.defaults?.headers?.common?.[this.options.authHeaderName];
+    if (typeof currentAuth === 'string') {
+      this.failedAuthHeaderValue = currentAuth;
+    }
     this.context.triggerAndEmit('onTokenRefreshFailed');
     this.logger?.error(`${this.name} Token refresh failed - clearing queue`, {
       reason: refreshError.message,
       aborted: shouldStopRefreshRetries(error) || !shouldRetryRefreshError(error),
     });
+
+    return refreshError;
   }
 }

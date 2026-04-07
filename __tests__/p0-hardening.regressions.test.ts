@@ -1,5 +1,5 @@
 // @ts-nocheck
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 import { RequestAbortedError, RetryManager } from '../src';
@@ -7,6 +7,8 @@ import { CachingPlugin } from '../src/plugins/CachingPlugin';
 import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
 import { TokenRefreshAbortError, TokenRefreshPlugin } from '../src/plugins/TokenRefreshPlugin';
 import { AXIOS_RETRYER_HTTP_METHODS } from '../src/types';
+
+import { createMinimalPluginContext } from './helpers/minimalPluginContext';
 
 const waitForAssertion = async (assertion: () => void, timeoutMs = 1000) => {
   const startedAt = Date.now();
@@ -59,11 +61,10 @@ describe('P0 hardening regressions', () => {
     const logger = {
       debug: jest.fn(),
       warn: jest.fn(),
+      error: jest.fn(),
+      log: jest.fn(),
     };
-    const manager = {
-      axiosInstance,
-      getLogger: () => logger,
-    };
+    const manager = createMinimalPluginContext(axiosInstance, logger);
     const plugin = new CachingPlugin({ compareHeaders: true, skipWhenAuthPresent: false });
 
     plugin.initialize(manager as unknown as RetryManager);
@@ -92,11 +93,10 @@ describe('P0 hardening regressions', () => {
     const logger = {
       debug: jest.fn(),
       warn: jest.fn(),
+      error: jest.fn(),
+      log: jest.fn(),
     };
-    const manager = {
-      axiosInstance,
-      getLogger: () => logger,
-    };
+    const manager = createMinimalPluginContext(axiosInstance, logger);
     const plugin = new CachingPlugin({
       cacheMethods: [AXIOS_RETRYER_HTTP_METHODS.POST],
       storage: {
@@ -311,8 +311,14 @@ describe('P0 hardening regressions', () => {
 
     expect(manager.unuse('TokenRefreshPlugin')).toBe(true);
 
-    await expect(firstRequest).rejects.toBeInstanceOf(TokenRefreshAbortError);
-    await expect(waitingRequest).rejects.toBeInstanceOf(TokenRefreshAbortError);
+    const firstErr = await firstRequest.catch((e) => e);
+    const waitingErr = await waitingRequest.catch((e) => e);
+    expect(firstErr).toBeInstanceOf(AxiosError);
+    expect(waitingErr).toBeInstanceOf(AxiosError);
+    expect(firstErr.code).toBe('TOKEN_REFRESH_FAILED');
+    expect(waitingErr.code).toBe('TOKEN_REFRESH_FAILED');
+    expect((firstErr as Error & { cause?: unknown }).cause).toBeInstanceOf(TokenRefreshAbortError);
+    expect((waitingErr as Error & { cause?: unknown }).cause).toBeInstanceOf(TokenRefreshAbortError);
     expect(plugin['refreshQueue']).toHaveLength(0);
 
     releaseRefresh?.({ token: 'late-token' });
@@ -350,8 +356,14 @@ describe('P0 hardening regressions', () => {
 
     manager.destroy();
 
-    await expect(firstRequest).rejects.toBeInstanceOf(TokenRefreshAbortError);
-    await expect(waitingRequest).rejects.toBeInstanceOf(TokenRefreshAbortError);
+    const firstErrDestroy = await firstRequest.catch((e) => e);
+    const waitingErrDestroy = await waitingRequest.catch((e) => e);
+    expect(firstErrDestroy).toBeInstanceOf(AxiosError);
+    expect(waitingErrDestroy).toBeInstanceOf(AxiosError);
+    expect(firstErrDestroy.code).toBe('TOKEN_REFRESH_FAILED');
+    expect(waitingErrDestroy.code).toBe('TOKEN_REFRESH_FAILED');
+    expect((firstErrDestroy as Error & { cause?: unknown }).cause).toBeInstanceOf(TokenRefreshAbortError);
+    expect((waitingErrDestroy as Error & { cause?: unknown }).cause).toBeInstanceOf(TokenRefreshAbortError);
     expect(plugin['refreshQueue']).toHaveLength(0);
 
     mock.restore();

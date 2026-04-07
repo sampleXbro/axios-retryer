@@ -1,7 +1,12 @@
 import type { AxiosInstance } from 'axios';
 
 export interface TokenRefreshResult {
-  token: string;
+  /**
+   * New access token. When `null` or `undefined` (or omitted), the plugin treats the refresh as a no-op:
+   * no header update, no `onTokenRefreshed` / `onTokenRefreshFailed`, and no “failed refresh” short-circuit.
+   * Concurrent waiters are released without forcing `TokenRefreshFailedError`.
+   */
+  token?: string | null;
 }
 
 export type TokenRefreshHandler = (axiosInst: AxiosInstance) => Promise<TokenRefreshResult>;

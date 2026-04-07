@@ -1,7 +1,6 @@
 import MockAdapter from 'axios-mock-adapter';
 
 import { RetryManager, type Logger, createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES } from '../src';
-import { RequestDependencyPlugin } from '../src/plugins/RequestDependencyPlugin';
 import { RetryLogger } from '../src/services/logger';
 import { assignRequestMetadata, getRequestMetadata } from '../src/utils/requestMetadata';
 
@@ -60,13 +59,11 @@ describe('P2 Improvements', () => {
   });
 
   describe('T-014: Constant-time critical request tracking', () => {
-    it('tracks critical requests without O(n) scan when using blockingQueueThreshold', async () => {
-      const manager = createRetryer({ maxConcurrentRequests: 10 });
-      manager.use(
-        new RequestDependencyPlugin({
-          blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
-        }),
-      );
+    it('tracks critical requests without O(n) scan when using blockingPriorityThreshold', async () => {
+      const manager = createRetryer({
+        maxConcurrentRequests: 10,
+        blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+      });
       const mock = new MockAdapter(manager.axiosInstance);
 
       let resolveHigh: (() => void) | undefined;
@@ -93,12 +90,11 @@ describe('P2 Improvements', () => {
       manager.destroy();
     });
 
-    it('resets critical count on cancelAllRequests', () => {
-      const manager = createRetryer({ maxConcurrentRequests: 10 });
-      const dependencyPlugin = new RequestDependencyPlugin({
+    it('resets blocking count on cancelAllRequests', async () => {
+      const manager = createRetryer({
+        maxConcurrentRequests: 10,
         blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
       });
-      manager.use(dependencyPlugin);
       const mock = new MockAdapter(manager.axiosInstance);
       mock.onGet('/any').reply(() => new Promise(() => {}));
 
@@ -106,11 +102,13 @@ describe('P2 Improvements', () => {
         __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH },
       }).catch(() => {});
 
-      setTimeout(() => {
-        manager.cancelAllRequests();
-        expect(dependencyPlugin.getActiveBlockingRequestCount()).toBe(0);
-        manager.destroy();
-      }, 50);
+      await new Promise((r) => setTimeout(r, 50));
+      manager.cancelAllRequests();
+
+      await new Promise((r) => setTimeout(r, 50));
+      const blockingIds = (manager as any).dependencyGatekeeper.blockingRequestIds as Set<string>;
+      expect(blockingIds.size).toBe(0);
+      manager.destroy();
     });
   });
 

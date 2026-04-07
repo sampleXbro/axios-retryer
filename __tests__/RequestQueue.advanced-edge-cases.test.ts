@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { AXIOS_RETRYER_REQUEST_PRIORITIES, RetryManager } from '../src';
-import { RequestDependencyPlugin } from '../src/plugins/RequestDependencyPlugin';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 describe('RequestQueue Advanced Edge Cases', () => {
@@ -149,8 +148,8 @@ describe('RequestQueue Advanced Edge Cases', () => {
     // Configure RetryManager with priority blocking threshold
     retryManager = new RetryManager({
       maxConcurrentRequests: 1,
+      blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
     });
-    retryManager.use(new RequestDependencyPlugin({ blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH }));
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
     
     const processingOrder = [];
@@ -359,8 +358,8 @@ describe('RequestQueue Advanced Edge Cases', () => {
     // This is a simplified test of the retry prioritization behavior
     retryManager = new RetryManager({
       maxConcurrentRequests: 1,
+      blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
     });
-    retryManager.use(new RequestDependencyPlugin({ blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH }));
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
     
     const processingSequence = [];

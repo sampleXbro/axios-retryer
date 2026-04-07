@@ -1,5 +1,5 @@
 //@ts-nocheck
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosError, AxiosInstance } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { jest } from '@jest/globals';
 import { RetryManager, RetryHooks } from '../src';
@@ -166,6 +166,95 @@ describe('TokenRefreshPlugin', () => {
 
     // No refresh logic should be triggered
     expect(refreshFn).not.toHaveBeenCalled();
+  });
+
+  it('should skip refresh when handler returns token null — original 401, no onTokenRefreshFailed', async () => {
+    const onFailed = jest.fn();
+    manager.on('onTokenRefreshFailed', onFailed);
+    refreshFn.mockResolvedValue({ token: null });
+
+    mockAxios.onGet('/skip-null-token').replyOnce(401);
+
+    await expect(axiosInstance.get('/skip-null-token')).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+    expect(onFailed).not.toHaveBeenCalled();
+  });
+
+  it('should skip refresh when handler returns token undefined — same as null', async () => {
+    refreshFn.mockResolvedValue({ token: undefined });
+
+    mockAxios.onGet('/skip-undefined-token').replyOnce(401);
+
+    await expect(axiosInstance.get('/skip-undefined-token')).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should release a request queued during refresh when handler skips (no TokenRefreshFailedError)', async () => {
+    let finishRefresh: (value: { token: undefined }) => void;
+    const deferredRefresh = new Promise<{ token: undefined }>((resolve) => {
+      finishRefresh = resolve;
+    });
+    refreshFn.mockImplementation(() => deferredRefresh);
+
+    mockAxios
+      .onGet('/queued-skip')
+      .replyOnce(401)
+      .onGet('/queued-skip')
+      .reply(200, { released: true });
+
+    const p1 = axiosInstance.get('/queued-skip', { headers: { Authorization: 'Bearer a' } });
+    await waitForAssertion(() => expect(refreshFn).toHaveBeenCalledTimes(1));
+    const p2 = axiosInstance.get('/queued-skip', { headers: { Authorization: 'Bearer a' } });
+    await waitForAssertion(() => expect((plugin as unknown as { refreshQueue: unknown[] }).refreshQueue.length).toBe(1));
+
+    finishRefresh!({ token: undefined });
+
+    const [e1, res2] = await Promise.all([
+      p1.then(
+        () => {
+          throw new Error('expected p1 to reject');
+        },
+        (e) => e,
+      ),
+      p2,
+    ]);
+    expect(e1).toMatchObject({ response: { status: 401 } });
+    expect(res2.data).toEqual({ released: true });
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should return original 200 body when customErrorDetector fires and handler skips refresh', async () => {
+    manager.unuse('TokenRefreshPlugin');
+    const customErrorDetector = (response: unknown) => {
+      if (typeof response !== 'object' || response === null) return false;
+      return 'errors' in response;
+    };
+    const gqlPlugin = new TokenRefreshPlugin(refreshFn, {
+      refreshStatusCodes: [401],
+      refreshTimeout: 3000,
+      maxRefreshAttempts: 1,
+      retryOnRefreshFail: false,
+      authHeaderName: 'Authorization',
+      tokenPrefix: 'Bearer ',
+      customErrorDetector,
+    });
+    manager.use(gqlPlugin);
+
+    refreshFn.mockResolvedValue({ token: null });
+    const graphqlErrorBody = {
+      data: null,
+      errors: [{ message: 'unauthenticated', extensions: { code: 'UNAUTHENTICATED' } }],
+    };
+    mockAxios.onPost('/graphql-skip').reply(200, graphqlErrorBody);
+
+    const res = await axiosInstance.post('/graphql-skip', { query: '{}' });
+    expect(res.status).toBe(200);
+    expect(res.data).toEqual(graphqlErrorBody);
+    expect(refreshFn).toHaveBeenCalledTimes(1);
   });
 
   it('should refresh token when response is 401, then retry the original request', async () => {
@@ -415,6 +504,82 @@ describe('TokenRefreshPlugin', () => {
     expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer BATCH_REFRESHED_TOKEN');
   });
 
+  it('should reject concurrent 401s with AxiosError bound to each request when refresh fails with AxiosError', async () => {
+    manager.unuse('TokenRefreshPlugin');
+    const axios500 = new AxiosError(
+      'Request failed with status code 500',
+      'ERR_BAD_RESPONSE',
+      {},
+      {},
+      { status: 500, statusText: 'Internal Server Error', data: { error: 'refresh down' }, headers: {}, config: {} },
+    );
+    refreshFn.mockRejectedValue(axios500);
+    plugin = new TokenRefreshPlugin(refreshFn, {
+      maxRefreshAttempts: 1,
+      retryOnRefreshFail: false,
+      refreshStatusCodes: [401],
+      authHeaderName: 'Authorization',
+      tokenPrefix: 'Bearer ',
+    });
+    manager.use(plugin);
+
+    mockAxios.onGet('/a').replyOnce(401);
+    mockAxios.onGet('/b').replyOnce(401);
+
+    const results = await Promise.allSettled([
+      axiosInstance.get('/a', { headers: { Authorization: 'Bearer STALE' } }),
+      axiosInstance.get('/b', { headers: { Authorization: 'Bearer STALE' } }),
+    ]);
+
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+    for (const r of results) {
+      if (r.status !== 'rejected') continue;
+      expect(r.reason).toBeInstanceOf(AxiosError);
+      expect((r.reason as AxiosError).code).toBe('TOKEN_REFRESH_FAILED');
+      expect(r.reason.message).toBe('Token refresh failed');
+      expect((r.reason as AxiosError).config).toBeDefined();
+    }
+    const withCause = results.find(
+      (r) => r.status === 'rejected' && (r.reason as Error & { cause?: unknown }).cause === axios500,
+    );
+    expect(withCause).toBeDefined();
+  });
+
+  it('should reuse the latest refreshed token for late 401 responses from stale in-flight requests', async () => {
+    axiosInstance.defaults.headers.common['Authorization'] = 'Bearer STALE_TOKEN';
+    refreshFn.mockImplementation(async () => ({ token: 'FRESH_TOKEN' }));
+
+    mockAxios
+      .onGet('/race-a')
+      .replyOnce(() => new Promise((resolve) => setTimeout(() => resolve([401, { error: 'Unauthorized' }]), 10)))
+      .onGet('/race-a')
+      .replyOnce((config) => {
+        return config.headers?.Authorization === 'Bearer FRESH_TOKEN'
+          ? [200, { ok: 'a-fresh' }]
+          : [401, { error: 'still stale' }];
+      });
+
+    mockAxios
+      .onGet('/race-b')
+      .replyOnce(() => new Promise((resolve) => setTimeout(() => resolve([401, { error: 'Unauthorized' }]), 80)))
+      .onGet('/race-b')
+      .replyOnce((config) => {
+        return config.headers?.Authorization === 'Bearer FRESH_TOKEN'
+          ? [200, { ok: 'b-fresh' }]
+          : [401, { error: 'still stale' }];
+      });
+
+    const [respA, respB] = await Promise.all([
+      axiosInstance.get('/race-a'),
+      axiosInstance.get('/race-b'),
+    ]);
+
+    expect(respA.data).toEqual({ ok: 'a-fresh' });
+    expect(respB.data).toEqual({ ok: 'b-fresh' });
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+  });
+
   it('should respect maxRefreshAttempts and retryOnRefreshFail, failing if refresh keeps failing', async () => {
     const refreshFailure = createRetryableRefreshFailure('Refresh error!');
     refreshFn
@@ -582,9 +747,11 @@ describe('TokenRefreshPlugin', () => {
 
     mockAxios.onGet('/server-error').reply(401);
 
-    await expect(axiosInstance.get('/server-error')).rejects.toMatchObject({
-      response: { status: 500 },
-    });
+    const serverErr = await axiosInstance.get('/server-error').catch((e) => e);
+    expect(serverErr).toBeInstanceOf(AxiosError);
+    expect(serverErr.code).toBe('TOKEN_REFRESH_FAILED');
+    expect(serverErr.config?.url).toContain('/server-error');
+    expect((serverErr as Error & { cause?: unknown }).cause).toBeInstanceOf(TokenRefreshFailedError);
     expect(refreshFn).toHaveBeenCalledTimes(2);
   });
 
@@ -736,11 +903,15 @@ describe('TokenRefreshPlugin', () => {
     const requestEjectSpy = jest.spyOn(manager.axiosInstance.interceptors.request, 'eject');
     const responseEjectSpy = jest.spyOn(manager.axiosInstance.interceptors.response, 'eject');
 
+    const requestInterceptorId = (detectorPlugin as any).requestInterceptorId;
+    const interceptorId = (detectorPlugin as any).interceptorId;
+    const responseInterceptorId = (detectorPlugin as any).responseInterceptorId;
+
     detectorPlugin.onBeforeDestroyed(manager);
 
-    expect(requestEjectSpy).toHaveBeenCalledWith((detectorPlugin as any).requestInterceptorId);
-    expect(responseEjectSpy).toHaveBeenCalledWith((detectorPlugin as any).interceptorId);
-    expect(responseEjectSpy).toHaveBeenCalledWith((detectorPlugin as any).responseInterceptorId);
+    expect(requestEjectSpy).toHaveBeenCalledWith(requestInterceptorId);
+    expect(responseEjectSpy).toHaveBeenCalledWith(interceptorId);
+    expect(responseEjectSpy).toHaveBeenCalledWith(responseInterceptorId);
   });
 
   it('should detect custom auth errors in 200 OK responses and refresh token', async () => {
