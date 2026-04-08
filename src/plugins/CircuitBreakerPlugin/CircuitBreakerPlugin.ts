@@ -273,7 +273,8 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   private _requestInterceptorId?: number;
   private _responseInterceptorId?: number;
   private _context!: PluginContext<CircuitBreakerPluginEvents>;
-  private _responseMetrics: Record<string, ResponseTimeMetrics> = {};
+  /** @internal Exposed for test inspection only; not part of the public API. */
+  _responseMetrics: Record<string, ResponseTimeMetrics> = {};
   private readonly _scopeStateCache = new Map<string, CircuitBreakerScopeState>();
   private readonly _knownScopes = new Map<string, ScopeDetails>();
 
@@ -742,8 +743,9 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
 
   /**
    * Tracks response time for adaptive timeout calculation.
+   * @internal Exposed for test inspection only; not part of the public API.
    */
-  private _trackResponseTime(response: AxiosResponse): void {
+  _trackResponseTime(response: AxiosResponse): void {
     if (!response.config.url || !this._options.adaptiveTimeout) {
       return;
     }

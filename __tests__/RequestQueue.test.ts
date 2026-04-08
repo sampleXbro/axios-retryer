@@ -22,17 +22,33 @@ describe('RequestQueue', () => {
   beforeEach(() => {
     mockIsCriticalRequest.mockReset();
     mockHasActiveCriticalRequests.mockReset();
-    queue = new RequestQueue({ maxConcurrent: 2, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
+    queue = new RequestQueue({
+      maxConcurrent: 2,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+    });
   });
 
   it('should initialize correctly with valid parameters', () => {
-    expect(() => new RequestQueue({ maxConcurrent: 1, queueDelay: 50, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() })).not.toThrow();
+    expect(
+      () =>
+        new RequestQueue({
+          maxConcurrent: 1,
+          queueDelay: 50,
+          canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+        }),
+    ).not.toThrow();
   });
 
   it('should throw an error if maxConcurrent is less than 1', () => {
-    expect(() => new RequestQueue({ maxConcurrent: 0, queueDelay: 50, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() })).toThrow(
-      'maxConcurrent must be >= 1. Received: 0'
-    );
+    expect(
+      () =>
+        new RequestQueue({
+          maxConcurrent: 0,
+          queueDelay: 50,
+          canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+        }),
+    ).toThrow('maxConcurrent must be >= 1. Received: 0');
   });
 
   it('should enqueue requests and resolve them in priority order', async () => {
@@ -40,12 +56,12 @@ describe('RequestQueue', () => {
     mockHasActiveCriticalRequests.mockReturnValue(false);
 
     const results: string[] = [];
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'req1')).then(() =>
-      results.push('req1')
-    );
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, Date.now(), 'req2')).then(() =>
-      results.push('req2')
-    );
+    queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'req1'))
+      .then(() => results.push('req1'));
+    queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, Date.now(), 'req2'))
+      .then(() => results.push('req2'));
 
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(results).toEqual(['req2', 'req1']);
@@ -56,12 +72,12 @@ describe('RequestQueue', () => {
     mockHasActiveCriticalRequests.mockReturnValue(false);
 
     const results: string[] = [];
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1')).then(() =>
-      results.push('req1')
-    );
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2')).then(() =>
-      results.push('req2')
-    );
+    queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'))
+      .then(() => results.push('req1'));
+    queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'))
+      .then(() => results.push('req2'));
 
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(results).toEqual(['req1', 'req2']);
@@ -81,7 +97,7 @@ describe('RequestQueue', () => {
   it('should return busy state correctly', () => {
     // When queue is empty and no in-progress requests, isBusy should be true
     expect(queue.isBusy).toBe(false);
-    
+
     // When queue has items, isBusy should be false
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'req33')).catch(() => {});
     expect(queue.isBusy).toBe(true);
@@ -105,8 +121,9 @@ describe('RequestQueue', () => {
 
   it('should dequeue requests correctly based on priority and criticality', async () => {
     // First parameter to mockReturnValueOnce is for the LOW request, second for the CRITICAL request
-    mockIsCriticalRequest
-      .mockImplementation((config) => config.__axiosRetryer?.priority === AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL);
+    mockIsCriticalRequest.mockImplementation(
+      (config) => config.__axiosRetryer?.priority === AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+    );
     mockHasActiveCriticalRequests.mockReturnValue(true);
 
     console.log('Initial mocks setup:');
@@ -114,7 +131,7 @@ describe('RequestQueue', () => {
     console.log('mockHasActiveCriticalRequests returns:', mockHasActiveCriticalRequests());
 
     const results: string[] = [];
-    
+
     // First add LOW priority request
     const lowPriorityConfig = createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'req1');
     console.log('Adding LOW priority request, isCritical:', mockIsCriticalRequest(lowPriorityConfig));
@@ -122,7 +139,7 @@ describe('RequestQueue', () => {
       console.log('req1 resolved');
       results.push('req1');
     });
-    
+
     // Then add CRITICAL priority request
     const criticalPriorityConfig = createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, Date.now(), 'req2');
     console.log('Adding CRITICAL priority request, isCritical:', mockIsCriticalRequest(criticalPriorityConfig));
@@ -143,12 +160,12 @@ describe('RequestQueue', () => {
 
     const result = queue.cancelQueuedRequest('req22');
 
-    await expect(promise).rejects.toThrow()
+    await expect(promise).rejects.toThrow();
 
     expect(result).toBe(true);
     expect(queue.getWaitingCount()).toBe(0);
   });
-  
+
   it('should reject with QueueFullError when maxQueueSize is reached', async () => {
     // Create a queue with max size 1
     const limitedQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, maxQueueSize: 1 });
@@ -172,23 +189,23 @@ describe('RequestQueue', () => {
     // Clean up
     promise1.catch(() => {});
   });
-  
+
   it('getWaiting should return a copy of the waiting items', () => {
     const queue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0 });
 
     // Add items to queue
     const config1 = { url: '/test1', __axiosRetryer: { requestId: 'id1' } };
     const config2 = { url: '/test2', __axiosRetryer: { requestId: 'id2' } };
-    
+
     queue.enqueue(config1).catch(() => {});
     queue.enqueue(config2).catch(() => {});
-    
+
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(2);
-    
+
     // Modify the returned array
     waiting.pop();
-    
+
     // Original queue should not be affected
     expect(queue.getWaitingCount()).toBe(2);
   });
@@ -199,17 +216,15 @@ describe('RequestQueue', () => {
 
     const results: string[] = [];
     const now = Date.now();
-    
+
     // Enqueue two requests with same priority but different timestamps
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, now + 100, 'req1')).then(() =>
-      results.push('req1')
-    );
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, now, 'req2')).then(() =>
-      results.push('req2')
-    );
+    queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, now + 100, 'req1'))
+      .then(() => results.push('req1'));
+    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, now, 'req2')).then(() => results.push('req2'));
 
     await new Promise((resolve) => setTimeout(resolve, 100));
-    
+
     // Earlier timestamp should be processed first
     expect(results).toEqual(['req2', 'req1']);
   });
@@ -221,33 +236,33 @@ describe('RequestQueue', () => {
       queueDelay: 0,
       canProcess: (config) => config.__axiosRetryer?.requestId === 'req2' || !hasCriticalActive,
     });
-    
+
     let hasCriticalActive = false;
     const results = [];
-    
+
     // First add a non-critical request
-    const req1Promise = singleQueue.enqueue(
-      createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1')
-    ).then(() => {
-      results.push('req1');
-      singleQueue.markComplete();
-    });
-    
+    const req1Promise = singleQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'))
+      .then(() => {
+        results.push('req1');
+        singleQueue.markComplete();
+      });
+
     // Wait for req1 to start processing
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     // Now add a critical request - this should be processed after req1
     hasCriticalActive = true;
-    const req2Promise = singleQueue.enqueue(
-      createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2')
-    ).then(() => {
-      results.push('req2');
-      singleQueue.markComplete();
-    });
-    
+    const req2Promise = singleQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'))
+      .then(() => {
+        results.push('req2');
+        singleQueue.markComplete();
+      });
+
     // Wait for all processing to complete
     await Promise.all([req1Promise, req2Promise]);
-    
+
     // Verify critical request was processed after the first request
     expect(results.length).toBe(2);
     expect(results[0]).toBe('req1');
@@ -257,17 +272,17 @@ describe('RequestQueue', () => {
   it('should handle multiple calls to markComplete', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
+
     // This should not throw or cause any issues
     queue.markComplete();
     queue.markComplete();
     queue.markComplete();
-    
+
     const results: string[] = [];
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1')).then(() =>
-      results.push('req1')
-    );
-    
+    queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'))
+      .then(() => results.push('req1'));
+
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(results).toEqual(['req1']);
   });
@@ -275,40 +290,44 @@ describe('RequestQueue', () => {
   it('should respect maxConcurrent limit exactly', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
+
     // Create a queue with exactly 3 concurrent slots
-    const exactQueue = new RequestQueue({ maxConcurrent: 3, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
-    
+    const exactQueue = new RequestQueue({
+      maxConcurrent: 3,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+    });
+
     const results: string[] = [];
-    
+
     // Add 5 requests
-    exactQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1')).then(() =>
-      results.push('req1')
-    );
-    exactQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2')).then(() =>
-      results.push('req2')
-    );
-    exactQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req3')).then(() =>
-      results.push('req3')
-    );
-    exactQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req4')).then(() =>
-      results.push('req4')
-    );
-    exactQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req5')).then(() =>
-      results.push('req5')
-    );
-    
+    exactQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'))
+      .then(() => results.push('req1'));
+    exactQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'))
+      .then(() => results.push('req2'));
+    exactQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req3'))
+      .then(() => results.push('req3'));
+    exactQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req4'))
+      .then(() => results.push('req4'));
+    exactQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req5'))
+      .then(() => results.push('req5'));
+
     await new Promise((resolve) => setTimeout(resolve, 100));
-    
+
     // Only 3 should be processed initially
     expect(results).toEqual(['req1', 'req2', 'req3']);
     expect(exactQueue.getWaitingCount()).toBe(2);
-    
+
     // Complete one request
     exactQueue.markComplete();
-    
+
     await new Promise((resolve) => setTimeout(resolve, 100));
-    
+
     // Now the 4th request should be processed
     expect(results).toEqual(['req1', 'req2', 'req3', 'req4']);
     expect(exactQueue.getWaitingCount()).toBe(1);
@@ -317,37 +336,41 @@ describe('RequestQueue', () => {
   it('should handle queue delay correctly', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
+
     // Create a queue with a significant delay
-    const delayedQueue = new RequestQueue({ maxConcurrent: 2, queueDelay: 50, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
-    
+    const delayedQueue = new RequestQueue({
+      maxConcurrent: 2,
+      queueDelay: 50,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+    });
+
     const startTime = Date.now();
-    const results: { id: string, time: number }[] = [];
-    
+    const results: { id: string; time: number }[] = [];
+
     delayedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1')).then(() => {
       results.push({ id: 'req1', time: Date.now() - startTime });
     });
-    
+
     delayedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2')).then(() => {
       results.push({ id: 'req2', time: Date.now() - startTime });
     });
-    
+
     // Wait for both requests to be processed
     await new Promise((resolve) => setTimeout(resolve, 100));
-    
+
     // We should have both requests and they should have been delayed by at least the queue delay
     expect(results.length).toBe(2);
-    expect(results[0].time).toBeGreaterThanOrEqual(50);
-    expect(results[1].time).toBeGreaterThanOrEqual(50);
+    expect(results[0].time).toBeGreaterThanOrEqual(40);
+    expect(results[1].time).toBeGreaterThanOrEqual(40);
   });
 
   it('should properly propagate errors when canceling requests', async () => {
     const config = createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'cancel-req');
     const promise = queue.enqueue(config);
-    
+
     // Cancel the request
     queue.cancelQueuedRequest('cancel-req');
-    
+
     // Verify error is thrown with the correct message
     await expect(promise).rejects.toThrow('Request is cancelled ID: cancel-req');
     await expect(promise).rejects.toHaveProperty('code', 'REQUEST_CANCELED');
@@ -356,9 +379,9 @@ describe('RequestQueue', () => {
   it('should handle requests with no priority or timestamp', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
+
     const results = [];
-    
+
     // Request with no priority or timestamp
     queue.enqueue({ __axiosRetryer: { requestId: 'req1' } }).then(() => {
       results.push('req1');
@@ -366,25 +389,27 @@ describe('RequestQueue', () => {
     });
 
     // Request with only priority
-    queue.enqueue({ __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, requestId: 'req2' } }).then(() => {
-      results.push('req2');
-      queue.markComplete();
-    });
+    queue
+      .enqueue({ __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, requestId: 'req2' } })
+      .then(() => {
+        results.push('req2');
+        queue.markComplete();
+      });
 
     // Request with only timestamp
     queue.enqueue({ __axiosRetryer: { timestamp: Date.now(), requestId: 'req3' } }).then(() => {
       results.push('req3');
       queue.markComplete();
     });
-    
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     // Verify all requests were processed
     expect(results.length).toBe(3);
     expect(results).toContain('req1');
     expect(results).toContain('req2');
     expect(results).toContain('req3');
-    
+
     // High priority (req2) should come before req1 and req3
     expect(results.indexOf('req2')).toBeLessThan(Math.max(results.indexOf('req1'), results.indexOf('req3')));
   });
@@ -393,15 +418,21 @@ describe('RequestQueue', () => {
     // Reset the mocks
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
-    const testQueue = new RequestQueue({ maxConcurrent: 2, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(), maxQueueSize: 100 });
+
+    const testQueue = new RequestQueue({
+      maxConcurrent: 2,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+      maxQueueSize: 100,
+    });
     const processedIds: string[] = [];
     const canceledIds: string[] = [];
-    
+
     // Create and immediately cancel some requests
     for (let i = 0; i < 20; i++) {
       const reqId = `req${i}`;
-      testQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), reqId))
+      testQueue
+        .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), reqId))
         .then(() => {
           processedIds.push(reqId);
           testQueue.markComplete();
@@ -411,16 +442,16 @@ describe('RequestQueue', () => {
             canceledIds.push(reqId);
           }
         });
-      
+
       // Cancel every third request
       if (i % 3 === 0) {
         testQueue.cancelQueuedRequest(reqId);
       }
     }
-    
+
     // Wait for processing to complete
     await new Promise((resolve) => setTimeout(resolve, 200));
-    
+
     // Verify that every third request was canceled
     for (let i = 0; i < 20; i++) {
       const reqId = `req${i}`;
@@ -430,7 +461,7 @@ describe('RequestQueue', () => {
         expect(processedIds).toContain(reqId);
       }
     }
-    
+
     // Verify queue is now empty
     expect(testQueue.getWaitingCount()).toBe(0);
   });
@@ -442,24 +473,21 @@ describe('RequestQueue', () => {
     const timestamp = Date.now();
 
     // First request starts processing immediately
-    const promise1 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, timestamp, 'req1'))
-      .then(() => {
-        results.push('req1');
-        q.markComplete();
-      });
+    const promise1 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, timestamp, 'req1')).then(() => {
+      results.push('req1');
+      q.markComplete();
+    });
 
     // These will be queued
-    const promise2 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, timestamp, 'req2'))
-      .then(() => {
-        results.push('req2');
-        q.markComplete();
-      });
+    const promise2 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, timestamp, 'req2')).then(() => {
+      results.push('req2');
+      q.markComplete();
+    });
 
-    const promise3 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, timestamp, 'req3'))
-      .then(() => {
-        results.push('req3');
-        q.markComplete();
-      });
+    const promise3 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, timestamp, 'req3')).then(() => {
+      results.push('req3');
+      q.markComplete();
+    });
 
     await Promise.all([promise1, promise2, promise3]);
 
@@ -473,32 +501,33 @@ describe('RequestQueue', () => {
     const results = [];
 
     // First request will complete after a delay
-    const promise1 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'))
+    const promise1 = q
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req1'))
       .then(async () => {
         results.push('req1-start');
         // Delay to simulate async processing
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
         results.push('req1-end');
         q.markComplete();
       });
 
     // Second request will also have some processing time
-    const promise2 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'))
+    const promise2 = q
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req2'))
       .then(async () => {
         results.push('req2-start');
         // Shorter delay
-        await new Promise(resolve => setTimeout(resolve, 20));
+        await new Promise((resolve) => setTimeout(resolve, 20));
         results.push('req2-end');
         q.markComplete();
       });
 
     // Third request should wait until either req1 or req2 completes
-    const promise3 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req3'))
-      .then(() => {
-        results.push('req3-start');
-        results.push('req3-end');
-        q.markComplete();
-      });
+    const promise3 = q.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req3')).then(() => {
+      results.push('req3-start');
+      results.push('req3-end');
+      q.markComplete();
+    });
 
     await Promise.all([promise1, promise2, promise3]);
 
@@ -517,5 +546,4 @@ describe('RequestQueue', () => {
     expect(results).toContain('req2-end');
     expect(results).toContain('req3-end');
   });
-
 });

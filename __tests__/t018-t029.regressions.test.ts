@@ -167,14 +167,12 @@ describe('T-020: CircuitBreakerPlugin._responseMetrics cap', () => {
 
     // Simulate tracking 5 different scope keys (more than cap=3).
     for (let i = 0; i < 5; i++) {
-      // @ts-expect-error accessing private method for test
       plugin._trackResponseTime({
         config: { url: `/scope${i}`, baseURL: 'http://example.com' },
         headers: { 'x-response-time': '100' },
       } as never);
     }
 
-    // @ts-expect-error accessing private field for test
     const keys = Object.keys(plugin._responseMetrics);
     expect(keys.length).toBeLessThanOrEqual(cap);
   });
@@ -191,25 +189,21 @@ describe('T-020: CircuitBreakerPlugin._responseMetrics cap', () => {
       releaseRequestTracking: () => {},
     } as never);
 
-    // @ts-expect-error accessing private method
     plugin._trackResponseTime({
       config: { url: '/first', baseURL: 'http://example.com' },
       headers: { 'x-response-time': '50' },
     } as never);
-    // @ts-expect-error accessing private method
     plugin._trackResponseTime({
       config: { url: '/second', baseURL: 'http://example.com' },
       headers: { 'x-response-time': '50' },
     } as never);
 
     // At cap; adding a third evicts the first.
-    // @ts-expect-error accessing private method
     plugin._trackResponseTime({
       config: { url: '/third', baseURL: 'http://example.com' },
       headers: { 'x-response-time': '50' },
     } as never);
 
-    // @ts-expect-error accessing private field
     const keys = Object.keys(plugin._responseMetrics);
     expect(keys.length).toBe(cap);
     // 'first' should have been evicted (oldest).
@@ -401,13 +395,11 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
   test('currentPercentileMs updates on sample 1 (first entry, no prior value)', () => {
     const plugin = makeAdaptivePlugin();
 
-    // @ts-expect-error accessing private method
     plugin._trackResponseTime({
       config: { url: '/route', baseURL: 'http://ex.com' },
       headers: { 'x-response-time': '200' },
     } as never);
 
-    // @ts-expect-error accessing private field
     const metrics = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>);
     expect(metrics.length).toBeGreaterThan(0);
     expect(metrics[0].currentPercentileMs).toBeGreaterThan(0);
@@ -431,7 +423,6 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
     } as never);
 
     const track = (ms: number) =>
-      // @ts-expect-error accessing private method
       plugin._trackResponseTime({
         config: { url: '/route', baseURL: 'http://ex.com' },
         headers: { 'x-response-time': String(ms) },
@@ -440,7 +431,6 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
     // First sample — always calculates.
     track(100);
 
-    // @ts-expect-error accessing private field
     const afterFirst: number = Object.values(
       plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
     )[0].currentPercentileMs;
@@ -451,7 +441,6 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
       track(9999);
     }
 
-    // @ts-expect-error accessing private field
     const afterNine: number = Object.values(
       plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
     )[0].currentPercentileMs;
@@ -460,7 +449,6 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
     // Sample 10 — triggers recalculation (recalcInterval = 10, 10 % 10 === 0).
     track(9999);
 
-    // @ts-expect-error accessing private field
     const afterTen: number = Object.values(
       plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
     )[0].currentPercentileMs;
@@ -472,14 +460,12 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
 
     // Add 10 uniform samples of 100ms → p95 should be 100.
     for (let i = 0; i < 10; i++) {
-      // @ts-expect-error accessing private method
       plugin._trackResponseTime({
         config: { url: '/stable', baseURL: 'http://ex.com' },
         headers: { 'x-response-time': '100' },
       } as never);
     }
 
-    // @ts-expect-error accessing private field
     const p95: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0]
       .currentPercentileMs;
     expect(p95).toBe(100);
