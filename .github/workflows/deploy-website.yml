@@ -8,6 +8,11 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - 'sandbox/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
       - '.github/workflows/deploy-website.yml'
   workflow_dispatch: {}
 
@@ -29,11 +34,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: website/package-lock.json
-      - name: Install and build
-        run: |
-          npm ci
-          npm run build
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+            sandbox/package-lock.json
+      - name: Build library (sandbox depends on dist)
+        run: npm ci && npm run build
+      - name: Install and build website (embeds sandbox)
+        env:
+          SANDBOX_SKIP_LIB_BUILD: '1'
+        run: npm ci && npm run build
         working-directory: website
       - uses: actions/upload-pages-artifact@v3
         with:

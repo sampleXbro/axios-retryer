@@ -3,9 +3,11 @@
   "type": "module",
   "version": "1.0.0",
   "scripts": {
+    "embed-sandbox": "node ./scripts/embed-sandbox.mjs",
     "dev": "astro dev",
+    "dev:with-playground": "node ./scripts/embed-sandbox.mjs && astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "build": "node ./scripts/embed-sandbox.mjs && astro build",
     "preview": "astro preview",
     "astro": "astro"
   },
