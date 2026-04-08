@@ -14,7 +14,7 @@ export interface RequestInterceptorOptions {
   requestQueue: RequestQueue;
   throwErrorOnCancelRequest: boolean;
   createSilentCancelConfig: (config: AxiosRequestConfig, requestId: string) => AxiosRequestConfig;
-  emitEvent: (event: string, ...args: any[]) => void;
+  emitEvent: (event: string, ...args: unknown[]) => void;
 }
 
 export class RequestInterceptorHandler {
@@ -24,7 +24,7 @@ export class RequestInterceptorHandler {
   private readonly requestQueue: RequestQueue;
   private readonly throwErrorOnCancelRequest: boolean;
   private readonly createSilentCancelConfig: (config: AxiosRequestConfig, requestId: string) => AxiosRequestConfig;
-  private readonly emitEvent: (event: string, ...args: any[]) => void;
+  private readonly emitEvent: (event: string, ...args: unknown[]) => void;
 
   constructor(options: RequestInterceptorOptions) {
     this.logger = options.logger;
@@ -37,7 +37,7 @@ export class RequestInterceptorHandler {
   }
 
   public handleRequest = async (
-    config: InternalAxiosRequestConfig<unknown>
+    config: InternalAxiosRequestConfig<unknown>,
   ): Promise<InternalAxiosRequestConfig<unknown>> => {
     const { requestId, priority, callerAborted } = this.requestLifecycle.beginRequest(config);
 

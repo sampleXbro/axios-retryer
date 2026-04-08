@@ -6,8 +6,13 @@ import { RequestAbortedError } from '../errors/RequestAbortedError';
 import type { DependencyGatekeeper } from '../DependencyGatekeeper';
 import type { RequestLifecycleManager } from '../RequestLifecycleManager';
 import type { RequestQueue } from '../requestQueue';
-import { parseRetryAfterMs, RetryScheduler } from '../RetryScheduler';
-import { assignRequestMetadata, ensureRequestMetadata, getRequestMetadata, setRequestMetadataValue } from '../../utils/requestMetadata';
+import { parseRetryAfterMs, type RetryScheduler } from '../RetryScheduler';
+import {
+  assignRequestMetadata,
+  ensureRequestMetadata,
+  getRequestMetadata,
+  setRequestMetadataValue,
+} from '../../utils/requestMetadata';
 
 export interface ErrorInterceptorOptions {
   axiosInstance: AxiosInstance;
@@ -17,7 +22,7 @@ export interface ErrorInterceptorOptions {
   requestQueue: RequestQueue;
   retryScheduler: RetryScheduler;
   retryStrategy: RetryStrategy;
-  emitEvent: (event: string, ...args: any[]) => void;
+  emitEvent: (event: string, ...args: unknown[]) => void;
   markRetryProcessStart: () => void;
   handleRetryProcessFinish: () => void;
   retries: number;
@@ -61,7 +66,8 @@ export class ErrorInterceptorHandler {
     });
 
     const effectiveMetadata = getRequestMetadata(config)!;
-    const maxRetries = effectiveMetadata.requestRetries !== undefined ? effectiveMetadata.requestRetries : this.options.retries;
+    const maxRetries =
+      effectiveMetadata.requestRetries !== undefined ? effectiveMetadata.requestRetries : this.options.retries;
     const requestMode = effectiveMetadata.requestMode || this.options.mode;
     const attempt = (effectiveMetadata.retryAttempt || 0) + 1;
 
@@ -98,7 +104,11 @@ export class ErrorInterceptorHandler {
     });
 
     const metadata = getRequestMetadata(config);
-    const delay = this.options.retryScheduler.getRetryDelay(config, Number(metadata?.retryAttempt ?? attempt), maxRetries);
+    const delay = this.options.retryScheduler.getRetryDelay(
+      config,
+      Number(metadata?.retryAttempt ?? attempt),
+      maxRetries,
+    );
 
     this.options.logger.debug('Scheduling retry attempt', {
       requestId: metadata?.requestId,
@@ -110,7 +120,7 @@ export class ErrorInterceptorHandler {
 
     const sleepCompleted = await this.options.retryScheduler.waitForRetryDelay(config, delay);
     this.options.emitEvent('onRetryScheduled', delay, config);
-    
+
     if (!sleepCompleted) {
       return this.handleCancelAction(config);
     }

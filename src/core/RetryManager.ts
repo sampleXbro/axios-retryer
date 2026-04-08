@@ -27,7 +27,7 @@ import { RetryManagerDisposer } from './RetryManagerDisposer';
 import { RetryerConfigError } from './errors/RetryerConfigError';
 import { RequestQueue } from './requestQueue';
 import { RetryScheduler } from './RetryScheduler';
-import { assignRequestMetadata,  getRequestMetadata } from '../utils/requestMetadata';
+import { assignRequestMetadata, getRequestMetadata } from '../utils/requestMetadata';
 import { DependencyGatekeeper } from './DependencyGatekeeper';
 import { RequestInterceptorHandler } from './interceptors/RequestInterceptor';
 import { ResponseInterceptorHandler } from './interceptors/ResponseInterceptor';
@@ -59,7 +59,7 @@ const EMPTY_METRICS: AxiosRetryerDetailedMetrics = {
   timerHealth: { activeTimers: 0, activeRetryTimers: 0, healthScore: 0 },
 };
 
-export class RetryManager<TPluginEvents extends object = {}> {
+export class RetryManager<TPluginEvents extends object = Record<never, never>> {
   private readonly _axiosInstance: AxiosInstance;
   private readonly mode: RetryMode;
   private readonly retries: number;
@@ -89,7 +89,7 @@ export class RetryManager<TPluginEvents extends object = {}> {
   private readonly responseInterceptorHandler: ResponseInterceptorHandler;
   private readonly errorInterceptorHandler: ErrorInterceptorHandler;
 
-  constructor(options: RetryManagerOptions<TPluginEvents> = {}) {
+  constructor(options: RetryManagerOptions = {}) {
     this.debug = options.debug ?? DEFAULT_CONFIG.DEBUG;
     this.logger = options.logger ?? new RetryLogger(this.debug);
     this.validateOptions(options);
@@ -144,7 +144,8 @@ export class RetryManager<TPluginEvents extends object = {}> {
       cancelPendingOnDependencyFailure: this.cancelPendingOnDependencyFailure,
       requestQueue: this.requestQueue,
       requestLifecycle: this.requestLifecycle,
-      emitEvent: (event, ...args) => this.triggerAndEmitInternal(event as any, ...args),
+      emitEvent: (event, ...args) =>
+        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
     });
 
     this.requestInterceptorHandler = new RequestInterceptorHandler({
@@ -154,7 +155,8 @@ export class RetryManager<TPluginEvents extends object = {}> {
       requestQueue: this.requestQueue,
       throwErrorOnCancelRequest: this.throwErrorOnCancelRequest,
       createSilentCancelConfig: (c, id) => this.createSilentCancelConfig(c, id),
-      emitEvent: (event, ...args) => this.triggerAndEmitInternal(event as any, ...args),
+      emitEvent: (event, ...args) =>
+        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
     });
 
     this.responseInterceptorHandler = new ResponseInterceptorHandler({
@@ -162,7 +164,8 @@ export class RetryManager<TPluginEvents extends object = {}> {
       requestLifecycle: this.requestLifecycle,
       dependencyGatekeeper: this.dependencyGatekeeper,
       requestQueue: this.requestQueue,
-      emitEvent: (event, ...args) => this.triggerAndEmitInternal(event as any, ...args),
+      emitEvent: (event, ...args) =>
+        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
       handleRetryProcessFinish: this.handleRetryProcessFinish,
     });
 
@@ -174,7 +177,8 @@ export class RetryManager<TPluginEvents extends object = {}> {
       requestQueue: this.requestQueue,
       retryScheduler: this.retryScheduler,
       retryStrategy: this.retryStrategy,
-      emitEvent: (event, ...args) => this.triggerAndEmitInternal(event as any, ...args),
+      emitEvent: (event, ...args) =>
+        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
       markRetryProcessStart: () => {
         if (!this.inRetryProgress) {
           this.logger.debug('Starting retry process');
@@ -204,7 +208,7 @@ export class RetryManager<TPluginEvents extends object = {}> {
     this.logger.debug('RetryManager initialized successfully');
   }
 
-  private validateOptions(options: RetryManagerOptions<TPluginEvents>): void {
+  private validateOptions(options: RetryManagerOptions): void {
     if (options.retries !== undefined && options.retries < 0) {
       this.logger.error('Invalid retries configuration', { retries: options.retries });
       throw new RetryerConfigError('Retries must be a non-negative number', 'retries', options.retries);
@@ -440,47 +444,51 @@ export class RetryManager<TPluginEvents extends object = {}> {
   };
 
   private createPluginContext(): PluginContext<TPluginEvents> {
-    const self = this;
+    const axiosInstance = this._axiosInstance;
     return {
-      get axiosInstance() { return self._axiosInstance; },
-      getLogger: () => self.logger,
-      on<K extends keyof RetryManagerEvents<TPluginEvents>>(
+      get axiosInstance() {
+        return axiosInstance;
+      },
+      getLogger: () => this.logger,
+      on: <K extends keyof RetryManagerEvents<TPluginEvents>>(
         event: K,
         listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
-      ): void {
-        self.eventBus.on(event, listener);
+      ): void => {
+        this.eventBus.on(event, listener);
       },
-      off<K extends keyof RetryManagerEvents<TPluginEvents>>(
+      off: <K extends keyof RetryManagerEvents<TPluginEvents>>(
         event: K,
         listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
-      ): boolean {
-        return self.eventBus.off(event, listener);
+      ): boolean => {
+        return this.eventBus.off(event, listener);
       },
-      emit<K extends keyof RetryManagerEvents<TPluginEvents>>(
+      emit: <K extends keyof RetryManagerEvents<TPluginEvents>>(
         event: K,
         ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
-      ): void {
-        self.eventBus.emit(event, ...args);
+      ): void => {
+        this.eventBus.emit(event, ...args);
       },
-      triggerAndEmit<K extends keyof RetryManagerEvents<TPluginEvents>>(
+      triggerAndEmit: <K extends keyof RetryManagerEvents<TPluginEvents>>(
         event: K,
         ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
-      ): void {
-        self.eventBus.triggerAndEmit(event, ...args);
+      ): void => {
+        this.eventBus.triggerAndEmit(event, ...args);
       },
-      cancelRequest: (id: string) => self.requestLifecycle.cancelRequest(id),
-      cancelAllRequests: () => self.requestLifecycle.cancelAllRequests(),
-      cancelQueuedRequests: () => self.requestLifecycle.cancelQueuedRequests(),
+      cancelRequest: (id: string) => this.requestLifecycle.cancelRequest(id),
+      cancelAllRequests: () => this.requestLifecycle.cancelAllRequests(),
+      cancelQueuedRequests: () => this.requestLifecycle.cancelQueuedRequests(),
       registerQueueGate: (name: string, fn: (req: AxiosRequestConfig) => boolean) =>
-        self.requestQueue.registerProcessingGate(name, fn),
-      unregisterQueueGate: (name: string) => self.requestQueue.unregisterProcessingGate(name),
-      refreshQueue: () => self.requestQueue.refresh(),
-      registerMetricsRecorder: (recorder: MetricsRecorder | null) => { self._metricsRecorder = recorder; },
-      getTimerStats: () => self.retryScheduler.getTimerStats(),
+        this.requestQueue.registerProcessingGate(name, fn),
+      unregisterQueueGate: (name: string) => this.requestQueue.unregisterProcessingGate(name),
+      refreshQueue: () => this.requestQueue.refresh(),
+      registerMetricsRecorder: (recorder: MetricsRecorder | null) => {
+        this._metricsRecorder = recorder;
+      },
+      getTimerStats: () => this.retryScheduler.getTimerStats(),
       releaseRequestTracking: (config: AxiosRequestConfig) => {
-        const release = self.requestLifecycle.release(config);
+        const release = this.requestLifecycle.release(config);
         if (release.released) {
-          self.requestQueue.markComplete();
+          this.requestQueue.markComplete();
         }
       },
     };

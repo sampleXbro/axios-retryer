@@ -1,6 +1,6 @@
 import type { AxiosRequestConfig } from 'axios';
 
-import type { AxiosRetryerRequestPriority, Logger, MetricsRecorder } from '../types';
+import type { AxiosRetryerRequestPriority, Logger } from '../types';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
 import { assignRequestMetadata, getRequestMetadata } from '../utils/requestMetadata';
 import type { RetryScheduler } from './RetryScheduler';
@@ -167,7 +167,7 @@ export class RequestLifecycleManager {
     controller: TrackedRequestController,
     callerSignal: CallerAbortSignal,
   ): void {
-    const abortFromCaller = () => {
+    const abortFromCaller = (): void => {
       controller.abort((callerSignal as AbortSignal & { reason?: unknown }).reason);
       this.options.requestQueue.cancelQueuedRequest(requestId);
       this.options.retryScheduler.cancelRetryTimer(requestId);
@@ -178,10 +178,7 @@ export class RequestLifecycleManager {
       return;
     }
 
-    if (
-      typeof callerSignal.addEventListener !== 'function' ||
-      typeof callerSignal.removeEventListener !== 'function'
-    ) {
+    if (typeof callerSignal.addEventListener !== 'function' || typeof callerSignal.removeEventListener !== 'function') {
       return;
     }
 

@@ -53,31 +53,31 @@ export interface SanitizeOptions {
    * Will be merged with DEFAULT_SENSITIVE_HEADERS
    */
   sensitiveHeaders?: readonly string[];
-  
+
   /**
    * Custom list of sensitive fields to redact in request/response data
    * Will be merged with DEFAULT_SENSITIVE_FIELDS
    */
   sensitiveFields?: readonly string[];
-  
+
   /**
    * Character to use for redaction
    * @default '*'
    */
   redactionChar?: string;
-  
+
   /**
    * Whether to sanitize request bodies
    * @default true
    */
   sanitizeRequestData?: boolean;
-  
+
   /**
    * Whether to sanitize response bodies
    * @default true
    */
   sanitizeResponseData?: boolean;
-  
+
   /**
    * Whether to sanitize URL parameters
    * @default true
@@ -113,7 +113,7 @@ const DEFAULT_OPTIONS: Required<SanitizeOptions> = {
 };
 
 // Create a redaction value once
-const getRedactionValue = (char: string) => char.repeat(8);
+const getRedactionValue = (char: string): string => char.repeat(8);
 
 type LookupCollections = {
   sensitiveFields: string[];
@@ -126,13 +126,7 @@ type LookupCollections = {
 const lookupCache = new Map<string, LookupCollections>();
 
 function normalizeList(values: readonly string[]): string[] {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ).sort();
+  return Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))).sort();
 }
 
 /**
@@ -171,19 +165,19 @@ function isAllowedKey(key: string, allowedFieldsSet: Set<string>): boolean {
  */
 function isSensitiveKey(key: string, sensitiveFieldsSet: Set<string>, sensitiveFields: string[]): boolean {
   const lowerKey = key.toLowerCase();
-  
+
   // Direct match is fastest
   if (sensitiveFieldsSet.has(lowerKey)) {
     return true;
   }
-  
+
   // Check if the key includes any sensitive field
   for (const field of sensitiveFields) {
     if (lowerKey.includes(field)) {
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -198,7 +192,7 @@ export function sanitizeData(
   options: SanitizeOptions = {},
 ): Record<string, unknown> | null | undefined {
   if (!data) return data;
-  
+
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
   const lookups = createLookupCollections(mergedOptions);
   const redactionValue = getRedactionValue(mergedOptions.redactionChar);
@@ -281,16 +275,16 @@ export function sanitizeHeaders(
   options: SanitizeOptions = {},
 ): Record<string, unknown> | null | undefined {
   if (!headers) return headers;
-  
+
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
   const lookups = createLookupCollections(mergedOptions);
-  
+
   const redactionValue = getRedactionValue(mergedOptions.redactionChar);
   const sanitized = { ...headers };
-  
+
   for (const key of Object.keys(sanitized)) {
     const lowerKey = key.toLowerCase();
-    
+
     // Check if the header is sensitive
     if (
       lookups.sensitiveHeadersSet.has(lowerKey) ||
@@ -299,7 +293,7 @@ export function sanitizeHeaders(
       sanitized[key] = redactionValue;
     }
   }
-  
+
   return sanitized;
 }
 
@@ -309,18 +303,15 @@ export function sanitizeHeaders(
  * @param options - Sanitization options
  * @returns Sanitized URL string
  */
-export function sanitizeUrl(
-  url: string | undefined,
-  options: SanitizeOptions = {},
-): string | undefined {
+export function sanitizeUrl(url: string | undefined, options: SanitizeOptions = {}): string | undefined {
   if (!url) return url;
-  
+
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
   if (!mergedOptions.sanitizeUrlParams) return url;
-  
+
   const lookups = createLookupCollections(mergedOptions);
   const redactionValue = getRedactionValue(mergedOptions.redactionChar);
-  
+
   try {
     if (!url.includes('?')) return url;
 
@@ -342,21 +333,21 @@ export function sanitizeUrl(
 
     const params = new URLSearchParams(query);
     let sanitized = false;
-    
+
     const paramKeys = new Set<string>();
     params.forEach((_, key) => {
       paramKeys.add(key);
     });
-    
-    paramKeys.forEach(key => {
+
+    paramKeys.forEach((key) => {
       if (isSensitiveKey(key, lookups.sensitiveFieldsSet, lookups.sensitiveFields)) {
         params.set(key, redactionValue);
         sanitized = true;
       }
     });
-    
+
     return sanitized ? `${base}?${params.toString()}${hash}` : url;
   } catch {
     return url;
   }
-} 
+}

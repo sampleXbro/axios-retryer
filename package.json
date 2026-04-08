@@ -14,8 +14,13 @@
     "build": "rm -rf dist && mkdir -p stats && rollup -c --bundleConfigAsCjs",
     "build:browser": "rm -rf dist/browser && mkdir -p stats && BUILD_BROWSER=true rollup -c --bundleConfigAsCjs",
     "analyze": "open stats/bundle-stats-*.html",
-    "prepare": "npm run build",
+    "prepare": "npm run build && husky",
     "test": "jest --coverage --silent",
+    "lint": "eslint src __tests__",
+    "lint:fix": "eslint src __tests__ --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"__tests__/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"__tests__/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
     "benchmark": "npm run build && node benchmark/run-all-benchmarks.js --profile=standard",
     "benchmark:local": "npm run build && node benchmark/local-mock-server.js --profile=standard",
     "benchmark:stress": "npm run build && node benchmark/stress-testing.js --profile=standard",
@@ -43,6 +48,9 @@
   "author": "sampleX (Serhii Zhabskyi)",
   "license": "MIT",
   "devDependencies": {
+    "@commitlint/cli": "20.5.0",
+    "@commitlint/config-conventional": "20.5.0",
+    "@eslint/js": "10.0.1",
     "@rollup/plugin-commonjs": "^24.0.0",
     "@rollup/plugin-node-resolve": "^15.0.0",
     "@rollup/plugin-terser": "^0.4.4",
@@ -50,14 +58,19 @@
     "@types/node": "22.13.9",
     "axios": "^1.8.3",
     "axios-mock-adapter": "^2.1.0",
+    "eslint": "10.2.0",
+    "eslint-config-prettier": "10.1.8",
+    "husky": "9.1.7",
     "jest": "^29.7.0",
+    "lint-staged": "16.4.0",
     "prettier": "3.4.2",
     "rollup": "^3.0.0",
     "rollup-plugin-dts": "6.4.1",
     "rollup-plugin-typescript2": "^0.34.1",
     "rollup-plugin-visualizer": "^5.12.0",
     "ts-jest": "^29.2.5",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "typescript-eslint": "8.58.1"
   },
   "peerDependencies": {
     "axios": ">=1.7.4"
@@ -118,5 +131,14 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,mjs}": [
+      "prettier --write"
+    ]
   }
 }

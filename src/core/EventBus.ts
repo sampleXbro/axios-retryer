@@ -4,7 +4,7 @@ type HookListeners<TPluginEvents extends object> = {
   [K in keyof RetryManagerEvents<TPluginEvents>]?: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[];
 };
 
-export class EventBus<TPluginEvents extends object = {}> {
+export class EventBus<TPluginEvents extends object = Record<never, never>> {
   private listeners: HookListeners<TPluginEvents> = {};
 
   constructor(private readonly logger: Logger) {}

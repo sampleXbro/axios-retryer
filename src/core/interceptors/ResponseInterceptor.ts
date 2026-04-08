@@ -11,7 +11,7 @@ export interface ResponseInterceptorOptions {
   requestLifecycle: RequestLifecycleManager;
   dependencyGatekeeper: DependencyGatekeeper;
   requestQueue: RequestQueue;
-  emitEvent: (event: string, ...args: any[]) => void;
+  emitEvent: (event: string, ...args: unknown[]) => void;
   handleRetryProcessFinish: () => void;
 }
 
@@ -20,7 +20,7 @@ export class ResponseInterceptorHandler {
   private readonly requestLifecycle: RequestLifecycleManager;
   private readonly dependencyGatekeeper: DependencyGatekeeper;
   private readonly requestQueue: RequestQueue;
-  private readonly emitEvent: (event: string, ...args: any[]) => void;
+  private readonly emitEvent: (event: string, ...args: unknown[]) => void;
   private readonly handleRetryProcessFinish: () => void;
 
   constructor(options: ResponseInterceptorOptions) {

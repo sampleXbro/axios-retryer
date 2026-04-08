@@ -241,18 +241,17 @@ export interface AxiosRetryerRequestSucceededEvent {
   attempts: number;
 }
 
-export type RetryManagerEvents<TPluginEvents extends object = {}> = {
-  [K in keyof CoreRetryEvents | keyof TPluginEvents]:
-    K extends keyof TPluginEvents
-      ? K extends keyof CoreRetryEvents
-        ? CoreRetryEvents[K] & TPluginEvents[K]
-        : TPluginEvents[K]
-      : K extends keyof CoreRetryEvents
-        ? CoreRetryEvents[K]
-        : never;
+export type RetryManagerEvents<TPluginEvents extends object = Record<never, never>> = {
+  [K in keyof CoreRetryEvents | keyof TPluginEvents]: K extends keyof TPluginEvents
+    ? K extends keyof CoreRetryEvents
+      ? CoreRetryEvents[K] & TPluginEvents[K]
+      : TPluginEvents[K]
+    : K extends keyof CoreRetryEvents
+      ? CoreRetryEvents[K]
+      : never;
 };
 
-export interface RetryManagerOptions<TPluginEvents extends object = {}> {
+export interface RetryManagerOptions {
   /**
    * The mode of retrying requests.
    * - 'automatic': Automatically retry requests that meet the retry conditions.
@@ -577,7 +576,7 @@ export interface RequestStore {
  * Provides the plugin-facing view of RetryManager capabilities including
  * plugin-only wiring hooks that are not part of the public manager API.
  */
-export interface PluginContext<TPluginEvents extends object = {}> {
+export interface PluginContext<TPluginEvents extends object = Record<never, never>> {
   /** The Axios instance managed by RetryManager. */
   readonly axiosInstance: AxiosInstance;
   /** Returns the configured logger. */
@@ -637,7 +636,7 @@ export interface PluginContext<TPluginEvents extends object = {}> {
 /**
  * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use} and removed with {@link RetryManager.unuse}
  * */
-export interface RetryPlugin<TPluginEvents extends object = {}> {
+export interface RetryPlugin<TPluginEvents extends object = Record<never, never>> {
   /**
    * Plugin name. Should be unique
    * */

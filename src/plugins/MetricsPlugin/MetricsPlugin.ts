@@ -84,7 +84,7 @@ export class MetricsPlugin implements RetryPlugin<MetricsPluginEvents> {
       this.emitMetricsUpdated();
     });
 
-    context.on('onRequestCancelled', (requestId) => {
+    context.on('onRequestCancelled', (_requestId) => {
       this.collector.recordCancellation(true);
       this.emitMetricsUpdated();
     });
@@ -111,12 +111,12 @@ export class MetricsPlugin implements RetryPlugin<MetricsPluginEvents> {
       this.emitMetricsUpdated();
     });
 
-    context.on('onFailure', (config) => {
+    context.on('onFailure', (_config) => {
       this.collector.recordTerminalFailure(false);
       this.emitMetricsUpdated();
     });
 
-    context.on('onBlockingRequestFailed', (config) => {
+    context.on('onBlockingRequestFailed', (_config) => {
       this.collector.recordTerminalFailure(true);
       this.emitMetricsUpdated();
     });

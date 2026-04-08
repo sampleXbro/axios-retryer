@@ -10,7 +10,7 @@ export interface DependencyGatekeeperOptions {
   cancelPendingOnDependencyFailure: boolean;
   requestQueue: RequestQueue;
   requestLifecycle: RequestLifecycleManager;
-  emitEvent: (event: string, ...args: any[]) => void;
+  emitEvent: (event: string, ...args: unknown[]) => void;
 }
 
 export class DependencyGatekeeper {
@@ -19,7 +19,7 @@ export class DependencyGatekeeper {
   private readonly cancelPendingOnDependencyFailure: boolean;
   private readonly requestQueue: RequestQueue;
   private readonly requestLifecycle: RequestLifecycleManager;
-  private readonly emitEvent: (event: string, ...args: any[]) => void;
+  private readonly emitEvent: (event: string, ...args: unknown[]) => void;
 
   constructor(options: DependencyGatekeeperOptions) {
     this.blockingPriorityThreshold = options.blockingPriorityThreshold;
@@ -29,8 +29,9 @@ export class DependencyGatekeeper {
     this.emitEvent = options.emitEvent;
 
     if (this.blockingPriorityThreshold !== undefined) {
-      this.requestQueue.registerProcessingGate('__blocking', (cfg) =>
-        this.blockingRequestIds.size === 0 || this.isBlockingRequest(cfg),
+      this.requestQueue.registerProcessingGate(
+        '__blocking',
+        (cfg) => this.blockingRequestIds.size === 0 || this.isBlockingRequest(cfg),
       );
     }
   }
@@ -51,10 +52,7 @@ export class DependencyGatekeeper {
     }
   }
 
-  public finishBlockingRequest(
-    config: AxiosRequestConfig,
-    outcome: 'success' | 'failure' | 'cancel',
-  ): void {
+  public finishBlockingRequest(config: AxiosRequestConfig, outcome: 'success' | 'failure' | 'cancel'): void {
     const requestId = getRequestMetadata(config)?.requestId;
     if (!requestId) return;
 

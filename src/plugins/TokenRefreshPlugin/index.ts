@@ -7,7 +7,6 @@ export { TokenRefreshTimeoutError } from './TokenRefreshTimeoutError';
 export type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
 
 import { TokenRefreshPlugin } from './TokenRefreshPlugin';
-import { TokenRefreshAbortError } from './TokenRefreshAbortError';
 import type { TokenRefreshHandler, TokenRefreshPluginOptions } from './types';
 
 /**
@@ -29,18 +28,18 @@ import type { TokenRefreshHandler, TokenRefreshPluginOptions } from './types';
  *     const { data } = await axiosInstance.post('/auth/refresh', { refreshToken });
  *     return { token: data.accessToken };
  *   },
- *   { 
+ *   {
  *     authHeaderName: 'Authorization',
  *     tokenPrefix: 'Bearer '
  *   }
  * );
- * 
+ *
  * manager.use(tokenRefresher);
  * ```
  */
 export function createTokenRefreshPlugin(
   refreshToken: TokenRefreshHandler,
-  options?: TokenRefreshPluginOptions
+  options?: TokenRefreshPluginOptions,
 ): TokenRefreshPlugin {
   return new TokenRefreshPlugin(refreshToken, options);
 }
