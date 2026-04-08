@@ -16,11 +16,14 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': [
         'error',
         {
+          args: 'all',
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_',
           caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
         },
       ],
+      'no-unused-private-class-members': 'error',
       '@typescript-eslint/explicit-function-return-type': [
         'warn',
         { allowExpressions: true, allowTypedFunctionExpressions: true },
