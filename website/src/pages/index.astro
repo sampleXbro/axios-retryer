@@ -3,7 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import '../styles/global.css';
 import CodeBlock from '../components/CodeBlock.astro';
 import { withBase } from '../utils/baseUrl';
-const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\nconst retryer = createRetryer({\n  retries: 3,\n  maxConcurrentRequests: 10,\n});\n\nretryer.use(createTokenRefreshPlugin(async (axios) => {\n  const { data } = await axios.post('/auth/refresh');\n  return { token: data.accessToken };\n}));\n\nretryer.use(createCircuitBreaker({\n  failureThreshold: 5,\n  openTimeout: 30_000,\n}));\n\n// Use exactly like Axios\nconst { data } = await retryer.axiosInstance.get('/api/users');";
+const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createCircuitBreaker } from 'axios-retryer/plugins/CircuitBreakerPlugin';\n\n// Chain .use() so TypeScript merges plugin events on `retryer`\nconst retryer = createRetryer({\n  retries: 3,\n  maxConcurrentRequests: 10,\n})\n  .use(\n    createTokenRefreshPlugin(async (axios) => {\n      const { data } = await axios.post('/auth/refresh');\n      return { token: data.accessToken };\n    }),\n  )\n  .use(\n    createCircuitBreaker({\n      failureThreshold: 5,\n      openTimeout: 30_000,\n    }),\n  );\n\n// Use exactly like Axios\nconst { data } = await retryer.axiosInstance.get('/api/users');";
 ---
 <BaseLayout
   title="axios-retryer — Resilient Axios Retry Library"
@@ -171,6 +171,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
   </a>
   <nav class="header-nav">
     <a href={withBase('/docs')}>Docs</a>
+    <a href={withBase('/sandbox')}>Sandbox</a>
     <a href={withBase('/docs/plugins')}>Plugins</a>
     <a href={withBase('/guides/production')}>Guides</a>
     <a href="https://bundlephobia.com/package/axios-retryer" target="_blank" rel="noopener">Bundle size ↗</a>
@@ -417,6 +418,7 @@ const _shikiCode0 = "import { createRetryer } from 'axios-retryer';\nimport { cr
 <footer class="site-footer">
   <div class="footer-links">
     <a href={withBase('/docs')}>Documentation</a>
+    <a href={withBase('/sandbox')}>Sandbox</a>
     <a href={withBase('/docs/plugins')}>Plugins</a>
     <a href={withBase('/guides/migration')}>Migration</a>
     <a href="https://github.com/sampleXbro/axios-retryer" target="_blank" rel="noopener">GitHub</a>

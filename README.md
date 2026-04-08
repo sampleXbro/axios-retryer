@@ -74,7 +74,7 @@ const retryer = createRetryer({
 const { data } = await retryer.axiosInstance.get('/api/users');
 ```
 
-[![Edit axios-retryer demo on CodeSandbox](https://img.shields.io/badge/Open_demo-CodeSandbox-blue?logo=codesandbox)](https://codesandbox.io/p/sandbox/axios-retryer-demo-fppdc4)
+**Try it:** [Interactive sandbox](https://samplexbro.github.io/axios-retryer/sandbox) (browser, mocked HTTP)
 
 ---
 

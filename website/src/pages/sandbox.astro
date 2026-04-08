@@ -1,0 +1,63 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { withBase } from '../utils/baseUrl';
+
+const playgroundUrl = withBase('/playground/index.html');
+---
+<DocsLayout
+  title="Interactive sandbox"
+  description="Try axios-retryer in the browser with mocked HTTP: core retries, queues, blocking requests, and plugins — no backend required."
+  section="Sandbox"
+>
+  <h1 class="page-title">Interactive sandbox</h1>
+  <br/>
+  <p class="page-lead">
+    Use this page to try axios-retryer without installing anything or running a server. Requests are answered by a mock adapter, so you can safely trigger failures, retries, queue limits, circuit breaker behavior, caching, token refresh flows, and more while watching what the library does.
+  </p>
+  <br/>
+  <p class="sandbox-howto">
+    <strong>How to use it:</strong> pick a topic in the sandbox sidebar (core behavior or a specific plugin). Run the scenarios or use the action buttons in each panel, then read the live log — rows are color-coded by kind (HTTP, core events, plugin events, results). For a larger layout, <a href={playgroundUrl} target="_blank" rel="noopener noreferrer">open the sandbox in a new tab</a>.
+  </p>
+  <div class="sandbox-frame-wrap">
+    <iframe
+      class="sandbox-frame"
+      title="axios-retryer interactive sandbox"
+      src={playgroundUrl}
+      loading="lazy"
+    />
+  </div>
+</DocsLayout>
+
+<style>
+  .sandbox-howto {
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--text-muted);
+    margin: -1.25rem 0 1.25rem;
+  }
+  .sandbox-howto a {
+    color: var(--accent);
+  }
+  .sandbox-frame-wrap {
+    margin: 0 -0.25rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+    min-height: min(85vh, 920px);
+  }
+  .sandbox-frame {
+    display: block;
+    width: 100%;
+    height: min(85vh, 920px);
+    border: 0;
+    background: var(--bg);
+  }
+  @media (max-width: 900px) {
+    .sandbox-frame-wrap,
+    .sandbox-frame {
+      min-height: 70vh;
+      height: 70vh;
+    }
+  }
+</style>

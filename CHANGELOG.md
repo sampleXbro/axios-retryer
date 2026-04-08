@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## 2.0.2 - 07.04.2026
+## 2.0.4 - 08.04.2026
+
+### 📚 Documentation
+- **Interactive sandbox on the docs site:** `/sandbox` page (shared docs sidebar + top bar) embeds the browser playground in an iframe; static bundle is served from `/playground/` so Astro’s `/sandbox/index.html` remains the docs page.
+- **Website build & repo layout:** `website/site-base.mjs` centralizes the Pages `base` for both Astro and the Vite embed. `website/scripts/embed-sandbox.mjs` builds the library, runs `npm ci` + `vite build` in `sandbox/` with `SANDBOX_VITE_BASE`, and copies `sandbox/dist` → `website/public/playground/`. `website` scripts: `build` = embed + `astro build`; `embed-sandbox`; `dev:with-playground` = embed then `astro dev`. `sandbox/vite.config.ts` uses `SANDBOX_VITE_BASE` when set, else `/` for local `sandbox` dev. Sidebar nav (“Sandbox” under Getting Started) and the marketing homepage link to `/sandbox`.
+- **CI & gitignore:** Deploy workflow runs root `npm ci && npm run build`, then website `npm ci && SANDBOX_SKIP_LIB_BUILD=1 npm run build`; path filters include `sandbox/**` and library roots; npm cache uses root + website + sandbox lockfiles. `website/.gitignore` lists `public/playground/`. Root `.gitignore` no longer ignores `sandbox/` so the playground sources are tracked.
+- **Sandbox page copy:** explains what the in-browser playground is for and how to use it (sidebar, scenarios, color-coded log, open in new tab).
+- **CodeSandbox removed from docs:** Quick Start “Try it live” links to the on-site sandbox; README uses a “Try it” link to the hosted sandbox instead of the CodeSandbox badge; dropped remaining CodeSandbox mentions (including the `sandbox/src/main.ts` file-dependency note).
 
 ### 🐛 Bug Fixes
 - **Per-request `backoffType: STATIC` ignored after the first retry.** `AXIOS_RETRYER_BACKOFF_TYPES.STATIC` is numeric `0`; `getDelay` used `backoffType || this.backoffType`, so the override was treated as missing and the manager default (e.g. exponential) was used from the second retry onward. `getDelay` now uses nullish coalescing (`??`) so `0` is honored.

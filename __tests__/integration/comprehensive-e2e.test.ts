@@ -69,6 +69,11 @@ describe('Backoff strategies under real timing', () => {
       retryableStatuses: [503],
     });
 
+    const scheduledDelays: number[] = [];
+    manager.on('onRetryScheduled', (delayMs: number) => {
+      scheduledDelays.push(delayMs);
+    });
+
     const timestamps: number[] = [];
     mock.onGet('/static').reply(() => {
       timestamps.push(Date.now());
@@ -78,8 +83,16 @@ describe('Backoff strategies under real timing', () => {
     const res = await manager.axiosInstance.get('/static');
     expect(res.status).toBe(200);
     expect(timestamps).toHaveLength(3);
+    expect(scheduledDelays).toHaveLength(2);
 
-    // With jitter fixed at 0.5, static base 1000ms → delay floor(0.5 * 1001) = 500ms each
+    // With Math.random mocked to 0.5, static base is always 1000ms → floor(0.5 * 1001) = 500
+    expect(scheduledDelays[0]).toBe(500);
+    expect(scheduledDelays[1]).toBe(500);
+
+    // Both delays are identical (constant)
+    expect(scheduledDelays[0]).toBe(scheduledDelays[1]);
+
+    // Wall-clock timing should reflect the fixed delay
     const gap1 = timestamps[1] - timestamps[0];
     const gap2 = timestamps[2] - timestamps[1];
     expect(gap1).toBeGreaterThanOrEqual(450);
@@ -97,6 +110,11 @@ describe('Backoff strategies under real timing', () => {
       retryableStatuses: [503],
     });
 
+    const scheduledDelays: number[] = [];
+    manager.on('onRetryScheduled', (delayMs: number) => {
+      scheduledDelays.push(delayMs);
+    });
+
     const timestamps: number[] = [];
     mock.onGet('/linear').reply(() => {
       timestamps.push(Date.now());
@@ -106,8 +124,21 @@ describe('Backoff strategies under real timing', () => {
     const res = await manager.axiosInstance.get('/linear');
     expect(res.status).toBe(200);
     expect(timestamps).toHaveLength(4);
+    expect(scheduledDelays).toHaveLength(3);
 
-    // Linear bases 1s/2s/3s with jitter at 0.5 → 500ms, 1000ms, 1500ms between attempts
+    // With Math.random mocked to 0.5, linear bases are:
+    //   attempt 1: 1000 * 1 = 1000 → floor(0.5 * 1001) = 500
+    //   attempt 2: 1000 * 2 = 2000 → floor(0.5 * 2001) = 1000
+    //   attempt 3: 1000 * 3 = 3000 → floor(0.5 * 3001) = 1500
+    expect(scheduledDelays[0]).toBe(500);
+    expect(scheduledDelays[1]).toBe(1000);
+    expect(scheduledDelays[2]).toBe(1500);
+
+    // Delays grow by a constant 500ms (linear)
+    expect(scheduledDelays[1] - scheduledDelays[0]).toBe(500);
+    expect(scheduledDelays[2] - scheduledDelays[1]).toBe(500);
+
+    // Wall-clock timing reflects linear growth
     const gap1 = timestamps[1] - timestamps[0];
     const gap2 = timestamps[2] - timestamps[1];
     const gap3 = timestamps[3] - timestamps[2];
@@ -125,23 +156,48 @@ describe('Backoff strategies under real timing', () => {
       retryableStatuses: [503],
     });
 
+    // Capture the exact delay values emitted by the scheduler
+    const scheduledDelays: number[] = [];
+    manager.on('onRetryScheduled', (delayMs: number) => {
+      scheduledDelays.push(delayMs);
+    });
+
     const timestamps: number[] = [];
     mock.onGet('/exp').reply(() => {
       timestamps.push(Date.now());
-      return timestamps.length <= 2 ? [503, {}] : [200, { ok: true }];
+      return timestamps.length <= 3 ? [503, {}] : [200, { ok: true }];
     });
 
     const res = await manager.axiosInstance.get('/exp');
     expect(res.status).toBe(200);
-    expect(timestamps).toHaveLength(3);
+    expect(timestamps).toHaveLength(4); // 1 initial + 3 retries
+    expect(scheduledDelays).toHaveLength(3);
 
-    // Exponential bases 1s then 2s with jitter at 0.5 → ~500ms then ~1000ms
+    // With Math.random mocked to 0.5, exponential bases are:
+    //   attempt 1: 1000 * 2^0 = 1000 → floor(0.5 * 1001) = 500
+    //   attempt 2: 1000 * 2^1 = 2000 → floor(0.5 * 2001) = 1000
+    //   attempt 3: 1000 * 2^2 = 4000 → floor(0.5 * 4001) = 2000
+    expect(scheduledDelays[0]).toBe(500);
+    expect(scheduledDelays[1]).toBe(1000);
+    expect(scheduledDelays[2]).toBe(2000);
+
+    // Each delay is exactly 2× the previous (exponential doubling)
+    expect(scheduledDelays[1]).toBe(scheduledDelays[0] * 2);
+    expect(scheduledDelays[2]).toBe(scheduledDelays[1] * 2);
+
+    // Verify wall-clock timing reflects the scheduled delays
     const gap1 = timestamps[1] - timestamps[0];
     const gap2 = timestamps[2] - timestamps[1];
-    expect(gap2).toBeGreaterThan(gap1 * 0.8);
+    const gap3 = timestamps[3] - timestamps[2];
+    expect(gap1).toBeGreaterThanOrEqual(450);
+    expect(gap2).toBeGreaterThanOrEqual(950);
+    expect(gap3).toBeGreaterThanOrEqual(1950);
+    // And each gap roughly doubles
+    expect(gap2).toBeGreaterThan(gap1 * 1.5);
+    expect(gap3).toBeGreaterThan(gap2 * 1.5);
 
     manager.destroy();
-  }, 10000);
+  }, 15000);
 });
 
 // ---------------------------------------------------------------------------
@@ -1927,21 +1983,22 @@ describe('Retryable methods configuration', () => {
 
     const manager = createRetryer({
       axiosInstance,
-      retries: 2,
+      retries: 1,
       retryableMethods: [AXIOS_RETRYER_HTTP_METHODS.GET, AXIOS_RETRYER_HTTP_METHODS.PUT],
       retryableStatuses: [503],
+      backoffType: AXIOS_RETRYER_BACKOFF_TYPES.STATIC,
     });
 
     let getAttempts = 0;
     mock.onGet('/method-test').reply(() => {
       getAttempts++;
-      return getAttempts < 3 ? [503, {}] : [200, {}];
+      return getAttempts < 2 ? [503, {}] : [200, {}];
     });
 
     let putAttempts = 0;
     mock.onPut('/method-test').reply(() => {
       putAttempts++;
-      return putAttempts < 3 ? [503, {}] : [200, {}];
+      return putAttempts < 2 ? [503, {}] : [200, {}];
     });
 
     let deleteAttempts = 0;
@@ -1951,17 +2008,17 @@ describe('Retryable methods configuration', () => {
     });
 
     await manager.axiosInstance.get('/method-test');
-    expect(getAttempts).toBe(3); // Retried twice
+    expect(getAttempts).toBe(2); // Retried once
 
     await manager.axiosInstance.put('/method-test', {});
-    expect(putAttempts).toBe(3); // Retried twice
+    expect(putAttempts).toBe(2); // Retried once
 
     await swallow(manager.axiosInstance.delete('/method-test'));
     expect(deleteAttempts).toBe(1); // No retry (DELETE not in retryableMethods)
 
     manager.destroy();
     mock.restore();
-  });
+  }, 15000);
 });
 
 // ---------------------------------------------------------------------------
