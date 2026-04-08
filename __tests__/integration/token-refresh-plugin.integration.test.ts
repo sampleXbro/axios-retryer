@@ -1,4 +1,4 @@
-import axios, { AxiosHeaders, AxiosInstance, AxiosRequestConfig } from 'axios';
+import axios, { type AxiosHeaders, type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 import { RetryManager } from '../../src';
@@ -240,17 +240,20 @@ describe('TokenRefreshPlugin integration', () => {
     });
 
     retryManager.use(
-      new TokenRefreshPlugin(async (refreshAxios) => {
-        refreshCalls++;
-        const response = await refreshAxios.post('/auth/refresh');
-        return { token: response.data.token };
-      }, {
-        authHeaderName: 'Authorization',
-        tokenPrefix: 'Bearer ',
-        refreshStatusCodes: [401],
-        retryOnRefreshFail: false,
-        maxRefreshAttempts: 1,
-      }),
+      new TokenRefreshPlugin(
+        async (refreshAxios) => {
+          refreshCalls++;
+          const response = await refreshAxios.post('/auth/refresh');
+          return { token: response.data.token };
+        },
+        {
+          authHeaderName: 'Authorization',
+          tokenPrefix: 'Bearer ',
+          refreshStatusCodes: [401],
+          retryOnRefreshFail: false,
+          maxRefreshAttempts: 1,
+        },
+      ),
     );
 
     const accountRequest = retryManager.axiosInstance.get('/account', {
@@ -392,9 +395,9 @@ describe('TokenRefreshPlugin integration', () => {
       });
 
       // First request: 401 → refresh fails → stored by ManualRetryPlugin
-      await expect(
-        retryManager.axiosInstance.get('/protected-manual-retry-after-refresh-fail'),
-      ).rejects.toBeInstanceOf(Error);
+      await expect(retryManager.axiosInstance.get('/protected-manual-retry-after-refresh-fail')).rejects.toBeInstanceOf(
+        Error,
+      );
       expect(manualRetry.getStoredRequests()).toHaveLength(1);
       expect(refreshCallCount).toBe(1);
 
@@ -451,9 +454,7 @@ describe('TokenRefreshPlugin integration', () => {
         return auth === 'Bearer fresh-token' ? [200, { ok: true }] : [401];
       });
 
-      await expect(
-        retryManager.axiosInstance.get('/protected-neutralized-replay'),
-      ).rejects.toBeInstanceOf(Error);
+      await expect(retryManager.axiosInstance.get('/protected-neutralized-replay')).rejects.toBeInstanceOf(Error);
       expect(manualRetry.getStoredRequests()).toHaveLength(1);
       expect(refreshCallCount).toBe(1);
       expect(protectedHits).toBe(1);
@@ -541,9 +542,7 @@ describe('TokenRefreshPlugin integration', () => {
         return auth === 'Bearer fresh-token' ? [200, { ok: true }] : [401];
       });
 
-      await expect(
-        retryManager.axiosInstance.get('/protected-manual-replay-same-token'),
-      ).rejects.toBeInstanceOf(Error);
+      await expect(retryManager.axiosInstance.get('/protected-manual-replay-same-token')).rejects.toBeInstanceOf(Error);
       expect(manualRetry.getStoredRequests()).toHaveLength(1);
       expect(refreshCallCount).toBe(1);
 

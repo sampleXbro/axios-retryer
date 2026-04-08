@@ -7,11 +7,7 @@ import { RetryScheduler, parseRetryAfterMs } from '../src/core/RetryScheduler';
 import { RetryLogger } from '../src/services/logger';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES } from '../src/types';
 import { CachingPlugin } from '../src/plugins/CachingPlugin';
-import {
-  CircuitBreakerPlugin,
-  CIRCUIT_BREAKER_STATES,
-  CircuitBreakerState,
-} from '../src/plugins/CircuitBreakerPlugin';
+import { CircuitBreakerPlugin, CIRCUIT_BREAKER_STATES, CircuitBreakerState } from '../src/plugins/CircuitBreakerPlugin';
 import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
 import { TokenRefreshPlugin } from '../src/plugins/TokenRefreshPlugin';
 import { InMemoryRequestStore } from '../src/store/InMemoryRequestStore';
@@ -42,14 +38,11 @@ describe('Targeted Coverage Regressions', () => {
     });
 
     test('cancels retry delays and reports timer state', async () => {
-      const scheduler = new RetryScheduler(
-        new RetryLogger(true),
-        {
-          getDelay: () => 50,
-          getIsRetryable: () => true,
-          shouldRetry: () => true,
-        },
-      );
+      const scheduler = new RetryScheduler(new RetryLogger(true), {
+        getDelay: () => 50,
+        getIsRetryable: () => true,
+        shouldRetry: () => true,
+      });
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
       const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
 
@@ -74,14 +67,11 @@ describe('Targeted Coverage Regressions', () => {
     });
 
     test('completes retry waits and cancels all active retry timers', async () => {
-      const scheduler = new RetryScheduler(
-        new RetryLogger(true),
-        {
-          getDelay: () => 5,
-          getIsRetryable: () => true,
-          shouldRetry: () => true,
-        },
-      );
+      const scheduler = new RetryScheduler(new RetryLogger(true), {
+        getDelay: () => 5,
+        getIsRetryable: () => true,
+        shouldRetry: () => true,
+      });
       const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
 
       const completedConfig = {};
@@ -193,8 +183,6 @@ describe('Targeted Coverage Regressions', () => {
       expect(() => new RetryManager(options)).toThrow(message);
     });
 
-
-
     test('returns null when a retry delay is cancelled and throwing is disabled', async () => {
       const manager = trackManager(new RetryManager({ throwErrorOnCancelRequest: false }));
       jest.spyOn(manager['retryScheduler'], 'waitForRetryDelay').mockResolvedValue(false);
@@ -221,12 +209,16 @@ describe('Targeted Coverage Regressions', () => {
         timestamp: Date.now(),
       });
 
-      await expect((manager as any).errorInterceptorHandler['scheduleRetry'](config, 1, 3, true)).rejects.toThrow('Request aborted. ID: queue-cancelled');
+      await expect((manager as any).errorInterceptorHandler['scheduleRetry'](config, 1, 3, true)).rejects.toThrow(
+        'Request aborted. ID: queue-cancelled',
+      );
     });
 
     test('auto-retries with retry-after headers through the scheduler path', async () => {
       const manager = trackManager(new RetryManager());
-      const scheduleSpy = jest.spyOn((manager as any).errorInterceptorHandler, 'scheduleRetry' as never).mockResolvedValue({ status: 200 } as never);
+      const scheduleSpy = jest
+        .spyOn((manager as any).errorInterceptorHandler, 'scheduleRetry' as never)
+        .mockResolvedValue({ status: 200 } as never);
       (manager as any).errorInterceptorHandler['options'].retryStrategy = {
         getDelay: () => 100,
         getIsRetryable: () => true,
@@ -254,10 +246,12 @@ describe('Targeted Coverage Regressions', () => {
     });
 
     test('handles terminal critical offline failures without throwing when configured', async () => {
-      const manager = trackManager(new RetryManager({
-        throwErrorOnFailedRetries: false,
-        blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
-      }));
+      const manager = trackManager(
+        new RetryManager({
+          throwErrorOnFailedRetries: false,
+          blockingPriorityThreshold: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH,
+        }),
+      );
       const internetListener = jest.fn();
       const blockingListener = jest.fn();
 
@@ -378,7 +372,9 @@ describe('Targeted Coverage Regressions', () => {
       const manager = trackManager(new RetryManager());
       const abortController = new AbortController();
       manager['requestLifecycle']['activeRequests'].set('active', abortController);
-      const cancelAllRetryTimersSpy = jest.spyOn(manager['retryScheduler'], 'cancelAllRetryTimers').mockImplementation();
+      const cancelAllRetryTimersSpy = jest
+        .spyOn(manager['retryScheduler'], 'cancelAllRetryTimers')
+        .mockImplementation();
 
       manager.cancelAllRequests();
 
@@ -389,10 +385,14 @@ describe('Targeted Coverage Regressions', () => {
 
   describe('CircuitBreakerPlugin', () => {
     test('validates options and clamps success threshold to half-open max', () => {
-      expect(() => new CircuitBreakerPlugin({ failureThreshold: 0 })).toThrow('failureThreshold must be a positive integer');
+      expect(() => new CircuitBreakerPlugin({ failureThreshold: 0 })).toThrow(
+        'failureThreshold must be a positive integer',
+      );
       expect(() => new CircuitBreakerPlugin({ openTimeout: -1 })).toThrow('openTimeout must be a non-negative integer');
       expect(() => new CircuitBreakerPlugin({ halfOpenMax: 0 })).toThrow('halfOpenMax must be a positive integer');
-      expect(() => new CircuitBreakerPlugin({ successThreshold: 0 })).toThrow('successThreshold must be a positive integer');
+      expect(() => new CircuitBreakerPlugin({ successThreshold: 0 })).toThrow(
+        'successThreshold must be a positive integer',
+      );
 
       const plugin = new CircuitBreakerPlugin({ halfOpenMax: 1, successThreshold: 3 });
       expect(plugin['_options'].successThreshold).toBe(1);
@@ -504,9 +504,7 @@ describe('Targeted Coverage Regressions', () => {
         clear: jest.fn(),
         delete: jest.fn(),
         entries: jest.fn().mockResolvedValue([]),
-        get: jest.fn()
-          .mockRejectedValueOnce(new Error('storage-read-failed'))
-          .mockResolvedValue(undefined),
+        get: jest.fn().mockRejectedValueOnce(new Error('storage-read-failed')).mockResolvedValue(undefined),
         set: jest.fn(),
       };
       const plugin = new CachingPlugin({ storage });
@@ -543,9 +541,7 @@ describe('Targeted Coverage Regressions', () => {
         delete: jest.fn().mockImplementation(async (key) => {
           storageMap.delete(key);
         }),
-        entries: jest.fn().mockImplementation(async () =>
-          Array.from(storageMap, ([key, value]) => ({ key, value })),
-        ),
+        entries: jest.fn().mockImplementation(async () => Array.from(storageMap, ([key, value]) => ({ key, value }))),
         get: jest.fn().mockImplementation(async (key) => storageMap.get(key)),
         set: jest.fn().mockImplementation(async (key, value) => {
           storageMap.set(key, value);
@@ -562,7 +558,7 @@ describe('Targeted Coverage Regressions', () => {
 
       const passthroughConfig = { url: '/passthrough', method: 'get' };
       expect(await plugin['handleRequest'](passthroughConfig)).toBe(passthroughConfig);
-      expect(() => plugin['generateCacheKey']({ method: 'get' })).toThrow('URL is required for cache key generation');
+      expect(() => plugin['buildCacheKey']({ method: 'get' })).toThrow('URL is required for cache key generation');
 
       const response = {
         config: { url: '/users/1', method: 'get' },
@@ -584,9 +580,9 @@ describe('Targeted Coverage Regressions', () => {
 
   describe('TokenRefreshPlugin', () => {
     test('validates constructor options and short-circuits non-refreshable errors', async () => {
-      expect(
-        () => new TokenRefreshPlugin(async () => ({ token: 'fresh' }), { maxRefreshAttempts: 0 }),
-      ).toThrow('maxRefreshAttempts must be a positive integer');
+      expect(() => new TokenRefreshPlugin(async () => ({ token: 'fresh' }), { maxRefreshAttempts: 0 })).toThrow(
+        'maxRefreshAttempts must be a positive integer',
+      );
 
       const plugin = new TokenRefreshPlugin(async () => ({ token: 'fresh' }), {
         refreshStatusCodes: [401],
@@ -599,7 +595,9 @@ describe('Targeted Coverage Regressions', () => {
 
       const refreshRequest = {};
       assignRequestMetadata(refreshRequest, { isRetryRefreshRequest: true });
-      await expect(plugin['handleResponseError'](new AxiosError('refresh', 'ERR', refreshRequest))).rejects.toMatchObject({
+      await expect(
+        plugin['handleResponseError'](new AxiosError('refresh', 'ERR', refreshRequest)),
+      ).rejects.toMatchObject({
         message: 'refresh',
       });
 

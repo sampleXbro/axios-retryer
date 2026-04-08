@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { createRetryer, RetryManager, type PluginContext } from '../../src';
 
@@ -30,11 +30,13 @@ describe('Plugin Integration Tests', () => {
       // Import the actual TokenRefreshPlugin
       const { TokenRefreshPlugin } = await import('../../src/plugins/TokenRefreshPlugin');
 
-      const retryer = trackRetryer(new RetryManager({
-        axiosInstance,
-        retries: 2,
-        debug: false
-      }));
+      const retryer = trackRetryer(
+        new RetryManager({
+          axiosInstance,
+          retries: 2,
+          debug: false,
+        }),
+      );
 
       let refreshCalls = 0;
       const tokenRefreshPlugin = new TokenRefreshPlugin(
@@ -42,20 +44,22 @@ describe('Plugin Integration Tests', () => {
           // Use the main axiosInstance (with mock adapter) for refresh calls in tests.
           // In production, the sandboxed _axiosInst would call a real auth server.
           refreshCalls++;
-          const response = await axiosInstance.post('/auth/refresh', {}, { __axiosRetryer: { isRetryRefreshRequest: true } } as any);
+          const response = await axiosInstance.post('/auth/refresh', {}, {
+            __axiosRetryer: { isRetryRefreshRequest: true },
+          } as any);
           return { token: response.data.access_token };
         },
         {
           authHeaderName: 'Authorization',
           tokenPrefix: 'Bearer ',
-          refreshStatusCodes: [401]
-        }
+          refreshStatusCodes: [401],
+        },
       );
 
       retryer.use(tokenRefreshPlugin);
 
       // Mock the protected endpoint
-      mock.onGet('/api/protected').reply(config => {
+      mock.onGet('/api/protected').reply((config) => {
         const authHeader = config.headers?.Authorization;
         if (authHeader === 'Bearer valid-token') {
           return [200, { data: 'protected content' }];
@@ -84,15 +88,17 @@ describe('Plugin Integration Tests', () => {
       // Import the actual CircuitBreakerPlugin
       const { CircuitBreakerPlugin } = await import('../../src/plugins/CircuitBreakerPlugin');
 
-      const retryer = trackRetryer(new RetryManager({
-        axiosInstance,
-        retries: 3,
-        debug: false
-      }));
+      const retryer = trackRetryer(
+        new RetryManager({
+          axiosInstance,
+          retries: 3,
+          debug: false,
+        }),
+      );
 
       const circuitBreaker = new CircuitBreakerPlugin({
         failureThreshold: 2,
-        openTimeout: 1000
+        openTimeout: 1000,
       });
 
       retryer.use(circuitBreaker);
@@ -123,7 +129,7 @@ describe('Plugin Integration Tests', () => {
 
       // Circuit should be open now, preventing further calls
       // Wait for circuit to potentially reset
-      await new Promise(resolve => setTimeout(resolve, 1100));
+      await new Promise((resolve) => setTimeout(resolve, 1100));
 
       const response = await retryer.axiosInstance.get('/api/flaky');
       expect(response.status).toBe(200);
@@ -135,15 +141,17 @@ describe('Plugin Integration Tests', () => {
       // Import the actual CachingPlugin
       const { CachingPlugin } = await import('../../src/plugins/CachingPlugin');
 
-      const retryer = trackRetryer(new RetryManager({
-        axiosInstance,
-        retries: 2,
-        debug: false
-      }));
+      const retryer = trackRetryer(
+        new RetryManager({
+          axiosInstance,
+          retries: 2,
+          debug: false,
+        }),
+      );
 
       const cachingPlugin = new CachingPlugin({
         timeToRevalidate: 5000, // 5 seconds
-        maxItems: 100
+        maxItems: 100,
       });
 
       retryer.use(cachingPlugin);
@@ -169,10 +177,10 @@ describe('Plugin Integration Tests', () => {
 
       // Verify caching is working by checking API call count stayed at 1
       expect(apiCallCount).toBe(1); // Cached request didn't hit API
-      
+
       // Clear cache manually to test cache invalidation
       cachingPlugin.clearCache();
-      
+
       // Third request should hit the API again after cache clear
       const response3 = await retryer.axiosInstance.get('/api/cached-data');
       expect(response3.status).toBe(200);
@@ -185,11 +193,13 @@ describe('Plugin Integration Tests', () => {
       const { CachingPlugin } = await import('../../src/plugins/CachingPlugin');
       const { TokenRefreshPlugin } = await import('../../src/plugins/TokenRefreshPlugin');
 
-      const retryer = trackRetryer(new RetryManager({
-        axiosInstance,
-        retries: 2,
-        debug: false
-      }));
+      const retryer = trackRetryer(
+        new RetryManager({
+          axiosInstance,
+          retries: 2,
+          debug: false,
+        }),
+      );
 
       // Add both plugins
       const cachingPlugin = new CachingPlugin({
@@ -206,23 +216,25 @@ describe('Plugin Integration Tests', () => {
         async (_axiosInst) => {
           // Use the main axiosInstance (with mock adapter) for refresh calls in tests.
           refreshCalls++;
-          const response = await axiosInstance.post('/auth/refresh', {}, { __axiosRetryer: { isRetryRefreshRequest: true } } as any);
+          const response = await axiosInstance.post('/auth/refresh', {}, {
+            __axiosRetryer: { isRetryRefreshRequest: true },
+          } as any);
           return { token: response.data.token };
         },
         {
           authHeaderName: 'Authorization',
           tokenPrefix: 'Bearer ',
           refreshStatusCodes: [401],
-          maxRefreshAttempts: 1,     // Only 1 attempt
-          retryOnRefreshFail: false  // No retries on failure
-        }
+          maxRefreshAttempts: 1, // Only 1 attempt
+          retryOnRefreshFail: false, // No retries on failure
+        },
       );
 
       retryer.use(cachingPlugin);
       retryer.use(tokenRefreshPlugin);
 
       // Mock protected endpoint
-      mock.onGet('/api/user-data').reply(config => {
+      mock.onGet('/api/user-data').reply((config) => {
         apiCalls++;
         const authHeader = config.headers?.Authorization;
         if (authHeader === 'Bearer fresh-token') {
@@ -231,7 +243,7 @@ describe('Plugin Integration Tests', () => {
         return [401, { error: 'Unauthorized' }];
       });
 
-      // Mock refresh endpoint  
+      // Mock refresh endpoint
       mock.onPost('/auth/refresh').reply(() => {
         return [200, { token: 'fresh-token' }];
       });
@@ -241,10 +253,10 @@ describe('Plugin Integration Tests', () => {
 
       // First request should trigger token refresh
       const response1 = await retryer.axiosInstance.get('/api/user-data');
-      
+
       expect(response1.status).toBe(200);
-      expect(apiCalls).toBe(2);  // Should be 2: first call (401) + retry (200) 
-      expect(refreshCalls).toBe(1);  // Should be exactly 1
+      expect(apiCalls).toBe(2); // Should be 2: first call (401) + retry (200)
+      expect(refreshCalls).toBe(1); // Should be exactly 1
 
       // Second request - with fresh token, no refresh needed
       const response2 = await retryer.axiosInstance.get('/api/user-data');
@@ -256,17 +268,19 @@ describe('Plugin Integration Tests', () => {
 
   describe('Plugin Error Handling', () => {
     it('should handle plugin initialization errors gracefully', () => {
-      const retryer = trackRetryer(createRetryer({
-        axiosInstance,
-        retries: 2
-      }));
+      const retryer = trackRetryer(
+        createRetryer({
+          axiosInstance,
+          retries: 2,
+        }),
+      );
 
       const faultyPlugin = {
         name: 'FaultyPlugin',
         version: '1.0.0',
         initialize: () => {
           throw new Error('Plugin initialization failed');
-        }
+        },
       };
 
       // Should not crash the retryer
@@ -276,11 +290,13 @@ describe('Plugin Integration Tests', () => {
     });
 
     it('should handle plugin hook errors without stopping retry logic', async () => {
-      const retryer = trackRetryer(createRetryer({
-        axiosInstance,
-        retries: 2,
-        debug: false
-      }));
+      const retryer = trackRetryer(
+        createRetryer({
+          axiosInstance,
+          retries: 2,
+          debug: false,
+        }),
+      );
 
       const faultyHookPlugin = {
         name: 'FaultyHookPlugin',
@@ -289,7 +305,7 @@ describe('Plugin Integration Tests', () => {
           context.on('beforeRetry', () => {
             throw new Error('Hook failed');
           });
-        }
+        },
       };
 
       retryer.use(faultyHookPlugin);
@@ -312,16 +328,18 @@ describe('Plugin Integration Tests', () => {
 
   describe('Plugin Lifecycle Management', () => {
     it('should properly manage plugin lifecycle', () => {
-      const retryer = trackRetryer(createRetryer({
-        axiosInstance,
-        retries: 1
-      }));
+      const retryer = trackRetryer(
+        createRetryer({
+          axiosInstance,
+          retries: 1,
+        }),
+      );
 
       const lifecyclePlugin = {
         name: 'LifecyclePlugin',
         version: '1.0.0',
         initialize: jest.fn(),
-        onBeforeDestroyed: jest.fn()
+        onBeforeDestroyed: jest.fn(),
       };
 
       // Add plugin
@@ -336,37 +354,41 @@ describe('Plugin Integration Tests', () => {
       // Remove plugin
       const removed = retryer.unuse('LifecyclePlugin');
       expect(removed).toBe(true);
-      
+
       // Note: onBeforeDestroyed may be called multiple times (known issue)
       // We only verify it was called at least once
       expect(lifecyclePlugin.onBeforeDestroyed).toHaveBeenCalled();
 
       // Verify plugin is removed (may still have other internal plugins)
       const pluginsAfterRemoval = retryer.listPlugins();
-      const hasLifecyclePlugin = pluginsAfterRemoval.some(p => p.name === 'LifecyclePlugin');
+      const hasLifecyclePlugin = pluginsAfterRemoval.some((p) => p.name === 'LifecyclePlugin');
       expect(hasLifecyclePlugin).toBe(false);
     });
 
     it('should handle removing non-existent plugins gracefully', () => {
-      const retryer = trackRetryer(createRetryer({
-        axiosInstance,
-        retries: 1
-      }));
+      const retryer = trackRetryer(
+        createRetryer({
+          axiosInstance,
+          retries: 1,
+        }),
+      );
 
       const removed = retryer.unuse('NonExistentPlugin');
       expect(removed).toBe(false);
     });
 
     it('should prevent duplicate plugin registration', () => {
-      const retryer = trackRetryer(createRetryer({
-        axiosInstance,
-        retries: 1
-      }));
+      const retryer = trackRetryer(
+        createRetryer({
+          axiosInstance,
+          retries: 1,
+        }),
+      );
 
       const plugin = {
         name: 'DuplicatePlugin',
         version: '1.0.0',
-        initialize: jest.fn()
+        initialize: jest.fn(),
       };
 
       // First registration should succeed
@@ -376,4 +398,4 @@ describe('Plugin Integration Tests', () => {
       expect(() => retryer.use(plugin)).toThrow('Plugin "DuplicatePlugin" is already registered');
     });
   });
-}); 
+});

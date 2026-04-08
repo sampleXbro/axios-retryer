@@ -1,5 +1,5 @@
 //@ts-nocheck
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import axios, { type AxiosInstance, AxiosRequestConfig } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { CachingPlugin } from '../src/plugins/CachingPlugin';
 import { ManualRetryPlugin } from '../src/plugins/ManualRetryPlugin';
@@ -240,7 +240,9 @@ describe('ManualRetryPlugin — auth rehydration security', () => {
     axiosInstance.defaults.headers.common['Authorization'] = 'Bearer user-a-token';
 
     mock.onGet('/secure').replyOnce(500);
-    try { await axiosInstance.get('/secure', { headers: { Authorization: 'Bearer user-a-token' } }); } catch {}
+    try {
+      await axiosInstance.get('/secure', { headers: { Authorization: 'Bearer user-a-token' } });
+    } catch {}
 
     // Now simulate session change — a different user is logged in
     axiosInstance.defaults.headers.common['Authorization'] = 'Bearer user-b-token';
@@ -259,7 +261,7 @@ describe('ManualRetryPlugin — auth rehydration security', () => {
   });
 
   test('should use rehydrateAuth hook when provided', async () => {
-    let currentToken = 'Bearer current-session';
+    const currentToken = 'Bearer current-session';
 
     const manualRetry = new ManualRetryPlugin({
       storeAuthRequests: true,
@@ -279,7 +281,9 @@ describe('ManualRetryPlugin — auth rehydration security', () => {
     manager.use(manualRetry);
 
     mock.onGet('/secure').replyOnce(500);
-    try { await axiosInstance.get('/secure', { headers: { Authorization: 'Bearer old' } }); } catch {}
+    try {
+      await axiosInstance.get('/secure', { headers: { Authorization: 'Bearer old' } });
+    } catch {}
 
     // Replay with current session
     mock.onGet('/secure').reply(200, { ok: true });
@@ -306,7 +310,9 @@ describe('ManualRetryPlugin — auth rehydration security', () => {
     manager.use(manualRetry);
 
     mock.onGet('/secure').replyOnce(500);
-    try { await axiosInstance.get('/secure', { headers: { Authorization: 'Bearer tok' } }); } catch {}
+    try {
+      await axiosInstance.get('/secure', { headers: { Authorization: 'Bearer tok' } });
+    } catch {}
 
     mock.onGet('/secure').reply(200, { ok: true });
     const results = await manualRetry.retryFailedRequests();
@@ -332,7 +338,9 @@ describe('ManualRetryPlugin — auth rehydration security', () => {
     // User A makes a request that fails
     axiosInstance.defaults.headers.common['Authorization'] = 'Bearer user-a';
     mock.onGet('/api/data').replyOnce(500);
-    try { await axiosInstance.get('/api/data', { headers: { Authorization: 'Bearer user-a' } }); } catch {}
+    try {
+      await axiosInstance.get('/api/data', { headers: { Authorization: 'Bearer user-a' } });
+    } catch {}
 
     // User B logs in
     axiosInstance.defaults.headers.common['Authorization'] = 'Bearer user-b';
@@ -379,7 +387,9 @@ describe('ManualRetryPlugin — auth rehydration security', () => {
     manager.use(manualRetry);
 
     mock.onGet('/api/private').replyOnce(500);
-    try { await axiosInstance.get('/api/private'); } catch {}
+    try {
+      await axiosInstance.get('/api/private');
+    } catch {}
 
     // Principal changes
     currentUser = 'bob';

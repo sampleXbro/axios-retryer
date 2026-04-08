@@ -1,4 +1,4 @@
-import axios, { AxiosHeaders, AxiosInstance, AxiosRequestConfig } from 'axios';
+import axios, { type AxiosHeaders, type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 import { createRetryer } from '../../src';

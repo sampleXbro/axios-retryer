@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { RequestQueue } from '../src/core/requestQueue';
-import { AxiosRequestConfig } from 'axios';
+import { type AxiosRequestConfig } from 'axios';
 import { QueueFullError } from '../src/core/errors/QueueFullError';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../src/types';
 
@@ -61,7 +61,7 @@ describe('RequestQueue Comprehensive Tests', () => {
   it('should properly cancel a request in the queue', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
+
     // Create a queue with max 1 concurrent to ensure requests wait
     const queueWithLimit = new RequestQueue({
       maxConcurrent: 1,
@@ -69,33 +69,33 @@ describe('RequestQueue Comprehensive Tests', () => {
       canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
       maxQueueSize: 100,
     });
-    
+
     const results: string[] = [];
-    
+
     // Add first request that blocks the queue
-    const blockingPromise = queueWithLimit.enqueue(
-      createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'blocking')
-    ).then(() => {
-      results.push('blocking-done');
-    });
-    
+    const blockingPromise = queueWithLimit
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'blocking'))
+      .then(() => {
+        results.push('blocking-done');
+      });
+
     // Add second request that will be waiting
-    const cancelPromise = queueWithLimit.enqueue(
-      createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'to-cancel')
-    ).catch(error => {
-      if (error.code === 'REQUEST_CANCELED') {
-        results.push('canceled');
-      }
-    });
-    
+    const cancelPromise = queueWithLimit
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'to-cancel'))
+      .catch((error) => {
+        if (error.code === 'REQUEST_CANCELED') {
+          results.push('canceled');
+        }
+      });
+
     // Cancel the waiting request
     expect(queueWithLimit.cancelQueuedRequest('to-cancel')).toBe(true);
-    
+
     // Complete the first request to unblock the queue
     queueWithLimit.markComplete();
-    
+
     await Promise.all([blockingPromise, cancelPromise]);
-    
+
     // Check that the second request was properly canceled
     expect(results).toContain('blocking-done');
     expect(results).toContain('canceled');
@@ -118,25 +118,29 @@ describe('RequestQueue Comprehensive Tests', () => {
     const startTime = Date.now();
 
     // Add requests with different priorities
-    const criticalPromise = orderedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, startTime, 'critical'))
+    const criticalPromise = orderedQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, startTime, 'critical'))
       .then(() => {
         results.push('critical');
         orderedQueue.markComplete();
       });
 
-    const highPromise = orderedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, startTime, 'high'))
+    const highPromise = orderedQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, startTime, 'high'))
       .then(() => {
         results.push('high');
         orderedQueue.markComplete();
       });
 
-    const mediumPromise = orderedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, startTime, 'medium'))
+    const mediumPromise = orderedQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, startTime, 'medium'))
       .then(() => {
         results.push('medium');
         orderedQueue.markComplete();
       });
 
-    const lowPromise = orderedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, startTime, 'low'))
+    const lowPromise = orderedQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, startTime, 'low'))
       .then(() => {
         results.push('low');
         orderedQueue.markComplete();
@@ -155,13 +159,13 @@ describe('RequestQueue Comprehensive Tests', () => {
     mockHasActiveCriticalRequests.mockReturnValue(false);
 
     const now = Date.now();
-    
+
     // Add requests in reverse priority order but with the same timestamp
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, now, 'low')).catch(() => {});
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, now, 'medium')).catch(() => {});
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH, now, 'high')).catch(() => {});
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, now, 'critical')).catch(() => {});
-    
+
     // Check that they're in the correct priority order
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(4);
@@ -170,19 +174,19 @@ describe('RequestQueue Comprehensive Tests', () => {
     expect(waiting[2].config.__axiosRetryer?.requestId).toBe('medium');
     expect(waiting[3].config.__axiosRetryer?.requestId).toBe('low');
   });
-  
+
   // Test that tie-breaking by timestamp works correctly
   it('should break ties with timestamps when priorities are equal', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
 
     const baseTime = Date.now();
-    
+
     // Add requests with the same priority but different timestamps
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, baseTime + 300, 'later')).catch(() => {});
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, baseTime + 200, 'middle')).catch(() => {});
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, baseTime + 100, 'earlier')).catch(() => {});
-    
+
     // Check that they're ordered by timestamp (earliest first)
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(3);
@@ -194,54 +198,57 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test critical request handling
   it('should prioritize critical requests absolutely', async () => {
     // Test scenario: Active critical request blocks all non-critical requests
-    mockIsCriticalRequest.mockImplementation(config =>
-      config.__axiosRetryer?.priority === AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL);
+    mockIsCriticalRequest.mockImplementation(
+      (config) => config.__axiosRetryer?.priority === AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL,
+    );
     mockHasActiveCriticalRequests.mockReturnValue(true);
-    
+
     const results: string[] = [];
-    
+
     // Add critical requests first
-    const critical1Promise = queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, Date.now(), 'critical1'))
+    const critical1Promise = queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, Date.now(), 'critical1'))
       .then(() => {
         results.push('critical1');
         queue.markComplete();
       });
-    
-    const critical2Promise = queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, Date.now() + 150, 'critical2'))
+
+    const critical2Promise = queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL, Date.now() + 150, 'critical2'))
       .then(() => {
         results.push('critical2');
         queue.markComplete();
       });
-    
+
     // Then add non-critical requests
-    const lowPromise = queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'low'))
-      .then(() => {
-        results.push('low');
-        queue.markComplete();
-      });
-    
-    const mediumPromise = queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now() + 50, 'medium'))
+    const lowPromise = queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.LOW, Date.now(), 'low')).then(() => {
+      results.push('low');
+      queue.markComplete();
+    });
+
+    const mediumPromise = queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now() + 50, 'medium'))
       .then(() => {
         results.push('medium');
         queue.markComplete();
       });
-    
+
     // Wait for critical requests to process
     await Promise.all([critical1Promise, critical2Promise]);
-    
+
     // Check that only critical requests have been processed
     expect(results).toContain('critical1');
     expect(results).toContain('critical2');
     expect(results).not.toContain('low');
     expect(results).not.toContain('medium');
-    
+
     // Now say there are no more critical requests active
     mockHasActiveCriticalRequests.mockReturnValue(false);
     queue.markComplete();
-    
+
     // Wait for all requests to finish
     await Promise.all([lowPromise, mediumPromise]);
-    
+
     // Now all requests should have been processed
     expect(results).toContain('low');
     expect(results).toContain('medium');
@@ -250,14 +257,18 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test queue full error with actual queue filling
   it('should throw QueueFullError when queue is actually full', async () => {
     // Create a queue with small size
-    const smallQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(), maxQueueSize: 3 });
-    
+    const smallQueue = new RequestQueue({
+      maxConcurrent: 1,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+      maxQueueSize: 3,
+    });
+
     // Fill the queue to capacity
     for (let i = 0; i < 3; i++) {
-      smallQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), `req${i}`))
-        .catch(() => {});
+      smallQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), `req${i}`)).catch(() => {});
     }
-    
+
     // When the queue is at capacity, it should throw QueueFullError
     try {
       await smallQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'overflow'));
@@ -266,17 +277,17 @@ describe('RequestQueue Comprehensive Tests', () => {
       expect(error).toBeInstanceOf(QueueFullError);
       expect(error.config.__axiosRetryer?.requestId).toBe('overflow');
     }
-    
+
     // When we complete a request, we should be able to add another
     smallQueue.markComplete();
-    
+
     // Wait for queue processing
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
     // Now we should be able to add another request
     const newPromise = smallQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'new-req'));
     expect(newPromise).toBeInstanceOf(Promise);
-    
+
     // Clean up
     newPromise.catch(() => {});
   });
@@ -284,16 +295,20 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test what happens when the queue is empty
   it('should not throw when tryDequeue is called on an empty queue', async () => {
     // Create a fresh queue
-    const emptyQueue = new RequestQueue({ maxConcurrent: 1, queueDelay: 0, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
-    
+    const emptyQueue = new RequestQueue({
+      maxConcurrent: 1,
+      queueDelay: 0,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+    });
+
     // Mark complete on an empty queue should not throw
     expect(() => emptyQueue.markComplete()).not.toThrow();
-    
+
     // Ensure inProgressCount can't go below 0
     for (let i = 0; i < 10; i++) {
       emptyQueue.markComplete();
     }
-    
+
     // Internal inProgressCount should not be negative
     expect(emptyQueue['inProgressCount']).toBe(0);
   });
@@ -307,13 +322,13 @@ describe('RequestQueue Comprehensive Tests', () => {
   it('should correctly report busy state', async () => {
     // Empty queue is not busy
     expect(queue.isBusy).toBe(false);
-    
+
     // Add a request to queue
     const promise = queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req'));
-    
+
     // Now it should be busy
     expect(queue.isBusy).toBe(true);
-    
+
     // Clean up
     promise.catch(() => {});
   });
@@ -322,12 +337,14 @@ describe('RequestQueue Comprehensive Tests', () => {
   it('should handle extreme timestamp values correctly', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
+
     // Test with extremely old timestamp, current timestamp, and future timestamp
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, 0, 'ancient')).catch(() => {});
     queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'now')).catch(() => {});
-    queue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Number.MAX_SAFE_INTEGER, 'future')).catch(() => {});
-    
+    queue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Number.MAX_SAFE_INTEGER, 'future'))
+      .catch(() => {});
+
     // Check that they're ordered by timestamp (earliest first)
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(3);
@@ -339,23 +356,28 @@ describe('RequestQueue Comprehensive Tests', () => {
   // Test queue with extremely small delay
   it('should respect the queue delay setting', async () => {
     // Create a queue with a 10ms delay for more reliable timing
-    const delayedQueue = new RequestQueue({ maxConcurrent: 2, queueDelay: 10, canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests() });
-    
+    const delayedQueue = new RequestQueue({
+      maxConcurrent: 2,
+      queueDelay: 10,
+      canProcess: (config) => mockIsCriticalRequest(config) || !mockHasActiveCriticalRequests(),
+    });
+
     const startTime = Date.now();
-    const results: { id: string, time: number }[] = [];
-    
+    const results: { id: string; time: number }[] = [];
+
     // Add a request
-    const promise = delayedQueue.enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req'))
+    const promise = delayedQueue
+      .enqueue(createConfig(AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM, Date.now(), 'req'))
       .then(() => {
         results.push({ id: 'req', time: Date.now() - startTime });
       });
-    
+
     await promise;
-    
+
     // The request should have been delayed by some amount (allowing for timing variations)
     // In test environments, timing can be less precise, so we just check it's > 0
     expect(results[0].time).toBeGreaterThanOrEqual(0);
-    
+
     // Clean up
     delayedQueue.destroy();
   });
@@ -364,7 +386,7 @@ describe('RequestQueue Comprehensive Tests', () => {
   it('should maintain correct order with binary insertion of many items', async () => {
     mockIsCriticalRequest.mockReturnValue(false);
     mockHasActiveCriticalRequests.mockReturnValue(false);
-    
+
     // Create 50 configs with random priorities and timestamps - reduced from 100 to avoid queue full
     const configs = [];
     for (let i = 0; i < 50; i++) {
@@ -372,26 +394,26 @@ describe('RequestQueue Comprehensive Tests', () => {
         config: createConfig(
           Math.floor(Math.random() * 100), // Random priority
           Date.now() + Math.floor(Math.random() * 1000), // Random timestamp
-          `req-${i}`
+          `req-${i}`,
         ),
-        index: i
+        index: i,
       });
     }
-    
+
     // Add them all to the queue
-    configs.forEach(item => {
+    configs.forEach((item) => {
       queue.enqueue(item.config).catch(() => {});
     });
-    
+
     // Check that the queue has all items
     const waiting = queue.getWaiting();
     expect(waiting.length).toBe(50);
-    
+
     // Verify the ordering is correct (higher priority first, then by timestamp)
     for (let i = 1; i < waiting.length; i++) {
-      const prev = waiting[i-1].config as ExtendedAxiosRequestConfig;
+      const prev = waiting[i - 1].config as ExtendedAxiosRequestConfig;
       const curr = waiting[i].config as ExtendedAxiosRequestConfig;
-      
+
       const prevPriority = prev.__axiosRetryer?.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
       const currPriority = curr.__axiosRetryer?.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
 
@@ -423,14 +445,14 @@ describe('RequestQueue Comprehensive Tests', () => {
       const p2 = queue.enqueue(makeConfig('r2'));
 
       // Both should still be waiting because gate is closed
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
       expect(queue.getWaitingCount()).toBe(2);
 
       // Open the gate and refresh
       gateOpen = true;
       queue.refresh();
 
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
       expect(queue.getWaitingCount()).toBe(0);
 
       await expect(p1).resolves.toBeDefined();
@@ -454,9 +476,9 @@ describe('RequestQueue Comprehensive Tests', () => {
       // High priority request comes first but is blocked
       allowId = 'r2';
       const p1 = queue.enqueue(makeConfig('r1', 10)); // high priority, blocked
-      const p2 = queue.enqueue(makeConfig('r2', 5));  // low priority, would be allowed but blocked by r1
+      const p2 = queue.enqueue(makeConfig('r2', 5)); // low priority, would be allowed but blocked by r1
 
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
       // Neither processed - r1 blocks, drain stops
       expect(queue.getWaitingCount()).toBe(2);
 
@@ -464,7 +486,7 @@ describe('RequestQueue Comprehensive Tests', () => {
       allowId = ''; // no match — still blocked
       queue.refresh();
 
-      await new Promise(r => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 20));
       expect(queue.getWaitingCount()).toBe(2);
 
       queue.destroy();

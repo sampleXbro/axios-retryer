@@ -99,7 +99,10 @@ function fingerprintValue(value: string): string {
   return `fp_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-function compareStringTuples([leftKey, leftValue]: readonly [string, string], [rightKey, rightValue]: readonly [string, string]): number {
+function compareStringTuples(
+  [leftKey, leftValue]: readonly [string, string],
+  [rightKey, rightValue]: readonly [string, string],
+): number {
   return leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue);
 }
 
@@ -173,7 +176,10 @@ function normalizeValue(value: unknown, lowercaseKeys = false): unknown {
 
     const normalizedObject: Record<string, unknown> = {};
     Object.entries(objectValue as Record<string, unknown>)
-      .map(([key, entryValue]) => [lowercaseKeys ? key.toLowerCase() : key, normalizeValue(entryValue, lowercaseKeys)] as const)
+      .map(
+        ([key, entryValue]) =>
+          [lowercaseKeys ? key.toLowerCase() : key, normalizeValue(entryValue, lowercaseKeys)] as const,
+      )
       .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
       .forEach(([key, entryValue]) => {
         normalizedObject[key] = entryValue;
@@ -192,10 +198,7 @@ function stableStringify(value: unknown, lowercaseKeys = false): string {
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (
-      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-      (trimmed.startsWith('[') && trimmed.endsWith(']'))
-    ) {
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       try {
         return JSON.stringify(normalizeValue(JSON.parse(trimmed), lowercaseKeys));
       } catch (_error) {
@@ -221,13 +224,7 @@ function stableStringify(value: unknown, lowercaseKeys = false): string {
  * Requests carrying any of these headers are excluded from caching by default
  * to prevent cross-principal cache collisions.
  */
-const AUTH_HEADERS = new Set([
-  'authorization',
-  'proxy-authorization',
-  'cookie',
-  'x-auth-token',
-  'x-api-key',
-]);
+const AUTH_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-auth-token', 'x-api-key']);
 
 function requestHasAuthHeaders(config: AxiosRequestConfig): boolean {
   if (!config.headers) {
@@ -459,7 +456,11 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     this.storage = this.options.storage;
 
     if (!Number.isInteger(this.options.cleanupInterval) || this.options.cleanupInterval < 0) {
-      throw new RetryerConfigError('cleanupInterval must be a non-negative integer', 'cleanupInterval', this.options.cleanupInterval);
+      throw new RetryerConfigError(
+        'cleanupInterval must be a non-negative integer',
+        'cleanupInterval',
+        this.options.cleanupInterval,
+      );
     }
     if (!Number.isInteger(this.options.maxAge) || this.options.maxAge < 0) {
       throw new RetryerConfigError('maxAge must be a non-negative integer', 'maxAge', this.options.maxAge);
@@ -481,8 +482,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     const axiosInstance = context.axiosInstance;
 
     this.interceptorIdReq = axiosInstance.interceptors.request.use(
-      (config) =>
-        this.handleRequest(config) as Promise<InternalAxiosRequestConfig> | InternalAxiosRequestConfig,
+      (config) => this.handleRequest(config) as Promise<InternalAxiosRequestConfig> | InternalAxiosRequestConfig,
       (error) => Promise.reject(error),
     );
 
@@ -510,9 +510,10 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     return fingerprintValue(cacheKey);
   }
 
-  private describeInvalidationMatcher(
-    matcher: CacheInvalidationMatcher,
-  ): { type: 'exact' | 'prefix' | 'regexp'; fingerprint: string } {
+  private describeInvalidationMatcher(matcher: CacheInvalidationMatcher): {
+    type: 'exact' | 'prefix' | 'regexp';
+    fingerprint: string;
+  } {
     if (matcher instanceof RegExp) {
       return {
         type: 'regexp',
@@ -680,7 +681,9 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
 
     if (cachingOptions?.cache !== true) {
-      const method = (response.config?.method || AXIOS_RETRYER_HTTP_METHODS.GET).toUpperCase() as AxiosRetryerHttpMethod;
+      const method = (
+        response.config?.method || AXIOS_RETRYER_HTTP_METHODS.GET
+      ).toUpperCase() as AxiosRetryerHttpMethod;
       if (!this.options.cacheMethods.includes(method)) {
         this.resolveInflightRequest(response.config, response);
         return response;
@@ -742,10 +745,6 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
 
     return this.options.cacheKeyBuilder(this.buildCacheKeyContext(config));
-  }
-
-  private generateCacheKey(config: AxiosRequestConfig): string {
-    return this.buildCacheKey(config);
   }
 
   private startPeriodicCleanup(): void {
@@ -864,11 +863,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   private async upsertCacheEntry(cacheKey: string, cachedItem: CachedItem): Promise<void> {
     await this.enforceMaxItemsBeforeUpsert(cacheKey);
 
-    const touchedItem = this.touchCacheEntry(
-      cacheKey,
-      cachedItem,
-      cachedItem.lastAccessedAt ?? cachedItem.timestamp,
-    );
+    const touchedItem = this.touchCacheEntry(cacheKey, cachedItem, cachedItem.lastAccessedAt ?? cachedItem.timestamp);
     await this.storage.set(cacheKey, touchedItem);
   }
 
@@ -925,9 +920,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
         return; // Capacity available — no eviction needed.
       }
       const excess = this.cache.size - this.options.maxItems + 1;
-      const evictionCandidates = sortCacheEntriesByAccess(
-        Array.from(this.cache, ([key, value]) => ({ key, value })),
-      );
+      const evictionCandidates = sortCacheEntriesByAccess(Array.from(this.cache, ([key, value]) => ({ key, value })));
       await Promise.all(evictionCandidates.slice(0, excess).map(({ key }) => this.deleteCacheEntry(key)));
       return;
     }

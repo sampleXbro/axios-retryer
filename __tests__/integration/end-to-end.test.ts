@@ -1,6 +1,12 @@
-import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
+import axios, { AxiosError, type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
-import { createRetryer, RetryManager, AXIOS_RETRYER_REQUEST_PRIORITIES, RETRY_MODES, type PluginContext } from '../../src';
+import {
+  createRetryer,
+  RetryManager,
+  AXIOS_RETRYER_REQUEST_PRIORITIES,
+  RETRY_MODES,
+  type PluginContext,
+} from '../../src';
 import { ManualRetryPlugin } from '../../src/plugins/ManualRetryPlugin';
 import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 
@@ -23,7 +29,7 @@ describe('End-to-End Integration Tests', () => {
         axiosInstance,
         retries: 3,
         debug: false,
-        backoffType: 2 // EXPONENTIAL
+        backoffType: 2, // EXPONENTIAL
       });
 
       let attempts = 0;
@@ -43,7 +49,7 @@ describe('End-to-End Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.data.data).toBe('success');
       expect(attempts).toBe(3);
-      
+
       // Verify exponential backoff timing (should take at least 300ms for 2 retries)
       expect(totalTime).toBeGreaterThan(200);
     });
@@ -53,16 +59,16 @@ describe('End-to-End Integration Tests', () => {
         axiosInstance,
         maxConcurrentRequests: 2,
         retries: 1,
-        queueDelay: 50
+        queueDelay: 50,
       });
 
       const executionOrder: string[] = [];
       const requestDelay = 100;
 
       // Setup mock responses with artificial delay
-      ['low1', 'low2', 'critical', 'high', 'medium'].forEach(endpoint => {
+      ['low1', 'low2', 'critical', 'high', 'medium'].forEach((endpoint) => {
         mock.onGet(`/${endpoint}`).reply(() => {
-          return new Promise(resolve => {
+          return new Promise((resolve) => {
             setTimeout(() => {
               executionOrder.push(endpoint);
               resolve([200, { endpoint }]);
@@ -75,9 +81,11 @@ describe('End-to-End Integration Tests', () => {
       const requests = [
         retryer.axiosInstance.get('/low1', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW } }),
         retryer.axiosInstance.get('/low2', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.LOW } }),
-        retryer.axiosInstance.get('/critical', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL } }),
+        retryer.axiosInstance.get('/critical', {
+          __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },
+        }),
         retryer.axiosInstance.get('/high', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH } }),
-        retryer.axiosInstance.get('/medium', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM } })
+        retryer.axiosInstance.get('/medium', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM } }),
       ];
 
       await Promise.all(requests);
@@ -85,24 +93,23 @@ describe('End-to-End Integration Tests', () => {
       // Critical should execute first, then high, medium, then low requests
       expect(executionOrder[0]).toBe('critical');
       expect(executionOrder.indexOf('high')).toBeLessThan(executionOrder.indexOf('medium'));
-      expect(executionOrder.indexOf('medium')).toBeLessThan(Math.max(
-        executionOrder.indexOf('low1'),
-        executionOrder.indexOf('low2')
-      ));
+      expect(executionOrder.indexOf('medium')).toBeLessThan(
+        Math.max(executionOrder.indexOf('low1'), executionOrder.indexOf('low2')),
+      );
     });
 
     it('should handle authentication refresh workflow', async () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 2,
-        debug: false
+        debug: false,
       });
 
       let currentToken = 'expired-token';
       let refreshCalled = false;
 
       // Mock the protected API
-      mock.onGet('/protected-resource').reply(config => {
+      mock.onGet('/protected-resource').reply((config) => {
         const authHeader = config.headers?.Authorization;
         if (authHeader === 'Bearer valid-token') {
           return [200, { data: 'protected-data' }];
@@ -119,23 +126,23 @@ describe('End-to-End Integration Tests', () => {
 
       // Simulate token refresh logic
       retryer.axiosInstance.interceptors.response.use(
-        response => response,
-        async error => {
+        (response) => response,
+        async (error) => {
           if (error.response?.status === 401 && !refreshCalled) {
             const refreshResponse = await axiosInstance.post('/auth/refresh');
             currentToken = refreshResponse.data.access_token;
-            
+
             // Retry original request with new token
             error.config.headers.Authorization = `Bearer ${currentToken}`;
             return axiosInstance.request(error.config);
           }
           throw error;
-        }
+        },
       );
 
       // Make request with expired token
       const response = await retryer.axiosInstance.get('/protected-resource', {
-        headers: { Authorization: `Bearer expired-token` }
+        headers: { Authorization: `Bearer expired-token` },
       });
 
       expect(response.status).toBe(200);
@@ -150,7 +157,7 @@ describe('End-to-End Integration Tests', () => {
         axiosInstance,
         maxConcurrentRequests: 5,
         maxQueueSize: 100,
-        retries: 1
+        retries: 1,
       });
       retryer.use(new MetricsPlugin());
 
@@ -158,17 +165,15 @@ describe('End-to-End Integration Tests', () => {
       mock.onGet(/\/burst\/\d+/).reply(200, { success: true });
 
       const requestCount = 50;
-      const requests = Array.from({ length: requestCount }, (_, i) =>
-        retryer.axiosInstance.get(`/burst/${i}`)
-      );
+      const requests = Array.from({ length: requestCount }, (_, i) => retryer.axiosInstance.get(`/burst/${i}`));
 
       const startTime = Date.now();
       const responses = await Promise.all(requests);
       const endTime = Date.now();
 
       expect(responses).toHaveLength(requestCount);
-      expect(responses.every(r => r.status === 200)).toBe(true);
-      
+      expect(responses.every((r) => r.status === 200)).toBe(true);
+
       // Verify performance (should complete within reasonable time)
       expect(endTime - startTime).toBeLessThan(5000);
 
@@ -181,11 +186,11 @@ describe('End-to-End Integration Tests', () => {
       const retryer = new RetryManager({
         axiosInstance,
         retries: 3,
-        debug: false
+        debug: false,
       });
 
       mock.onGet('/cleanup-test').reply(200, { data: 'test' });
-      
+
       // Make a request to initialize internals
       await retryer.axiosInstance.get('/cleanup-test');
 
@@ -207,19 +212,19 @@ describe('End-to-End Integration Tests', () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 2,
-        debug: false
+        debug: false,
       });
       retryer.use(new MetricsPlugin());
 
-      let timeoutCount = 0;
+      const timeoutCount = 0;
       mock.onGet('/timeout-test').timeout();
 
-             try {
-         await retryer.axiosInstance.get('/timeout-test');
-         fail('Should have thrown timeout error');
-       } catch (error: any) {
-         expect(error.code).toBe('ECONNABORTED');
-        
+      try {
+        await retryer.axiosInstance.get('/timeout-test');
+        fail('Should have thrown timeout error');
+      } catch (error: any) {
+        expect(error.code).toBe('ECONNABORTED');
+
         const metrics = retryer.getMetrics();
         expect(metrics.failedRetries).toBeGreaterThan(0);
         expect(metrics.completelyFailedRequests).toBe(1);
@@ -231,7 +236,7 @@ describe('End-to-End Integration Tests', () => {
         axiosInstance,
         retries: 2,
         debug: false,
-        maxConcurrentRequests: 3
+        maxConcurrentRequests: 3,
       });
       retryer.use(new MetricsPlugin());
 
@@ -241,63 +246,67 @@ describe('End-to-End Integration Tests', () => {
       mock.onGet('/timeout').timeout();
       mock.onGet('/not-found').reply(404, { error: 'not found' });
 
-             const requests = [
-         retryer.axiosInstance.get('/success'),
-         retryer.axiosInstance.get('/failure').catch(e => ({ isError: true, error: e })),
-         retryer.axiosInstance.get('/timeout').catch(e => ({ isError: true, error: e })),
-         retryer.axiosInstance.get('/not-found').catch(e => ({ isError: true, error: e })),
-         retryer.axiosInstance.get('/success')
-       ];
+      const requests = [
+        retryer.axiosInstance.get('/success'),
+        retryer.axiosInstance.get('/failure').catch((e) => ({ isError: true, error: e })),
+        retryer.axiosInstance.get('/timeout').catch((e) => ({ isError: true, error: e })),
+        retryer.axiosInstance.get('/not-found').catch((e) => ({ isError: true, error: e })),
+        retryer.axiosInstance.get('/success'),
+      ];
 
-       const results = await Promise.all(requests);
+      const results = await Promise.all(requests);
 
-       // Verify mixed results
-       expect((results[0] as any).status).toBe(200);
-       expect((results[1] as any).isError).toBe(true);
-       expect((results[2] as any).isError).toBe(true);
-       expect((results[3] as any).isError).toBe(true);
-       expect((results[4] as any).status).toBe(200);
+      // Verify mixed results
+      expect((results[0] as any).status).toBe(200);
+      expect((results[1] as any).isError).toBe(true);
+      expect((results[2] as any).isError).toBe(true);
+      expect((results[3] as any).isError).toBe(true);
+      expect((results[4] as any).status).toBe(200);
 
-             const metrics = retryer.getMetrics();
-       expect(metrics.totalRequests).toBeGreaterThan(0);
-       expect(metrics.completelyFailedRequests).toBeGreaterThan(0);
+      const metrics = retryer.getMetrics();
+      expect(metrics.totalRequests).toBeGreaterThan(0);
+      expect(metrics.completelyFailedRequests).toBeGreaterThan(0);
     });
 
-        it('should maintain request context during retries', async () => {
+    it('should maintain request context during retries', async () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 2,
-        debug: false
+        debug: false,
       });
 
       let attemptNumber = 0;
       const requestId = 'test-request-123';
 
-      mock.onPost('/context-test').reply(config => {
+      mock.onPost('/context-test').reply((config) => {
         attemptNumber++;
-        
+
         // For the first attempt, return error to trigger retry
         if (attemptNumber === 1) {
           return [503, { error: 'service unavailable' }];
         }
-        
+
         // On retry, verify context is maintained and return success
-        return [200, { 
-          success: true, 
-          attemptNumber,
-          requestId: requestId
-        }];
+        return [
+          200,
+          {
+            success: true,
+            attemptNumber,
+            requestId: requestId,
+          },
+        ];
       });
 
-      const response = await retryer.axiosInstance.post('/context-test', 
+      const response = await retryer.axiosInstance.post(
+        '/context-test',
         { test: 'data' },
-        { 
-          headers: { 
+        {
+          headers: {
             'X-Request-ID': requestId,
-            'Idempotency-Key': 'test-key-123' // Make POST retryable
+            'Idempotency-Key': 'test-key-123', // Make POST retryable
           },
-          timeout: 5000
-        }
+          timeout: 5000,
+        },
       );
 
       expect(response.status).toBe(200);
@@ -322,15 +331,15 @@ describe('End-to-End Integration Tests', () => {
       // Make failing request
       await expect(retryer.axiosInstance.get('/store-and-retry')).rejects.toThrow();
 
-             // Change mock to succeed for retry
-       mock.onGet('/store-and-retry').reply(200, { data: 'retry success' });
+      // Change mock to succeed for retry
+      mock.onGet('/store-and-retry').reply(200, { data: 'retry success' });
 
-       // Retry stored requests
-       const retryResults = await manualRetry.retryFailedRequests();
-       
-       expect(retryResults).toHaveLength(1);
-       expect(retryResults[0].status).toBe(200);
-       expect((retryResults[0] as any).data.data).toBe('retry success');
+      // Retry stored requests
+      const retryResults = await manualRetry.retryFailedRequests();
+
+      expect(retryResults).toHaveLength(1);
+      expect(retryResults[0].status).toBe(200);
+      expect((retryResults[0] as any).data.data).toBe('retry success');
     });
   });
 
@@ -339,7 +348,7 @@ describe('End-to-End Integration Tests', () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 2,
-        debug: false
+        debug: false,
       });
 
       const pluginCalls: string[] = [];
@@ -359,20 +368,20 @@ describe('End-to-End Integration Tests', () => {
           context.on('onFailure', () => {
             pluginCalls.push('onFailure');
           });
-        }
+        },
       };
 
       retryer.use(testPlugin);
 
       let attempts = 0;
-      mock.onGet('/plugin-test').reply(config => {
+      mock.onGet('/plugin-test').reply((config) => {
         attempts++;
         if (attempts <= 1) {
           return [503, { error: 'service unavailable' }];
         }
-        
-                 // Verify plugin header was added
-         expect(config.headers?.['X-Plugin-Retry']).toBe('true');
+
+        // Verify plugin header was added
+        expect(config.headers?.['X-Plugin-Retry']).toBe('true');
         return [200, { success: true, attempts }];
       });
 
@@ -384,4 +393,4 @@ describe('End-to-End Integration Tests', () => {
       expect(pluginCalls).toContain('afterRetry');
     });
   });
-}); 
+});

@@ -15,7 +15,7 @@ describe('CachingPlugin Core Functionality', () => {
     mock = new AxiosMockAdapter(axiosInstance);
     manager = new RetryManager({
       axiosInstance,
-      debug: false
+      debug: false,
     });
   });
 
@@ -34,43 +34,43 @@ describe('CachingPlugin Core Functionality', () => {
   test('generateCacheKey handles different data types', () => {
     cachingPlugin = new CachingPlugin();
     manager.use(cachingPlugin);
-    
+
     // Access the private method for testing
-    const generateCacheKey = cachingPlugin['generateCacheKey'].bind(cachingPlugin);
-    
+    const generateCacheKey = cachingPlugin['buildCacheKey'].bind(cachingPlugin);
+
     // Test with string URL and no extra params
-    const key1 = generateCacheKey({ 
-      method: 'GET', 
-      url: '/test'
+    const key1 = generateCacheKey({
+      method: 'GET',
+      url: '/test',
     });
     expect(key1).toBe('GET|/test|||');
-    
+
     // Test with params as object
-    const key2 = generateCacheKey({ 
-      method: 'GET', 
+    const key2 = generateCacheKey({
+      method: 'GET',
       url: '/test',
-      params: { id: 123 }
+      params: { id: 123 },
     });
     expect(key2).toBe('GET|/test|{"id":123}||');
-    
+
     // Test with data
-    const key3 = generateCacheKey({ 
-      method: 'POST', 
+    const key3 = generateCacheKey({
+      method: 'POST',
       url: '/test',
-      data: { name: 'test' }
+      data: { name: 'test' },
     });
     expect(key3).toBe('POST|/test||{"name":"test"}|');
-    
+
     // Test with headers when compareHeaders is true
     cachingPlugin = new CachingPlugin({ compareHeaders: true });
     manager.unuse('CachingPlugin');
     manager.use(cachingPlugin);
-    
-    const generateCacheKeyWithHeaders = cachingPlugin['generateCacheKey'].bind(cachingPlugin);
-    const key4 = generateCacheKeyWithHeaders({ 
-      method: 'GET', 
+
+    const generateCacheKeyWithHeaders = cachingPlugin['buildCacheKey'].bind(cachingPlugin);
+    const key4 = generateCacheKeyWithHeaders({
+      method: 'GET',
       url: '/test',
-      headers: { 'Authorization': 'Bearer token' }
+      headers: { Authorization: 'Bearer token' },
     });
     expect(key4).toContain('Bearer token');
   });
@@ -78,29 +78,29 @@ describe('CachingPlugin Core Functionality', () => {
   test('invalidateCache with RegExp removes matching entries', async () => {
     cachingPlugin = new CachingPlugin();
     manager.use(cachingPlugin);
-    
+
     const storage = cachingPlugin['storage'];
-    
+
     // Add test entries to storage
-    storage.set('GET|/api/users/1|||', { 
+    storage.set('GET|/api/users/1|||', {
       response: { data: { id: 1 } },
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    storage.set('GET|/api/users/2|||', { 
+    storage.set('GET|/api/users/2|||', {
       response: { data: { id: 2 } },
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    storage.set('GET|/api/products/1|||', { 
+    storage.set('GET|/api/products/1|||', {
       response: { data: { id: 1 } },
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    
+
     // Test RegExp invalidation
     const count = await cachingPlugin.invalidateCache(/users/);
     const entries = storage.entries();
     expect(count).toBe(2);
     expect(entries).toHaveLength(1);
-    
+
     // Verify right cache entry remains
     expect(entries[0].key).toBe('GET|/api/products/1|||');
   });
@@ -108,34 +108,34 @@ describe('CachingPlugin Core Functionality', () => {
   test('runCacheCleanup removes expired items', async () => {
     jest.useFakeTimers();
     const now = Date.now();
-    
+
     // Create plugin with maxAge setting
     cachingPlugin = new CachingPlugin({
-      maxAge: 1000 // 1 second max age
+      maxAge: 1000, // 1 second max age
     });
     manager.use(cachingPlugin);
-    
+
     const storage = cachingPlugin['storage'];
-    
+
     // Add test entries with different ages
-    storage.set('fresh', { 
+    storage.set('fresh', {
       response: { data: 'fresh' },
-      timestamp: now
+      timestamp: now,
     });
-    
-    storage.set('old', { 
+
+    storage.set('old', {
       response: { data: 'old' },
-      timestamp: now - 2000 // 2 seconds old, should be expired
+      timestamp: now - 2000, // 2 seconds old, should be expired
     });
-    
+
     // Before cleanup
     expect(storage.entries()).toHaveLength(2);
-    
+
     // Run cleanup
     const runCacheCleanup = cachingPlugin['runCacheCleanup'].bind(cachingPlugin);
     await runCacheCleanup();
     const entries = storage.entries();
-    
+
     // Verify old item was removed
     expect(entries).toHaveLength(1);
     expect(entries[0].key).toBe('fresh');
@@ -144,37 +144,37 @@ describe('CachingPlugin Core Functionality', () => {
   test('runCacheCleanup enforces maxItems', async () => {
     // Create plugin with maxItems
     cachingPlugin = new CachingPlugin({
-      maxItems: 2
+      maxItems: 2,
     });
     manager.use(cachingPlugin);
-    
+
     const storage = cachingPlugin['storage'];
-    
+
     // Add test entries with timestamps in order
     const now = Date.now();
-    storage.set('oldest', { 
+    storage.set('oldest', {
       response: { data: 'oldest' },
-      timestamp: now - 3000 // Oldest
+      timestamp: now - 3000, // Oldest
     });
-    
-    storage.set('middle', { 
+
+    storage.set('middle', {
       response: { data: 'middle' },
-      timestamp: now - 2000
+      timestamp: now - 2000,
     });
-    
-    storage.set('newest', { 
+
+    storage.set('newest', {
       response: { data: 'newest' },
-      timestamp: now - 1000 // Newest
+      timestamp: now - 1000, // Newest
     });
-    
+
     // Before cleanup
     expect(storage.entries()).toHaveLength(3);
-    
+
     // Run cleanup
     const runCacheCleanup = cachingPlugin['runCacheCleanup'].bind(cachingPlugin);
     await runCacheCleanup();
     const keys = storage.entries().map((entry) => entry.key);
-    
+
     // Should keep only the 2 newest items
     expect(keys).toHaveLength(2);
     expect(keys).not.toContain('oldest');
@@ -186,28 +186,28 @@ describe('CachingPlugin Core Functionality', () => {
     jest.useFakeTimers();
     const setIntervalSpy = jest.spyOn(global, 'setInterval');
     const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
-    
+
     // Create plugin with cleanup interval
     cachingPlugin = new CachingPlugin({
-      cleanupInterval: 1000
+      cleanupInterval: 1000,
     });
-    
+
     // Call startPeriodicCleanup directly
     const startPeriodicCleanup = cachingPlugin['startPeriodicCleanup'].bind(cachingPlugin);
     startPeriodicCleanup();
-    
+
     // Should have started interval
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
     expect(cachingPlugin['cleanupTimer']).not.toBeNull();
-    
+
     // Call stopPeriodicCleanup
     const stopPeriodicCleanup = cachingPlugin['stopPeriodicCleanup'].bind(cachingPlugin);
     stopPeriodicCleanup();
-    
+
     // Should have cleared interval
     expect(clearIntervalSpy).toHaveBeenCalled();
     expect(cachingPlugin['cleanupTimer']).toBeNull();
-    
+
     setIntervalSpy.mockRestore();
     clearIntervalSpy.mockRestore();
   });
@@ -215,29 +215,29 @@ describe('CachingPlugin Core Functionality', () => {
   test('getCacheStats returns correct statistics', () => {
     cachingPlugin = new CachingPlugin();
     manager.use(cachingPlugin);
-    
+
     // Set up direct cache access for testing
     const cache = cachingPlugin['cache'];
-    
+
     // Empty cache
     const emptyStats = cachingPlugin.getCacheStats();
     expect(emptyStats.size).toBe(0);
     expect(emptyStats.oldestItemAge).toBe(0);
     expect(emptyStats.newestItemAge).toBe(0);
     expect(emptyStats.averageAge).toBe(0);
-    
+
     // Add test entries with timestamps
     const now = Date.now();
-    cache.set('old', { 
+    cache.set('old', {
       response: { data: 'old' },
-      timestamp: now - 2000
+      timestamp: now - 2000,
     });
-    
-    cache.set('new', { 
+
+    cache.set('new', {
       response: { data: 'new' },
-      timestamp: now - 1000
+      timestamp: now - 1000,
     });
-    
+
     // Stats with data
     const stats = cachingPlugin.getCacheStats();
     expect(stats.size).toBe(2);
@@ -246,4 +246,4 @@ describe('CachingPlugin Core Functionality', () => {
     expect(stats.newestItemAge).toBeLessThan(stats.oldestItemAge);
     expect(stats.averageAge).toBeGreaterThanOrEqual(1500);
   });
-}); 
+});

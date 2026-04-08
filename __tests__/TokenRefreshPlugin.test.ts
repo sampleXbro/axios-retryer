@@ -1,13 +1,13 @@
 //@ts-nocheck
-import axios, { AxiosError, AxiosInstance } from 'axios';
+import axios, { AxiosError, type AxiosInstance } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { jest } from '@jest/globals';
 import { RetryManager, RetryHooks } from '../src';
-import { RetryLogger } from '../src/services/logger';
+import { type RetryLogger } from '../src/services/logger';
 import {
   TokenRefreshFailedError,
   TokenRefreshPlugin,
-  TokenRefreshPluginOptions,
+  type TokenRefreshPluginOptions,
 } from '../src/plugins/TokenRefreshPlugin';
 import { MetricsPlugin } from '../src/plugins/MetricsPlugin';
 import { toTokenRefreshError } from '../src/plugins/TokenRefreshPlugin/TokenRefreshAbortError';
@@ -20,7 +20,9 @@ describe('TokenRefreshPlugin', () => {
   let refreshFn: jest.Mock;
   let plugin: TokenRefreshPlugin;
 
-  const createRetryableRefreshFailure = (message: string): Error & { response: { status: number }; isAxiosError: true } =>
+  const createRetryableRefreshFailure = (
+    message: string,
+  ): Error & { response: { status: number }; isAxiosError: true } =>
     Object.assign(new Error(message), {
       response: { status: 500 },
       isAxiosError: true as const,
@@ -150,9 +152,7 @@ describe('TokenRefreshPlugin', () => {
 
     mockAxios.onGet('/test').reply(401);
 
-    await expect(axiosInstance.get('/test')).rejects.toThrow(
-      'No token refresh handler provided'
-    );
+    await expect(axiosInstance.get('/test')).rejects.toThrow('No token refresh handler provided');
   });
 
   it('should NOT refresh if error status is not in refreshStatusCodes', async () => {
@@ -200,16 +200,14 @@ describe('TokenRefreshPlugin', () => {
     });
     refreshFn.mockImplementation(() => deferredRefresh);
 
-    mockAxios
-      .onGet('/queued-skip')
-      .replyOnce(401)
-      .onGet('/queued-skip')
-      .reply(200, { released: true });
+    mockAxios.onGet('/queued-skip').replyOnce(401).onGet('/queued-skip').reply(200, { released: true });
 
     const p1 = axiosInstance.get('/queued-skip', { headers: { Authorization: 'Bearer a' } });
     await waitForAssertion(() => expect(refreshFn).toHaveBeenCalledTimes(1));
     const p2 = axiosInstance.get('/queued-skip', { headers: { Authorization: 'Bearer a' } });
-    await waitForAssertion(() => expect((plugin as unknown as { refreshQueue: unknown[] }).refreshQueue.length).toBe(1));
+    await waitForAssertion(() =>
+      expect((plugin as unknown as { refreshQueue: unknown[] }).refreshQueue.length).toBe(1),
+    );
 
     finishRefresh!({ token: undefined });
 
@@ -297,22 +295,11 @@ describe('TokenRefreshPlugin', () => {
   it('should queue multiple requests while refreshing token, then retry all once refresh completes', async () => {
     refreshFn.mockResolvedValue({ token: 'REFRESHED_TOKEN' });
 
-    mockAxios
-      .onGet('/parallel1')
-      .replyOnce(401)
-      .onGet('/parallel1')
-      .replyOnce(200, { result: 'OK1' });
+    mockAxios.onGet('/parallel1').replyOnce(401).onGet('/parallel1').replyOnce(200, { result: 'OK1' });
 
-    mockAxios
-      .onGet('/parallel2')
-      .replyOnce(401)
-      .onGet('/parallel2')
-      .replyOnce(200, { result: 'OK2' });
+    mockAxios.onGet('/parallel2').replyOnce(401).onGet('/parallel2').replyOnce(200, { result: 'OK2' });
 
-    const [resp1, resp2] = await Promise.all([
-      axiosInstance.get('/parallel1'),
-      axiosInstance.get('/parallel2'),
-    ]);
+    const [resp1, resp2] = await Promise.all([axiosInstance.get('/parallel1'), axiosInstance.get('/parallel2')]);
 
     expect(resp1.data).toEqual({ result: 'OK1' });
     expect(resp2.data).toEqual({ result: 'OK2' });
@@ -383,11 +370,7 @@ describe('TokenRefreshPlugin', () => {
         }),
     );
 
-    mockAxios
-      .onGet('/secure')
-      .replyOnce(401)
-      .onGet('/secure')
-      .replyOnce(200, { secure: true });
+    mockAxios.onGet('/secure').replyOnce(401).onGet('/secure').replyOnce(200, { secure: true });
 
     let publicRequestCalls = 0;
     mockAxios.onGet('/public').reply(() => {
@@ -488,7 +471,7 @@ describe('TokenRefreshPlugin', () => {
     });
 
     // Send all 5 requests simultaneously
-    const promises = endpoints.map(endpoint => axiosInstance.get(endpoint));
+    const promises = endpoints.map((endpoint) => axiosInstance.get(endpoint));
     const responses = await Promise.all(promises);
 
     // Verify all requests succeeded with refreshed token
@@ -570,10 +553,7 @@ describe('TokenRefreshPlugin', () => {
           : [401, { error: 'still stale' }];
       });
 
-    const [respA, respB] = await Promise.all([
-      axiosInstance.get('/race-a'),
-      axiosInstance.get('/race-b'),
-    ]);
+    const [respA, respB] = await Promise.all([axiosInstance.get('/race-a'), axiosInstance.get('/race-b')]);
 
     expect(respA.data).toEqual({ ok: 'a-fresh' });
     expect(respB.data).toEqual({ ok: 'b-fresh' });
@@ -648,7 +628,7 @@ describe('TokenRefreshPlugin', () => {
         new Promise<{ token: string }>((resolve) => {
           // never resolves quickly => triggers timeout
           setTimeout(() => resolve({ token: 'NEVER_HAPPEN' }), 9999);
-        })
+        }),
     );
 
     // Reinitialize plugin with a very short timeout.
@@ -680,11 +660,7 @@ describe('TokenRefreshPlugin', () => {
     });
     manager.use(plugin2);
 
-    mockAxios
-      .onGet('/endpoint')
-      .replyOnce(401)
-      .onGet('/endpoint')
-      .replyOnce(200, { success: true });
+    mockAxios.onGet('/endpoint').replyOnce(401).onGet('/endpoint').replyOnce(200, { success: true });
 
     const resp = await axiosInstance.get('/endpoint');
     expect(resp.data).toEqual({ success: true });
@@ -775,11 +751,7 @@ describe('TokenRefreshPlugin', () => {
     });
     manager.use(plugin2);
 
-    mockAxios
-      .onGet('/custom-code')
-      .replyOnce(419)
-      .onGet('/custom-code')
-      .replyOnce(200, { success: true });
+    mockAxios.onGet('/custom-code').replyOnce(419).onGet('/custom-code').replyOnce(200, { success: true });
 
     const resp = await axiosInstance.get('/custom-code');
     expect(resp.data).toEqual({ success: true });
@@ -834,11 +806,7 @@ describe('TokenRefreshPlugin', () => {
   it('should only queue refresh for 401 requests, other status codes fail immediately', async () => {
     refreshFn.mockResolvedValue({ token: 'REFRESHED' });
 
-    mockAxios
-      .onGet('/401')
-      .replyOnce(401)
-      .onGet('/401')
-      .replyOnce(200, { after: 'refresh' });
+    mockAxios.onGet('/401').replyOnce(401).onGet('/401').replyOnce(200, { after: 'refresh' });
 
     mockAxios.onGet('/403').replyOnce(403, { msg: 'Forbidden' });
     mockAxios.onGet('/500').replyOnce(500, { msg: 'Server error' });
@@ -917,12 +885,11 @@ describe('TokenRefreshPlugin', () => {
   it('should detect custom auth errors in 200 OK responses and refresh token', async () => {
     // Setup a custom error detector for GraphQL-like errors
     const customErrorDetector = (response: any) => {
-      return response?.errors?.some((error: any) => 
-        error.extensions?.code === 'UNAUTHENTICATED' || 
-        error.message?.includes('token expired')
+      return response?.errors?.some(
+        (error: any) => error.extensions?.code === 'UNAUTHENTICATED' || error.message?.includes('token expired'),
       );
     };
-    
+
     // Reinitialize with custom error detector
     manager.unuse('TokenRefreshPlugin');
     const graphqlPlugin = new TokenRefreshPlugin(refreshFn, {
@@ -932,34 +899,36 @@ describe('TokenRefreshPlugin', () => {
       retryOnRefreshFail: true,
       authHeaderName: 'Authorization',
       tokenPrefix: 'Bearer ',
-      customErrorDetector
+      customErrorDetector,
     });
     manager.use(graphqlPlugin);
-    
+
     refreshFn.mockResolvedValue({ token: 'NEW_GRAPHQL_TOKEN' });
-    
+
     // Mock a GraphQL error response with 200 status
     mockAxios
       .onPost('/graphql')
-      .replyOnce(200, { 
-        data: null, 
-        errors: [{ 
-          message: 'User not authenticated, token expired', 
-          extensions: { code: 'UNAUTHENTICATED' } 
-        }] 
+      .replyOnce(200, {
+        data: null,
+        errors: [
+          {
+            message: 'User not authenticated, token expired',
+            extensions: { code: 'UNAUTHENTICATED' },
+          },
+        ],
       })
       .onPost('/graphql')
       .replyOnce(200, { data: { user: { id: 1, name: 'Test User' } } });
-      
+
     const response = await axiosInstance.post('/graphql', { query: 'query { user { id name } }' });
-    
+
     // Verify the final response is good
     expect(response.status).toBe(200);
     expect(response.data).toEqual({ data: { user: { id: 1, name: 'Test User' } } });
-    
+
     // Verify token refresh was triggered
     expect(refreshFn).toHaveBeenCalledTimes(1);
-    
+
     // Check that auth header was updated
     expect(axiosInstance.defaults.headers.common['Authorization']).toBe('Bearer NEW_GRAPHQL_TOKEN');
   });
@@ -967,12 +936,11 @@ describe('TokenRefreshPlugin', () => {
   it('should queue 4-5 concurrent requests with custom auth errors in 200 OK responses and only refresh token once', async () => {
     // Setup a custom error detector for GraphQL-like errors
     const customErrorDetector = (response: any) => {
-      return response?.errors?.some((error: any) => 
-        error.extensions?.code === 'UNAUTHENTICATED' || 
-        error.message?.includes('token expired')
+      return response?.errors?.some(
+        (error: any) => error.extensions?.code === 'UNAUTHENTICATED' || error.message?.includes('token expired'),
       );
     };
-    
+
     // Reinitialize with custom error detector
     manager.unuse('TokenRefreshPlugin');
     const concurrentGraphqlPlugin = new TokenRefreshPlugin(refreshFn, {
@@ -982,39 +950,55 @@ describe('TokenRefreshPlugin', () => {
       retryOnRefreshFail: true,
       authHeaderName: 'Authorization',
       tokenPrefix: 'Bearer ',
-      customErrorDetector
+      customErrorDetector,
     });
     manager.use(concurrentGraphqlPlugin);
-    
+
     refreshFn.mockResolvedValue({ token: 'CONCURRENT_GRAPHQL_TOKEN' });
-    
+
     // Mock 5 different GraphQL queries that all return 200 with auth errors first, then success
     const queries = [
-      { endpoint: '/graphql/user', query: 'query { user { id name } }', successData: { user: { id: 1, name: 'User1' } } },
+      {
+        endpoint: '/graphql/user',
+        query: 'query { user { id name } }',
+        successData: { user: { id: 1, name: 'User1' } },
+      },
       { endpoint: '/graphql/posts', query: 'query { posts { title } }', successData: { posts: [{ title: 'Post1' }] } },
-      { endpoint: '/graphql/profile', query: 'query { profile { email } }', successData: { profile: { email: 'test@example.com' } } },
-      { endpoint: '/graphql/settings', query: 'query { settings { theme } }', successData: { settings: { theme: 'dark' } } },
-      { endpoint: '/graphql/notifications', query: 'query { notifications { count } }', successData: { notifications: { count: 5 } } }
+      {
+        endpoint: '/graphql/profile',
+        query: 'query { profile { email } }',
+        successData: { profile: { email: 'test@example.com' } },
+      },
+      {
+        endpoint: '/graphql/settings',
+        query: 'query { settings { theme } }',
+        successData: { settings: { theme: 'dark' } },
+      },
+      {
+        endpoint: '/graphql/notifications',
+        query: 'query { notifications { count } }',
+        successData: { notifications: { count: 5 } },
+      },
     ];
 
     queries.forEach(({ endpoint, successData }) => {
       mockAxios
         .onPost(endpoint)
-        .replyOnce(200, { 
-          data: null, 
-          errors: [{ 
-            message: 'User not authenticated, token expired', 
-            extensions: { code: 'UNAUTHENTICATED' } 
-          }] 
+        .replyOnce(200, {
+          data: null,
+          errors: [
+            {
+              message: 'User not authenticated, token expired',
+              extensions: { code: 'UNAUTHENTICATED' },
+            },
+          ],
         })
         .onPost(endpoint)
         .replyOnce(200, { data: successData });
     });
 
-    // Send all 5 GraphQL requests simultaneously 
-    const promises = queries.map(({ endpoint, query }) => 
-      axiosInstance.post(endpoint, { query })
-    );
+    // Send all 5 GraphQL requests simultaneously
+    const promises = queries.map(({ endpoint, query }) => axiosInstance.post(endpoint, { query }));
     const responses = await Promise.all(promises);
 
     // Verify all requests succeeded with refreshed token
@@ -1087,10 +1071,12 @@ describe('TokenRefreshPlugin', () => {
         callCount++;
         if (callCount === 1) {
           // First attempt fails with a retryable error
-          return Promise.reject(Object.assign(new Error('server error'), {
-            response: { status: 500 },
-            isAxiosError: true,
-          }));
+          return Promise.reject(
+            Object.assign(new Error('server error'), {
+              response: { status: 500 },
+              isAxiosError: true,
+            }),
+          );
         }
         // Second attempt hangs forever
         return new Promise(() => {});

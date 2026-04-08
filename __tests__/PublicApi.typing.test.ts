@@ -103,15 +103,19 @@ const verifyPublicApiTyping = (): void => {
   void _recorder;
 
   // @ts-expect-error Plugin option types are not exported from the root entry.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   type RootTokenRefreshPluginOptions = import('../src').TokenRefreshPluginOptions;
 
   // @ts-expect-error RequestStore is not part of the root surface.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   type RootRequestStore = import('../src').RequestStore;
 
   // @ts-expect-error MetricsRecorder is not part of the root surface.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   type RootMetricsRecorder = import('../src').MetricsRecorder;
 
   // @ts-expect-error Plugin-private metadata is not part of the root metadata surface.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   const metadata: import('../src').AxiosRetryerRequestMetadata = { isRetryRefreshRequest: true };
   void metadata;
 };

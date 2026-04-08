@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { RetryManager } from '../src/core/RetryManager';
 import { TokenRefreshPlugin } from '../src/plugins/TokenRefreshPlugin/TokenRefreshPlugin';
@@ -283,9 +283,7 @@ describe('P1 Improvements', () => {
       const futureDate = new Date(Date.now() + 2000).toUTCString();
       const startTime = Date.now();
 
-      mock
-        .onGet('/rate-limited-date')
-        .replyOnce(429, { error: 'Too Many Requests' }, { 'retry-after': futureDate });
+      mock.onGet('/rate-limited-date').replyOnce(429, { error: 'Too Many Requests' }, { 'retry-after': futureDate });
       mock.onGet('/rate-limited-date').reply(200, { ok: true });
 
       const response = await manager.axiosInstance.get('/rate-limited-date');

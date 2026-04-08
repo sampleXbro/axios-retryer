@@ -6,7 +6,13 @@
  * with realistic mock setups and timing.
  */
 
-import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosError,
+  type AxiosInstance,
+  AxiosRequestConfig,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 import {
@@ -18,8 +24,12 @@ import {
   AXIOS_RETRYER_HTTP_METHODS,
   RETRY_MODES,
 } from '../../src';
-import { CircuitBreakerPlugin, CIRCUIT_BREAKER_STATES, CircuitBreakerPluginEvents } from '../../src/plugins/CircuitBreakerPlugin';
-import { CachingPlugin, CachingPluginEvents } from '../../src/plugins/CachingPlugin';
+import {
+  CircuitBreakerPlugin,
+  CIRCUIT_BREAKER_STATES,
+  type CircuitBreakerPluginEvents,
+} from '../../src/plugins/CircuitBreakerPlugin';
+import { CachingPlugin, type CachingPluginEvents } from '../../src/plugins/CachingPlugin';
 import { ManualRetryPlugin } from '../../src/plugins/ManualRetryPlugin';
 import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
 import { TokenRefreshPlugin, TokenRefreshPluginEvents } from '../../src/plugins/TokenRefreshPlugin';
@@ -369,9 +379,9 @@ describe('Request cancellation via AbortController', () => {
   it('cancels an in-flight request when the caller aborts', async () => {
     const manager = createRetryer({ axiosInstance, retries: 3 });
 
-    mock.onGet('/slow').reply(
-      () => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)),
-    );
+    mock
+      .onGet('/slow')
+      .reply(() => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)));
 
     const controller = new AbortController();
     const req = swallow(manager.axiosInstance.get('/slow', { signal: controller.signal }));
@@ -713,9 +723,9 @@ describe('Event lifecycle tracking', () => {
           releaseBlocker = () => resolve([200, {}]);
         }),
     );
-    mock.onGet('/cancel-me').reply(
-      () => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)),
-    );
+    mock
+      .onGet('/cancel-me')
+      .reply(() => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)));
 
     const blocker = manager.axiosInstance.get('/blocker');
     await waitFor(() => releaseBlocker !== undefined);
@@ -802,9 +812,7 @@ describe('CircuitBreakerPlugin full lifecycle', () => {
 
     expect(cb.getState()).toBe(CIRCUIT_BREAKER_STATES.CLOSED);
     expect(stateChanges.some((s) => s.to === 'HALF_OPEN' && s.reason === 'open-timeout-elapsed')).toBe(true);
-    expect(
-      stateChanges.some((s) => s.to === 'CLOSED' && s.reason === 'success-threshold-reached'),
-    ).toBe(true);
+    expect(stateChanges.some((s) => s.to === 'CLOSED' && s.reason === 'success-threshold-reached')).toBe(true);
 
     manager.destroy();
   });
@@ -1224,9 +1232,7 @@ describe('Manual retry mode full workflow', () => {
     // Inspect stored requests
     const stored = manualRetry.getStoredRequests();
     expect(stored).toHaveLength(2);
-    expect(stored.map((c) => c.url)).toEqual(
-      expect.arrayContaining(['/endpoint-a', '/endpoint-b']),
-    );
+    expect(stored.map((c) => c.url)).toEqual(expect.arrayContaining(['/endpoint-a', '/endpoint-b']));
 
     // Fix the endpoints
     mock.onGet('/endpoint-a').reply(200, { recovered: 'a' });
@@ -1284,10 +1290,7 @@ describe('Manual retry mode full workflow', () => {
       axiosInstance,
       mode: RETRY_MODES.MANUAL,
       retries: 0,
-      retryableMethods: [
-        AXIOS_RETRYER_HTTP_METHODS.GET,
-        AXIOS_RETRYER_HTTP_METHODS.POST,
-      ],
+      retryableMethods: [AXIOS_RETRYER_HTTP_METHODS.GET, AXIOS_RETRYER_HTTP_METHODS.POST],
     });
     manager.use(manualRetry);
 
@@ -1315,19 +1318,20 @@ describe('Manual retry mode full workflow', () => {
       axiosInstance,
       mode: RETRY_MODES.MANUAL,
       retries: 0,
-      retryableMethods: [
-        AXIOS_RETRYER_HTTP_METHODS.GET,
-        AXIOS_RETRYER_HTTP_METHODS.POST,
-      ],
+      retryableMethods: [AXIOS_RETRYER_HTTP_METHODS.GET, AXIOS_RETRYER_HTTP_METHODS.POST],
     });
     manager.use(manualRetry);
 
     mock.onPost('/idempotent-post').reply(503, {});
 
     await swallow(
-      manager.axiosInstance.post('/idempotent-post', { data: 'test' }, {
-        headers: { 'Idempotency-Key': 'unique-key-123' },
-      }),
+      manager.axiosInstance.post(
+        '/idempotent-post',
+        { data: 'test' },
+        {
+          headers: { 'Idempotency-Key': 'unique-key-123' },
+        },
+      ),
     );
 
     const stored = manualRetry.getStoredRequests();
@@ -1424,9 +1428,9 @@ describe('MetricsPlugin accuracy', () => {
           releaseBlocker = () => resolve([200, {}]);
         }),
     );
-    mock.onGet('/cancellable').reply(
-      () => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)),
-    );
+    mock
+      .onGet('/cancellable')
+      .reply(() => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)));
 
     const blocker = manager.axiosInstance.get('/blocker');
     await waitFor(() => releaseBlocker !== undefined);
@@ -2104,11 +2108,9 @@ describe('Request body preservation', () => {
     });
 
     const payload = { name: 'test', nested: { value: 42 }, array: [1, 2, 3] };
-    const res = await manager.axiosInstance.post(
-      '/preserve-body',
-      payload,
-      { headers: { 'Idempotency-Key': 'key-1' } },
-    );
+    const res = await manager.axiosInstance.post('/preserve-body', payload, {
+      headers: { 'Idempotency-Key': 'key-1' },
+    });
 
     expect(res.status).toBe(200);
     // Body should be identical on every attempt
@@ -2190,9 +2192,7 @@ describe('Simultaneous retries for multiple requests', () => {
       });
     }
 
-    const results = await Promise.all(
-      Array.from({ length: 5 }, (_, i) => manager.axiosInstance.get(`/endpoint-${i}`)),
-    );
+    const results = await Promise.all(Array.from({ length: 5 }, (_, i) => manager.axiosInstance.get(`/endpoint-${i}`)));
 
     results.forEach((r, i) => {
       expect(r.status).toBe(200);
@@ -2528,9 +2528,9 @@ describe('throwErrorOnCancelRequest: false', () => {
       throwErrorOnCancelRequest: false,
     });
 
-    mock.onGet('/cancel-null').reply(
-      () => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)),
-    );
+    mock
+      .onGet('/cancel-null')
+      .reply(() => new Promise<[number, object]>((resolve) => setTimeout(() => resolve([200, {}]), 5000)));
 
     const controller = new AbortController();
     const req = manager.axiosInstance.get('/cancel-null', { signal: controller.signal });
@@ -2616,9 +2616,7 @@ describe('Partial success scenarios', () => {
     expect(rejected).toHaveLength(2);
 
     // Verify successful responses have correct data
-    const successData = fulfilled.map(
-      (r) => (r as PromiseFulfilledResult<AxiosResponse>).value.data,
-    );
+    const successData = fulfilled.map((r) => (r as PromiseFulfilledResult<AxiosResponse>).value.data);
     expect(successData).toEqual(expect.arrayContaining([{ id: 1 }, { id: 2 }, { id: 3 }]));
 
     manager.destroy();
@@ -2670,9 +2668,7 @@ describe('Real-world: SPA dashboard parallel loading', () => {
     let analyticsAttempts = 0;
     mock.onGet('/api/dashboard/analytics').reply(() => {
       analyticsAttempts++;
-      return analyticsAttempts === 1
-        ? [500, {}]
-        : [200, { pageViews: 1234, uniqueVisitors: 567 }];
+      return analyticsAttempts === 1 ? [500, {}] : [200, { pageViews: 1234, uniqueVisitors: 567 }];
     });
 
     const [profile, notifications, settings, analytics] = await Promise.all([

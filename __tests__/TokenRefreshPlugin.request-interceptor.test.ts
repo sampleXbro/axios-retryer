@@ -1,4 +1,4 @@
-import axios, { AxiosHeaders, AxiosInstance, AxiosRequestConfig } from 'axios';
+import axios, { AxiosHeaders, type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 
 import { RetryManager } from '../src';
@@ -142,11 +142,7 @@ describe('TokenRefreshPlugin request interception', () => {
         }),
     );
 
-    mockAxios
-      .onGet('/needs-refresh')
-      .replyOnce(401)
-      .onGet('/needs-refresh')
-      .replyOnce(200, { secure: true });
+    mockAxios.onGet('/needs-refresh').replyOnce(401).onGet('/needs-refresh').replyOnce(200, { secure: true });
 
     let publicCalls = 0;
     mockAxios.onGet('/public-endpoint').reply(() => {

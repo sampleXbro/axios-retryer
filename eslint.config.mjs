@@ -33,6 +33,16 @@ export default tseslint.config(
     },
   },
   {
+    files: ['**/__tests__/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/ban-ts-comment': 'off',
+      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-empty': 'off',
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'benchmark/**', 'website/**', 'sandbox/**', 'stats/**'],
   },
 );

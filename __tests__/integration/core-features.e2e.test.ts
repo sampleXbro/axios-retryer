@@ -8,15 +8,12 @@
  *  - Core retry mechanics: automatic retries, throwErrorOnFailedRetries, cancelAllRequests
  */
 
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 
 import { createRetryer, AXIOS_RETRYER_REQUEST_PRIORITIES, RetryManager } from '../../src';
 import { MetricsPlugin } from '../../src/plugins/MetricsPlugin';
-import {
-  TokenRefreshPlugin,
-  TokenRefreshAbortError,
-} from '../../src/plugins/TokenRefreshPlugin';
+import { TokenRefreshPlugin, TokenRefreshAbortError } from '../../src/plugins/TokenRefreshPlugin';
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -524,9 +521,7 @@ describe('Core retry mechanics', () => {
       return [503, {}];
     });
 
-    await manager.axiosInstance
-      .get('/override', { __axiosRetryer: { requestRetries: 1 } })
-      .catch(() => null);
+    await manager.axiosInstance.get('/override', { __axiosRetryer: { requestRetries: 1 } }).catch(() => null);
 
     // 1 original + 1 retry = 2 total attempts despite manager allowing 5.
     expect(attempts).toBe(2);

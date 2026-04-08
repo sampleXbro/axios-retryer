@@ -7,7 +7,7 @@ import { RequestQueue } from '../src/core/requestQueue';
 import {
   CircuitBreakerPlugin,
   CIRCUIT_BREAKER_STATES,
-  CircuitBreakerState,
+  type CircuitBreakerState,
   type CircuitBreakerOptions,
 } from '../src/plugins/CircuitBreakerPlugin';
 import { TokenRefreshPlugin } from '../src/plugins/TokenRefreshPlugin';
@@ -74,7 +74,10 @@ describe('T-018: TimerManager destroyed-manager safety', () => {
     const timer = new TimerManager();
     const { promise } = timer.createSleep(5000);
 
-    const settled = promise.then(() => 'resolved', (e: Error) => e.message);
+    const settled = promise.then(
+      () => 'resolved',
+      (e: Error) => e.message,
+    );
     timer.destroy();
 
     const result = await settled;
@@ -154,7 +157,12 @@ describe('T-020: CircuitBreakerPlugin._responseMetrics cap', () => {
     const mock = new MockAdapter(axiosInstance);
     mock.onAny().reply(200, {});
 
-    const context = { axiosInstance, getLogger: () => ({ debug: () => {}, error: () => {}, warn: () => {} }), triggerAndEmit: () => {}, releaseRequestTracking: () => {} };
+    const context = {
+      axiosInstance,
+      getLogger: () => ({ debug: () => {}, error: () => {}, warn: () => {} }),
+      triggerAndEmit: () => {},
+      releaseRequestTracking: () => {},
+    };
     plugin.initialize(context as never);
 
     // Simulate tracking 5 different scope keys (more than cap=3).
@@ -184,13 +192,22 @@ describe('T-020: CircuitBreakerPlugin._responseMetrics cap', () => {
     } as never);
 
     // @ts-expect-error accessing private method
-    plugin._trackResponseTime({ config: { url: '/first', baseURL: 'http://example.com' }, headers: { 'x-response-time': '50' } } as never);
+    plugin._trackResponseTime({
+      config: { url: '/first', baseURL: 'http://example.com' },
+      headers: { 'x-response-time': '50' },
+    } as never);
     // @ts-expect-error accessing private method
-    plugin._trackResponseTime({ config: { url: '/second', baseURL: 'http://example.com' }, headers: { 'x-response-time': '50' } } as never);
+    plugin._trackResponseTime({
+      config: { url: '/second', baseURL: 'http://example.com' },
+      headers: { 'x-response-time': '50' },
+    } as never);
 
     // At cap; adding a third evicts the first.
     // @ts-expect-error accessing private method
-    plugin._trackResponseTime({ config: { url: '/third', baseURL: 'http://example.com' }, headers: { 'x-response-time': '50' } } as never);
+    plugin._trackResponseTime({
+      config: { url: '/third', baseURL: 'http://example.com' },
+      headers: { 'x-response-time': '50' },
+    } as never);
 
     // @ts-expect-error accessing private field
     const keys = Object.keys(plugin._responseMetrics);
@@ -271,11 +288,17 @@ describe('T-022: DefaultRetryStrategy per-request status override caching', () =
     const getSpy = jest.spyOn(cache, 'get');
 
     // First call — miss, builds and caches.
-    const error1 = { response: { status: 500 }, config: { method: 'get', __axiosRetryer: { retryableStatuses: overrideStatuses } } } as never;
+    const error1 = {
+      response: { status: 500 },
+      config: { method: 'get', __axiosRetryer: { retryableStatuses: overrideStatuses } },
+    } as never;
     strategy.getIsRetryable(error1);
 
     // Second call with the same array reference — must be a cache hit.
-    const error2 = { response: { status: 503 }, config: { method: 'get', __axiosRetryer: { retryableStatuses: overrideStatuses } } } as never;
+    const error2 = {
+      response: { status: 503 },
+      config: { method: 'get', __axiosRetryer: { retryableStatuses: overrideStatuses } },
+    } as never;
     strategy.getIsRetryable(error2);
 
     // get was called at least twice; the second call should have returned cached data.
@@ -292,8 +315,14 @@ describe('T-022: DefaultRetryStrategy per-request status override caching', () =
     const statuses1: readonly AxiosRetryerRetryableStatus[] = [422];
     const statuses2: readonly AxiosRetryerRetryableStatus[] = [422]; // same content, different ref
 
-    const error1 = { response: { status: 422 }, config: { method: 'get', __axiosRetryer: { retryableStatuses: statuses1 } } } as never;
-    const error2 = { response: { status: 422 }, config: { method: 'get', __axiosRetryer: { retryableStatuses: statuses2 } } } as never;
+    const error1 = {
+      response: { status: 422 },
+      config: { method: 'get', __axiosRetryer: { retryableStatuses: statuses1 } },
+    } as never;
+    const error2 = {
+      response: { status: 422 },
+      config: { method: 'get', __axiosRetryer: { retryableStatuses: statuses2 } },
+    } as never;
 
     expect(strategy.getIsRetryable(error1)).toBe(true);
     expect(strategy.getIsRetryable(error2)).toBe(true);
@@ -373,7 +402,10 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
     const plugin = makeAdaptivePlugin();
 
     // @ts-expect-error accessing private method
-    plugin._trackResponseTime({ config: { url: '/route', baseURL: 'http://ex.com' }, headers: { 'x-response-time': '200' } } as never);
+    plugin._trackResponseTime({
+      config: { url: '/route', baseURL: 'http://ex.com' },
+      headers: { 'x-response-time': '200' },
+    } as never);
 
     // @ts-expect-error accessing private field
     const metrics = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>);
@@ -384,24 +416,34 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
   test('currentPercentileMs is not recalculated on every intermediate sample', () => {
     // Use sampleSize=50 so recalcInterval = min(10, 50) = 10.
     const plugin = new CircuitBreakerPlugin({
-      failureThreshold: 100, openTimeout: 1000, halfOpenMax: 1,
-      adaptiveTimeout: true, adaptiveTimeoutSampleSize: 50, adaptiveTimeoutPercentile: 0.95,
+      failureThreshold: 100,
+      openTimeout: 1000,
+      halfOpenMax: 1,
+      adaptiveTimeout: true,
+      adaptiveTimeoutSampleSize: 50,
+      adaptiveTimeoutPercentile: 0.95,
     });
     plugin.initialize({
       axiosInstance: axios.create({ baseURL: 'http://ex.com' }),
       getLogger: () => ({ debug: () => {}, error: () => {}, warn: () => {} }),
-      triggerAndEmit: () => {}, releaseRequestTracking: () => {},
+      triggerAndEmit: () => {},
+      releaseRequestTracking: () => {},
     } as never);
 
     const track = (ms: number) =>
       // @ts-expect-error accessing private method
-      plugin._trackResponseTime({ config: { url: '/route', baseURL: 'http://ex.com' }, headers: { 'x-response-time': String(ms) } } as never);
+      plugin._trackResponseTime({
+        config: { url: '/route', baseURL: 'http://ex.com' },
+        headers: { 'x-response-time': String(ms) },
+      } as never);
 
     // First sample — always calculates.
     track(100);
 
     // @ts-expect-error accessing private field
-    const afterFirst: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0].currentPercentileMs;
+    const afterFirst: number = Object.values(
+      plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
+    )[0].currentPercentileMs;
     expect(afterFirst).toBe(100);
 
     // Samples 2–9: extreme values that would shift the percentile if recalculated.
@@ -410,14 +452,18 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
     }
 
     // @ts-expect-error accessing private field
-    const afterNine: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0].currentPercentileMs;
+    const afterNine: number = Object.values(
+      plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
+    )[0].currentPercentileMs;
     expect(afterNine).toBe(afterFirst); // unchanged until sample 10
 
     // Sample 10 — triggers recalculation (recalcInterval = 10, 10 % 10 === 0).
     track(9999);
 
     // @ts-expect-error accessing private field
-    const afterTen: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0].currentPercentileMs;
+    const afterTen: number = Object.values(
+      plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
+    )[0].currentPercentileMs;
     expect(afterTen).toBeGreaterThan(afterFirst);
   });
 
@@ -427,11 +473,15 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
     // Add 10 uniform samples of 100ms → p95 should be 100.
     for (let i = 0; i < 10; i++) {
       // @ts-expect-error accessing private method
-      plugin._trackResponseTime({ config: { url: '/stable', baseURL: 'http://ex.com' }, headers: { 'x-response-time': '100' } } as never);
+      plugin._trackResponseTime({
+        config: { url: '/stable', baseURL: 'http://ex.com' },
+        headers: { 'x-response-time': '100' },
+      } as never);
     }
 
     // @ts-expect-error accessing private field
-    const p95: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0].currentPercentileMs;
+    const p95: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0]
+      .currentPercentileMs;
     expect(p95).toBe(100);
   });
 });
@@ -578,9 +628,7 @@ describe('T-040: requestRetries: 0 per-request override is not ignored', () => {
     // Manager has retries: 3 — but the per-request override should suppress all retries.
     const manager = new RetryManager({ axiosInstance, retries: 3 });
 
-    await expect(
-      axiosInstance.get('/always-fail', { __axiosRetryer: { requestRetries: 0 } })
-    ).rejects.toThrow();
+    await expect(axiosInstance.get('/always-fail', { __axiosRetryer: { requestRetries: 0 } })).rejects.toThrow();
 
     // Only one upstream attempt — no retries should have occurred.
     expect(attemptCount).toBe(1);

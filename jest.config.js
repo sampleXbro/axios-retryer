@@ -2,6 +2,11 @@ module.exports = {
     preset: 'ts-jest',
     testEnvironment: 'node',
     verbose: false,
+    globals: {
+        'ts-jest': {
+            tsconfig: { noUnusedLocals: false },
+        },
+    },
     coveragePathIgnorePatterns: [
         '<rootDir>/benchmark/',
         '<rootDir>/__tests__/performance/utils/',

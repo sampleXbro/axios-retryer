@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import {
   createRetryer,
@@ -17,7 +17,7 @@ describe('Functional API Integration Tests', () => {
   beforeEach(() => {
     axiosInstance = axios.create({ timeout: 5000 });
     mock = new AxiosMockAdapter(axiosInstance, { delayResponse: 0 });
-    
+
     // Setup test endpoints
     mock.onGet('/api/test1').reply(200, { id: 1 });
     mock.onGet('/api/test2').reply(200, { id: 2 });
@@ -53,7 +53,7 @@ describe('Functional API Integration Tests', () => {
         retries: 3,
         debug: false,
         backoffType: AXIOS_RETRYER_BACKOFF_TYPES.LINEAR,
-        maxConcurrentRequests: 10
+        maxConcurrentRequests: 10,
       });
       retryer.use(new MetricsPlugin());
 
@@ -80,18 +80,18 @@ describe('Functional API Integration Tests', () => {
     it('should handle priority-based requests', async () => {
       const retryer = createRetryer({
         axiosInstance,
-        retries: 0
+        retries: 0,
       });
 
       const responses = await Promise.all([
         retryer.axiosInstance.get('/api/test1'),
         retryer.axiosInstance.get('/api/test2'),
-        retryer.axiosInstance.get('/api/test3')
+        retryer.axiosInstance.get('/api/test3'),
       ]);
 
       // All requests should complete successfully
       expect(responses).toHaveLength(3);
-      expect(responses.every(r => r.status === 200)).toBe(true);
+      expect(responses.every((r) => r.status === 200)).toBe(true);
     }, 10000);
   });
 
@@ -102,13 +102,13 @@ describe('Functional API Integration Tests', () => {
           // Only retry 503 Service Unavailable errors
           return error.response?.status === 503;
         },
-        getDelay: (attempt) => 50 // Short delay for testing
+        getDelay: (attempt) => 50, // Short delay for testing
       });
 
       const retryer = createRetryer({
         axiosInstance,
         retries: 2, // Reduced retries for faster test
-        retryStrategy: customStrategy
+        retryStrategy: customStrategy,
       });
 
       let attempts503 = 0;
@@ -152,13 +152,13 @@ describe('Functional API Integration Tests', () => {
           const hasAttemptsLeft = attempt < maxRetries;
           return isRetryableError && hasAttemptsLeft;
         },
-        getDelay: (attempt) => Math.pow(2, attempt) * 100 // Exponential: 200ms, 400ms, 800ms
+        getDelay: (attempt) => Math.pow(2, attempt) * 100, // Exponential: 200ms, 400ms, 800ms
       });
 
       const retryer = createRetryer({
         axiosInstance,
         retries: 3,
-        retryStrategy: customStrategy
+        retryStrategy: customStrategy,
       });
 
       let serverErrorAttempts = 0;
@@ -197,7 +197,7 @@ describe('Functional API Integration Tests', () => {
     });
 
     it('should create a custom retry strategy with dynamic delay calculation', async () => {
-      let delayCalculations: number[] = [];
+      const delayCalculations: number[] = [];
 
       const customStrategy = createRetryStrategy({
         getDelay: (attempt, maxRetries, backoffType) => {
@@ -206,13 +206,13 @@ describe('Functional API Integration Tests', () => {
           const dynamicDelay = baseDelay * attempt * (maxRetries - attempt + 1);
           delayCalculations.push(dynamicDelay);
           return dynamicDelay;
-        }
+        },
       });
 
       const retryer = createRetryer({
         axiosInstance,
         retries: 3,
-        retryStrategy: customStrategy
+        retryStrategy: customStrategy,
       });
 
       let attempts = 0;
@@ -232,11 +232,11 @@ describe('Functional API Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(attempts).toBe(3);
       expect(delayCalculations).toHaveLength(2); // 2 retries = 2 delay calculations
-      
+
       // Verify custom delay calculation: attempt 1: 100*1*3=300ms, attempt 2: 100*2*2=400ms
       expect(delayCalculations[0]).toBe(300);
       expect(delayCalculations[1]).toBe(400);
-      
+
       // Total time should be at least the sum of delays
       expect(totalTime).toBeGreaterThan(700);
     });
@@ -249,14 +249,14 @@ describe('Functional API Integration Tests', () => {
           const status = error.response?.status;
           return typeof status === 'number' && status >= 500;
         }, // Only retry 5xx errors
-        getDelay: (attempt) => attempt * 200
+        getDelay: (attempt) => attempt * 200,
       });
 
       const retryer = createRetryer({
         axiosInstance,
         retries: 3,
         retryStrategy: customStrategy,
-        debug: false
+        debug: false,
       });
 
       // Add a simple custom plugin
@@ -297,7 +297,7 @@ describe('Functional API Integration Tests', () => {
         retries: 2,
         maxConcurrentRequests: 2,
         queueDelay: 50,
-        debug: false
+        debug: false,
       });
       retryer.use(new MetricsPlugin());
 
@@ -310,7 +310,7 @@ describe('Functional API Integration Tests', () => {
       });
 
       mock.onGet('/api/slow').reply(() => {
-        return new Promise(resolve => {
+        return new Promise((resolve) => {
           setTimeout(() => {
             results.push('slow-completed');
             resolve([200, { type: 'slow' }]);
@@ -331,14 +331,18 @@ describe('Functional API Integration Tests', () => {
       // Send requests with different priorities
       const requests = [
         retryer.axiosInstance.get('/api/fast', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.HIGH } }),
-        retryer.axiosInstance.get('/api/slow', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM } }),
-        retryer.axiosInstance.get('/api/retry', { __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL } })
+        retryer.axiosInstance.get('/api/slow', {
+          __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM },
+        }),
+        retryer.axiosInstance.get('/api/retry', {
+          __axiosRetryer: { priority: AXIOS_RETRYER_REQUEST_PRIORITIES.CRITICAL },
+        }),
       ];
 
       const responses = await Promise.all(requests);
 
       expect(responses).toHaveLength(3);
-      expect(responses.every(r => r.status === 200)).toBe(true);
+      expect(responses.every((r) => r.status === 200)).toBe(true);
       expect(retryAttempts).toBe(2);
       expect(results).toContain('fast-completed');
       expect(results).toContain('slow-completed');
@@ -354,13 +358,13 @@ describe('Functional API Integration Tests', () => {
     it('should handle invalid configuration gracefully', () => {
       expect(() => {
         createRetryer({
-          retries: -1 // Invalid negative retries
+          retries: -1, // Invalid negative retries
         });
       }).toThrow();
 
       expect(() => {
         createRetryer({
-          maxConcurrentRequests: 0 // Invalid zero concurrent requests
+          maxConcurrentRequests: 0, // Invalid zero concurrent requests
         });
       }).toThrow();
     });
@@ -369,13 +373,13 @@ describe('Functional API Integration Tests', () => {
       const faultyStrategy = createRetryStrategy({
         isRetryable: () => {
           throw new Error('Strategy error');
-        }
+        },
       });
 
       const retryer = createRetryer({
         axiosInstance,
         retries: 2,
-        retryStrategy: faultyStrategy
+        retryStrategy: faultyStrategy,
       });
 
       mock.onGet('/api/faulty-strategy').reply(500, { error: 'Server Error' });
@@ -390,4 +394,4 @@ describe('Functional API Integration Tests', () => {
       }
     });
   });
-}); 
+});

@@ -29,7 +29,9 @@ describe('Error standardization', () => {
     expect(() => createRetryer({ retries: -1 })).toThrow(RetryerConfigError);
     expect(() => new CachingPlugin({ maxAge: -1 })).toThrow(RetryerConfigError);
     expect(() => new CircuitBreakerPlugin({ failureThreshold: 0 })).toThrow(RetryerConfigError);
-    expect(() => new TokenRefreshPlugin(async () => ({ token: 'x' }), { refreshTimeout: 0 })).toThrow(RetryerConfigError);
+    expect(() => new TokenRefreshPlugin(async () => ({ token: 'x' }), { refreshTimeout: 0 })).toThrow(
+      RetryerConfigError,
+    );
 
     try {
       createRetryer({ retries: -1 });
@@ -54,11 +56,13 @@ describe('Error standardization', () => {
     retryer.use(duplicatePlugin);
 
     expect(() => retryer.use(duplicatePlugin)).toThrow(PluginRegistrationError);
-    expect(() => retryer.use({
-      name: 'BadVersionPlugin',
-      version: 'bad-version',
-      initialize: jest.fn(),
-    })).toThrow(PluginRegistrationError);
+    expect(() =>
+      retryer.use({
+        name: 'BadVersionPlugin',
+        version: 'bad-version',
+        initialize: jest.fn(),
+      }),
+    ).toThrow(PluginRegistrationError);
 
     try {
       retryer.use(duplicatePlugin);
@@ -101,7 +105,7 @@ describe('Error standardization', () => {
   test('uses InvalidCacheKeyError for invalid cache key generation', () => {
     const plugin = new CachingPlugin();
 
-    expect(() => plugin['generateCacheKey']({ method: 'get' })).toThrow(InvalidCacheKeyError);
+    expect(() => plugin['buildCacheKey']({ method: 'get' })).toThrow(InvalidCacheKeyError);
   });
 
   test('uses CircuitBreakerStateError for fail-fast circuit responses', () => {
@@ -151,15 +155,14 @@ describe('Error standardization', () => {
     const timeoutAxios = axios.create();
     const timeoutMock = new AxiosMockAdapter(timeoutAxios);
     const timeoutRetryer = createRetryer({ axiosInstance: timeoutAxios });
-    timeoutRetryer.use(new TokenRefreshPlugin(
-      async () => await new Promise(() => {}),
-      {
+    timeoutRetryer.use(
+      new TokenRefreshPlugin(async () => await new Promise(() => {}), {
         refreshStatusCodes: [401],
         refreshTimeout: 1,
         maxRefreshAttempts: 1,
         retryOnRefreshFail: false,
-      },
-    ));
+      }),
+    );
     timeoutMock.onGet('/timeout-protected').reply(401);
 
     const timeoutErr = await timeoutRetryer.axiosInstance.get('/timeout-protected').catch((e) => e);

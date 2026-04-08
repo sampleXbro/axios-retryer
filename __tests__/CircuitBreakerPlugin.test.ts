@@ -1,8 +1,8 @@
 //@ts-nocheck
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { jest } from '@jest/globals';
-import { RetryManager } from '../src';
+import { type RetryManager } from '../src';
 import { CircuitBreakerPlugin } from '../src/plugins/CircuitBreakerPlugin';
 
 describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
@@ -38,8 +38,8 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     // IMPORTANT: Disable the enhanced features for these basic tests
     plugin = new CircuitBreakerPlugin({
       failureThreshold: 3, // trip after 3 failures
-      openTimeout: 10000,  // 10 seconds before transitioning to HALF_OPEN
-      halfOpenMax: 1,      // allow only 1 test request in HALF_OPEN
+      openTimeout: 10000, // 10 seconds before transitioning to HALF_OPEN
+      halfOpenMax: 1, // allow only 1 test request in HALF_OPEN
       useSlidingWindow: false, // disable for these tests
       adaptiveTimeout: false, // disable for these tests
     });
@@ -80,8 +80,8 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
 
     // Check if an error log was made when the circuit tripped
     expect(fakeLogger.error).toHaveBeenCalled();
-    const errorCalls = fakeLogger.error.mock.calls.map(call => call[0]);
-    const trippedLog = errorCalls.find(msg => msg.includes('Circuit tripped: entering OPEN state'));
+    const errorCalls = fakeLogger.error.mock.calls.map((call) => call[0]);
+    const trippedLog = errorCalls.find((msg) => msg.includes('Circuit tripped: entering OPEN state'));
     expect(trippedLog).toBeDefined();
   });
 
@@ -126,8 +126,8 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     await expect(axiosInstance.get('/anotherReq')).rejects.toThrow(/Circuit is open/);
 
     // Check if the plugin logged an error about re-tripping
-    const errorCalls = fakeLogger.error.mock.calls.map(call => call[0]);
-    expect(errorCalls.some(msg => msg.includes('Circuit tripped: entering OPEN state'))).toBe(true);
+    const errorCalls = fakeLogger.error.mock.calls.map((call) => call[0]);
+    expect(errorCalls.some((msg) => msg.includes('Circuit tripped: entering OPEN state'))).toBe(true);
   });
 
   test('should respect the halfOpenMax limit', async () => {

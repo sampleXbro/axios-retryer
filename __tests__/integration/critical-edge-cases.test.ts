@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { createRetryer, RetryManager, QueueFullError, RETRY_MODES, type PluginContext } from '../../src';
 import { ManualRetryPlugin } from '../../src/plugins/ManualRetryPlugin';
@@ -23,13 +23,11 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         axiosInstance,
         maxConcurrentRequests: 1,
         maxQueueSize: 1,
-        retries: 0
+        retries: 0,
       });
 
       // First request will be processed immediately
-      mock.onGet('/test1').reply(() => 
-        new Promise(resolve => setTimeout(() => resolve([200, 'OK']), 100))
-      );
+      mock.onGet('/test1').reply(() => new Promise((resolve) => setTimeout(() => resolve([200, 'OK']), 100)));
       mock.onGet('/test2').reply(200, 'OK');
       mock.onGet('/test3').reply(200, 'OK');
 
@@ -37,10 +35,10 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const promise1 = retryer.axiosInstance.get('/test1');
 
       // Wait for first request to start processing
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Second request (will be queued)
-      const promise2 = retryer.axiosInstance.get('/test2').catch(e => e);
+      const promise2 = retryer.axiosInstance.get('/test2').catch((e) => e);
 
       // Third request should throw QueueFullError
       try {
@@ -62,7 +60,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 2,
-        throwErrorOnFailedRetries: false
+        throwErrorOnFailedRetries: false,
       });
       retryer.use(new MetricsPlugin());
 
@@ -80,7 +78,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({
         axiosInstance: shortTimeoutAxios,
         retries: 1,
-        throwErrorOnFailedRetries: false
+        throwErrorOnFailedRetries: false,
       });
 
       const timeoutMock = new AxiosMockAdapter(shortTimeoutAxios);
@@ -98,15 +96,15 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 1,
-        throwErrorOnFailedRetries: false
+        throwErrorOnFailedRetries: false,
       });
       retryer.use(new MetricsPlugin());
 
       const clientErrors = [400, 401, 403, 404, 429];
-      
+
       for (const status of clientErrors) {
         mock.onGet(`/client-${status}`).reply(status, { error: `Error ${status}` });
-        
+
         const response = await retryer.axiosInstance.get(`/client-${status}`);
         expect(response).toBeNull();
       }
@@ -119,15 +117,15 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 1,
-        throwErrorOnFailedRetries: false
+        throwErrorOnFailedRetries: false,
       });
       retryer.use(new MetricsPlugin());
 
       const serverErrors = [500, 502, 503, 504];
-      
+
       for (const status of serverErrors) {
         mock.onGet(`/server-${status}`).reply(status, { error: `Error ${status}` });
-        
+
         const response = await retryer.axiosInstance.get(`/server-${status}`);
         expect(response).toBeNull();
       }
@@ -144,7 +142,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const invalidPlugin = {
         name: 'InvalidPlugin',
         version: 'invalid-version-format',
-        initialize: jest.fn()
+        initialize: jest.fn(),
       };
 
       expect(() => {
@@ -155,7 +153,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
     it('should handle plugin hook errors gracefully', async () => {
       const retryer = createRetryer({
         axiosInstance,
-        retries: 1
+        retries: 1,
       });
 
       const errorPlugin = {
@@ -165,7 +163,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
           context.on('beforeRetry', () => {
             throw new Error('Plugin error');
           });
-        }
+        },
       };
 
       retryer.use(errorPlugin);
@@ -183,7 +181,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const plugin = {
         name: 'DuplicatePlugin',
         version: '1.0.0',
-        initialize: jest.fn()
+        initialize: jest.fn(),
       };
 
       retryer.use(plugin);
@@ -226,7 +224,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
 
       // Should handle null/undefined priorities gracefully
       const response = await retryer.axiosInstance.get('/invalid-priority', {
-        __axiosRetryer: { priority: null as any }
+        __axiosRetryer: { priority: null as any },
       });
       expect(response.status).toBe(200);
     });
@@ -236,7 +234,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
     it('should handle destroy cleanup properly', async () => {
       const retryer = createRetryer({
         axiosInstance,
-        retries: 2
+        retries: 2,
       });
 
       mock.onGet('/cleanup-test').reply(200, { success: true });
@@ -261,7 +259,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         name: 'CleanupPlugin',
         version: '1.0.0',
         initialize: jest.fn(),
-        onBeforeDestroyed: cleanupSpy
+        onBeforeDestroyed: cleanupSpy,
       };
 
       retryer.use(plugin);
@@ -277,7 +275,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({
         axiosInstance,
         mode: RETRY_MODES.MANUAL,
-        retries: 2
+        retries: 2,
       });
       retryer.use(manualRetry);
 
@@ -295,7 +293,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
         axiosInstance,
         mode: RETRY_MODES.MANUAL,
         retries: 1,
-        throwErrorOnFailedRetries: false
+        throwErrorOnFailedRetries: false,
       });
       retryer.use(manualRetry);
 
@@ -323,7 +321,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({
         axiosInstance,
         retries: 0,
-        throwErrorOnFailedRetries: false
+        throwErrorOnFailedRetries: false,
       });
 
       mock.onGet('/no-retries').reply(500, 'Error');
@@ -336,7 +334,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({
         axiosInstance,
         maxConcurrentRequests: 1,
-        queueDelay: 10
+        queueDelay: 10,
       });
 
       const results: string[] = [];
@@ -350,7 +348,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const promises = [
         retryer.axiosInstance.get('/sequential'),
         retryer.axiosInstance.get('/sequential'),
-        retryer.axiosInstance.get('/sequential')
+        retryer.axiosInstance.get('/sequential'),
       ];
 
       await Promise.all(promises);
@@ -363,13 +361,13 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({ axiosInstance });
 
       // Add external interceptor
-      const interceptorId = axiosInstance.interceptors.request.use(config => {
+      const interceptorId = axiosInstance.interceptors.request.use((config) => {
         config.headers = config.headers || {};
         (config.headers as any)['X-Test-Header'] = 'test-value';
         return config;
       });
 
-      mock.onGet('/interceptor-test').reply(config => {
+      mock.onGet('/interceptor-test').reply((config) => {
         expect((config.headers as any)['X-Test-Header']).toBe('test-value');
         return [200, { success: true }];
       });
@@ -385,7 +383,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
       const retryer = createRetryer({ axiosInstance });
 
       // Add external response interceptor
-      const interceptorId = axiosInstance.interceptors.response.use(response => {
+      const interceptorId = axiosInstance.interceptors.response.use((response) => {
         response.data.modified = true;
         return response;
       });
@@ -405,7 +403,7 @@ describe('Critical Edge Cases & Error Scenarios', () => {
     it('should track timer health correctly', async () => {
       const retryer = createRetryer({
         axiosInstance,
-        retries: 1
+        retries: 1,
       });
       retryer.use(new MetricsPlugin());
 
@@ -474,12 +472,10 @@ describe('Critical Edge Cases & Error Scenarios', () => {
     it('should handle request cancellation properly', async () => {
       const retryer = createRetryer({
         axiosInstance,
-        retries: 2
+        retries: 2,
       });
 
-      mock.onGet('/cancel-test').reply(() => 
-        new Promise(resolve => setTimeout(() => resolve([200, 'OK']), 200))
-      );
+      mock.onGet('/cancel-test').reply(() => new Promise((resolve) => setTimeout(() => resolve([200, 'OK']), 200)));
 
       const requestPromise = retryer.axiosInstance.get('/cancel-test').catch(() => ({ cancelled: true }));
 

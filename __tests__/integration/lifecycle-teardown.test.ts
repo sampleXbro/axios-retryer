@@ -6,7 +6,7 @@
  * when the manager is destroyed with items in the queue or retry state, and when
  * multiple plugins interact under failure and teardown.
  */
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import AxiosMockAdapter from 'axios-mock-adapter';
 import { RetryManager } from '../../src';
 import { CachingPlugin } from '../../src/plugins/CachingPlugin';
@@ -28,7 +28,11 @@ describe('Plugin lifecycle teardown (T-011)', () => {
   afterEach(() => {
     mock.restore();
     // Destroy manager if it was created and not already destroyed
-    try { retryer?.destroy(); } catch (_) { /* already destroyed */ }
+    try {
+      retryer?.destroy();
+    } catch (_) {
+      /* already destroyed */
+    }
   });
 
   // ─── Plugin removal during in-flight work ──────────────────────────────────
@@ -101,7 +105,10 @@ describe('Plugin lifecycle teardown (T-011)', () => {
 
       let firstResolve!: () => void;
       mock.onGet('/slow').reply(
-        () => new Promise<[number, object]>((res) => { firstResolve = () => res([200, {}]); }),
+        () =>
+          new Promise<[number, object]>((res) => {
+            firstResolve = () => res([200, {}]);
+          }),
       );
       mock.onGet('/queued').reply(200, {});
 

@@ -180,7 +180,12 @@ export interface CircuitBreakerPluginEvents {
     scopeKey: string;
     from: CircuitBreakerState;
     to: CircuitBreakerState;
-    reason: 'failure-threshold' | 'half-open-failure' | 'open-timeout-elapsed' | 'success-threshold-reached' | 'manual-reset';
+    reason:
+      | 'failure-threshold'
+      | 'half-open-failure'
+      | 'open-timeout-elapsed'
+      | 'success-threshold-reached'
+      | 'manual-reset';
     nextAttemptIn?: number;
   }) => void;
 }
@@ -300,10 +305,18 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     };
 
     if (!Number.isInteger(this._options.failureThreshold) || this._options.failureThreshold < 1) {
-      throw new RetryerConfigError('failureThreshold must be a positive integer', 'failureThreshold', this._options.failureThreshold);
+      throw new RetryerConfigError(
+        'failureThreshold must be a positive integer',
+        'failureThreshold',
+        this._options.failureThreshold,
+      );
     }
     if (!Number.isInteger(this._options.openTimeout) || this._options.openTimeout < 0) {
-      throw new RetryerConfigError('openTimeout must be a non-negative integer', 'openTimeout', this._options.openTimeout);
+      throw new RetryerConfigError(
+        'openTimeout must be a non-negative integer',
+        'openTimeout',
+        this._options.openTimeout,
+      );
     }
     if (!Number.isInteger(this._options.halfOpenMax) || this._options.halfOpenMax < 1) {
       throw new RetryerConfigError('halfOpenMax must be a positive integer', 'halfOpenMax', this._options.halfOpenMax);
@@ -362,9 +375,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
             'debug',
             `Circuit is OPEN for ${scopeDetails.scopeKey}: failing fast. Will retry in ${remainingTime}ms`,
           );
-          return Promise.reject(
-            this._createCircuitStateError(config, scopeState, 'Circuit is open: failing fast.')
-          );
+          return Promise.reject(this._createCircuitStateError(config, scopeState, 'Circuit is open: failing fast.'));
         }
       }
 
@@ -372,7 +383,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
         if (scopeState.halfOpenCount >= this._options.halfOpenMax) {
           this._log('debug', `Circuit is HALF_OPEN for ${scopeDetails.scopeKey}: too many test requests.`);
           return Promise.reject(
-            this._createCircuitStateError(config, scopeState, 'Circuit is half-open: too many test requests.')
+            this._createCircuitStateError(config, scopeState, 'Circuit is half-open: too many test requests.'),
           );
         }
 
@@ -567,9 +578,9 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
 
   /**
    * Resets all known scopes immediately.
-   * Kept for backwards-compatible internal/test usage.
+   * @internal Exposed for test usage only; not part of the public API.
    */
-  private _reset(scopeKey?: string): void {
+  _reset(scopeKey?: string): void {
     const scopeKeys = scopeKey ? [scopeKey] : Array.from(this._knownScopes.keys());
 
     scopeKeys.forEach((key) => {
@@ -638,7 +649,12 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     scopeKey: string,
     from: CircuitBreakerState,
     to: CircuitBreakerState,
-    reason: 'failure-threshold' | 'half-open-failure' | 'open-timeout-elapsed' | 'success-threshold-reached' | 'manual-reset',
+    reason:
+      | 'failure-threshold'
+      | 'half-open-failure'
+      | 'open-timeout-elapsed'
+      | 'success-threshold-reached'
+      | 'manual-reset',
     nextAttemptIn?: number,
   ): void {
     if (from === to) {
@@ -669,23 +685,18 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     };
     assignRequestMetadata(errorConfig, { requestRetries: 0 });
 
-    const response = scopeState.lastFailureStatus !== undefined
-      ? {
-        status: scopeState.lastFailureStatus,
-        statusText: 'Circuit Open',
-        config: errorConfig as never,
-        headers: {},
-        data: { error: message },
-      } as never
-      : undefined;
+    const response =
+      scopeState.lastFailureStatus !== undefined
+        ? ({
+            status: scopeState.lastFailureStatus,
+            statusText: 'Circuit Open',
+            config: errorConfig as never,
+            headers: {},
+            data: { error: message },
+          } as never)
+        : undefined;
 
-    return new CircuitBreakerStateError(
-      message,
-      scopeState.state,
-      errorConfig,
-      scopeState.lastFailureCode,
-      response,
-    );
+    return new CircuitBreakerStateError(message, scopeState.state, errorConfig, scopeState.lastFailureCode, response);
   }
 
   /**
