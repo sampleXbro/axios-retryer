@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "TypeScript-first Axios retry library with concurrency limits, request priority, token refresh, response caching, and circuit breaker plugins.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
