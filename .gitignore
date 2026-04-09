@@ -61,9 +61,15 @@ internal-docs/
 !website/src/pages/docs/
 
 # Local assistant settings
-.claude/settings.local.json
+.claude
+.cursor
+.junie
+.windsurf
 
 # TGZ files
 *.tgz
 
 stats/
+agentsmesh.local.yaml
+.agentsmeshcache
+.agentsmesh/.lock.tmp

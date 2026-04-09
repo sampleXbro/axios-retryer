@@ -4,15 +4,17 @@ export { CachingPlugin } from './CachingPlugin';
 export { InvalidCacheKeyError } from './InvalidCacheKeyError';
 export {
   InMemoryCacheStorage,
-  type CacheInvalidationMatcher,
-  type CacheKeyBuilder,
-  type CacheKeyBuilderContext,
-  type CacheStorageEntry,
-  type CacheStorage,
-  type CachedItem,
-  type CachingPluginOptions,
-  type CachingPluginEvents,
-  type CachingRequestOptions,
+} from './CachingPlugin';
+export type {
+  CacheInvalidationMatcher,
+  CacheKeyBuilder,
+  CacheKeyBuilderContext,
+  CacheStorage,
+  CacheStorageEntry,
+  CachedItem,
+  CachingPluginEvents,
+  CachingPluginOptions,
+  CachingRequestOptions,
 } from './CachingPlugin';
 
 import { CachingPlugin, type CachingPluginOptions, type CachingRequestOptions } from './CachingPlugin';

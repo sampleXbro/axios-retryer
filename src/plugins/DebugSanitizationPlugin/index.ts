@@ -1,4 +1,5 @@
-export { DebugSanitizationPlugin, type DebugSanitizationPluginOptions } from './DebugSanitizationPlugin';
+export { DebugSanitizationPlugin } from './DebugSanitizationPlugin';
+export type { DebugSanitizationPluginOptions } from './DebugSanitizationPlugin';
 
 import { DebugSanitizationPlugin, type DebugSanitizationPluginOptions } from './DebugSanitizationPlugin';
 

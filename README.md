@@ -117,7 +117,7 @@ Benchmarks from the current release (standard profile, local suite):
 - **Healthy-path throughput (core scenario):** `2,150 req/sec`
 - **Peak burst throughput (stress scenario):** `4,285 req/sec`
 - **Cache hit rate:** `100%` (integration + hot-read scenarios)
-- **Test suite:** `67/67` suites · `675/675` tests passing
+- **Test suite:** `70/70` suites · `769/769` tests passing
 
 See [BENCHMARK_RESULTS.md](./BENCHMARK_RESULTS.md) for full methodology and raw numbers.
 

@@ -2,3 +2,9 @@ node_modules
 dist/test
 .vscode
 .git
+.claude
+.cache
+.cursor
+.junie
+.windsurf
+.agentsmeshcache

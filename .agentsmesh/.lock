@@ -1,0 +1,11 @@
+# Auto-generated. DO NOT EDIT MANUALLY.
+# Tracks the state of all config files for team conflict resolution.
+
+generated_at: 2026-04-09T13:48:28.972Z
+generated_by: serhii
+lib_version: 0.2.10
+checksums:
+  rules/_root.md: sha256:f7aef8e57bfad4fd61ee48748eb5490110c7824e995abed402570e9044482be0
+extends: {}
+packs:
+  onmax-nuxt-skills-skills: sha256:79fdc31ee1c1a35717f82ec23944814a406eb86d9e471123b6ff1785e2f1ecd3

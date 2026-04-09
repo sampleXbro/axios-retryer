@@ -31,13 +31,6 @@ export interface TokenRefreshPluginOptions {
    */
   maxRefreshBackoffMs?: number;
   /**
-   * Maximum number of requests that may queue up while a token refresh is in progress.
-   * Requests beyond this limit are immediately rejected with `TokenRefreshFailedError`
-   * rather than held in memory indefinitely.
-   * Default: 1000.
-   */
-  maxRefreshQueueSize?: number;
-  /**
    * Optional function to detect auth errors in response bodies (for APIs that return 200 with error in body)
    * Return true if response contains an auth error that should trigger token refresh
    */

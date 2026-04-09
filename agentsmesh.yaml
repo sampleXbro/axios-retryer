@@ -1,0 +1,16 @@
+version: 1
+targets:
+  - claude-code
+  - codex-cli
+  - windsurf
+  - cursor
+  - junie
+features:
+  - rules
+  - commands
+  - agents
+  - skills
+  - mcp
+  - hooks
+  - ignore
+  - permissions

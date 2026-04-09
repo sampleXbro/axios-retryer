@@ -1,0 +1,14 @@
+version: 1
+installs:
+  - name: onmax-nuxt-skills-skills
+    source: github:onmax/nuxt-skills@00fb59d760c60e5e00fd14403fa2dd2cf3f0b35f
+    version: 00fb59d760c60e5e00fd14403fa2dd2cf3f0b35f
+    source_kind: github
+    features:
+      - skills
+    pick:
+      skills:
+        - ts-library
+    target: claude-code
+    path: skills
+    as: skills

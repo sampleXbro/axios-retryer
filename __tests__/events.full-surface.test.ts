@@ -263,7 +263,7 @@ describe('Public event surface (emission conditions)', () => {
 
     expect(onBeforeTokenRefresh).toHaveBeenCalledTimes(1);
     expect(onTokenRefreshed).toHaveBeenCalledTimes(1);
-    expect(onTokenRefreshed).toHaveBeenCalledWith('[token:16]'); // masked: 'refreshed-access'.length === 16
+    expect(onTokenRefreshed).toHaveBeenCalledWith('refreshed-access');
     expect(onTokenRefreshFailed).not.toHaveBeenCalled();
 
     mock.restore();

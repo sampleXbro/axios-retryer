@@ -6,7 +6,7 @@ We actively support and patch security vulnerabilities for the following version
 
 | Version                | Supported |
 |------------------------|-----------|
-| 2.x                    | ✅ Fully supported |
+| 2.x                    | ✅ Supported |
 | 1.x                    | ⚠️ Best-effort security fixes; upgrade to 2.x recommended |
 | < 1.0 stable, alpha, beta | ❌ Unsupported |
 
@@ -28,6 +28,32 @@ We take security issues seriously. If you discover a vulnerability, please follo
 
 ### **3. Acknowledgment**
    - We will confirm receipt of your report within **one week** and provide regular updates on the status of the investigation and fix.
+
+---
+
+## Most Important Security Points
+
+If you only read one section of this document, make it this one:
+
+1. **Treat `onTokenRefreshed` as a credential-bearing event**
+   - In the current `2.x` line, `TokenRefreshPlugin` emits the raw refreshed token to `onTokenRefreshed` listeners.
+   - **Mitigation**: Do not attach untrusted plugins, analytics hooks, or broad logging to this event. Treat every listener as trusted credential-handling code.
+
+2. **Do not use `ManualRetryPlugin` casually for sensitive traffic**
+   - Stored manual retries keep replayable request configs in memory, including bodies and custom config fields. In the current `2.x` line, replay is also fail-fast: one replay failure aborts the rest of the batch.
+   - **Mitigation**: Prefer automatic mode for sensitive traffic, keep `maxRequestsToStore` low, leave `storeAuthRequests` disabled unless absolutely necessary, use `prepareRequestForStore` to redact payloads, and clear pending retries when they are no longer needed.
+
+3. **Be careful with high-throughput token refresh scenarios**
+   - While a refresh is in progress, protected requests can accumulate inside `TokenRefreshPlugin`'s internal queue. In the current `2.x` line that queue is not capped by default.
+   - **Mitigation**: Avoid sharing one retry manager across very high-cardinality or bursty traffic, keep refresh handlers fast, and place normal application-level rate limits in front of traffic spikes.
+
+4. **Never share one cached retry manager across security boundaries**
+   - `CachingPlugin` stores full responses in memory. If one manager instance is shared across users, tenants, or request contexts, cached data can cross principals if endpoints are not carefully scoped.
+   - **Mitigation**: Use separate retry managers per user, tenant, or request boundary for auth-scoped traffic, and avoid caching personalized endpoints on shared instances.
+
+5. **Keep dependencies current**
+   - This library depends on Axios and other third-party packages that can receive security advisories independently of this codebase.
+   - **Mitigation**: Run `npm audit`, review advisories regularly, and upgrade promptly when patched versions are available.
 
 ---
 

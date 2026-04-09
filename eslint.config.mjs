@@ -43,6 +43,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'benchmark/**', 'website/**', 'sandbox/**', 'stats/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'benchmark/**', 'website/**', 'sandbox/**', 'stats/**', '.claude/**', '.cache/**', '.cursor/**', '.junie/**', '.windsurf/**', '.agentsmeshcache/**'],
   },
 );

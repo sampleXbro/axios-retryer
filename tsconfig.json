@@ -1,19 +1,18 @@
 {
   "compilerOptions": {
-    "target": "ES5",
-    "lib": ["ESNext", "DOM"],
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "strict": true,
     "noUnusedLocals": true,
-    "moduleResolution": "Node",
+    "noImplicitOverride": true,
+    "moduleResolution": "Bundler",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "sourceMap": false,
-    "types": ["jest", "node"],
-    "declaration": false,
-    "outDir": "dist",
-    "rootDir": "src"
+    "noEmit": true,
+    "types": ["node"],
+    "verbatimModuleSyntax": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "dist", "coverage", "website", "sandbox"]
 }

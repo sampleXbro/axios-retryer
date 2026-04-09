@@ -127,7 +127,7 @@ describe('TokenRefreshPlugin integration', () => {
     expect(profileResponse.data).toEqual({ profile: true });
     expect(queuedCalls).toBe(1);
     expect(hooks.onTokenRefreshed).toHaveBeenCalledTimes(1);
-    expect(hooks.onTokenRefreshed).toHaveBeenCalledWith('[token:11]'); // masked: 'fresh-token'.length === 11
+    expect(hooks.onTokenRefreshed).toHaveBeenCalledWith('fresh-token');
     expect(hooks.onTokenRefreshFailed).not.toHaveBeenCalled();
   });
 

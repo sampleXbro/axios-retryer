@@ -11,12 +11,9 @@ import type { Logger, PluginContext, RetryPlugin } from '../../types';
 export interface TokenRefreshPluginEvents {
   /**
    * Called immediately after a new token is successfully obtained from the refresh flow.
-   * @param maskedToken - A masked representation of the new token (e.g. `"[token:72]"`).
-   *   The raw token is intentionally withheld from the event payload to prevent credential
-   *   exposure to third-party event listeners. Retrieve the live token from
-   *   `axiosInstance.defaults.headers.common['Authorization']` if needed.
+   * @param newToken - The newly acquired token string.
    */
-  onTokenRefreshed?: (maskedToken: string) => void;
+  onTokenRefreshed?: (newToken: string) => void;
   /**
    * Called when all token refresh attempts have failed.
    */
@@ -51,7 +48,6 @@ const PLUGIN_DEFAULTS: Required<Omit<TokenRefreshPluginOptions, 'customErrorDete
   retryOnRefreshFail: true,
   tokenPrefix: 'Bearer ',
   maxRefreshBackoffMs: 30_000,
-  maxRefreshQueueSize: 1000,
 };
 
 function hasHeader(config: AxiosRequestConfig, headerName: string): boolean {
@@ -121,11 +117,6 @@ function setHeader(config: AxiosRequestConfig, headerName: string, value: string
 
 function sanitizeHeaderValue(value: string): string {
   return value.replace(/[\r\n\0\u2028\u2029]/g, '');
-}
-
-/** Returns an opaque descriptor so listeners can observe a refresh without receiving the credential. */
-function maskToken(token: string): string {
-  return `[token:${token.length}]`;
 }
 
 /**
@@ -283,10 +274,6 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
       if (!metadata.isRetryRefreshRequest && hasHeader(config, authHeaderName)) {
         if (this.isRefreshing) {
           // Refresh in progress — queue this request until the new token arrives.
-          if (this.refreshQueue.length >= this.options.maxRefreshQueueSize) {
-            this.context.releaseRequestTracking(config);
-            return Promise.reject(this.bindRefreshErrorToRequest(new TokenRefreshFailedError(), config));
-          }
           return new Promise((resolve, reject) => {
             this.refreshQueue.push({
               kind: 'hold-request',
@@ -605,7 +592,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
           this.logger?.debug(`[${this.name}] Refresh handler returned no token; skipping refresh`);
           return null;
         }
-        this.context.triggerAndEmit('onTokenRefreshed', maskToken(token));
+        this.context.triggerAndEmit('onTokenRefreshed', token);
         this.logger?.debug(`[${this.name}] Token successfully refreshed`);
         return token;
       } catch (error) {
@@ -672,11 +659,6 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
    * If a 401 is encountered while a refresh is already in progress, queue the request.
    */
   private queueRefreshRequest(request: AxiosRequestConfig, sourceError: AxiosError): Promise<AxiosResponse> {
-    if (this.refreshQueue.length >= this.options.maxRefreshQueueSize) {
-      return Promise.reject(
-        this.bindRefreshErrorToRequest(new TokenRefreshFailedError(), request, sourceError.response),
-      );
-    }
     return new Promise((resolve, reject) => {
       this.refreshQueue.push({
         kind: 'retry-after-error',

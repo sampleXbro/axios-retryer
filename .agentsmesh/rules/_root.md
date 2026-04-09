@@ -1,3 +1,8 @@
+---
+root: true
+description: ""
+---
+
 # AI Agent Architecture & Behavior Manifesto
 
 > **This is the supreme governing document for AI Agents modifying the `axios-retryer` repository.**

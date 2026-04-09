@@ -79,3 +79,7 @@ If you write code that looks like the following, you form an instant failure:
 ✅ **Action**: Use defined payload interfaces and structured spread assignments.
 
 *If you understand these rules, proceed with your task, prioritizing systemic health above ticket closure speed.*
+
+## AgentsMesh Generation Contract
+
+AgentsMesh syncs AI coding tool configuration from a single canonical `.agentsmesh` directory. All target-specific files (`.claude/`, `.cursor/`, `AGENTS.md`, etc.) are generated artifacts — edit canonical config first, then regenerate. The import/generate contract is bidirectional and lossless: embedded or projected features round-trip without data loss.

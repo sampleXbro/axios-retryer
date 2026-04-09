@@ -4,18 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## 2.0.5 - 09.04.2026
 
+### 📦 Packaging
+
+- Migrated the main library build to `unbuild`, restoring a working release build for modern TypeScript syntax while keeping dual ESM/CJS outputs plus the optional browser bundle.
+- Updated published entry files to ESM-first `.mjs` / `.cjs` outputs, narrowed the npm publish surface to `dist/`, and added `publint` + `attw` package validation scripts.
+- Aligned TypeScript config with modern library defaults (`moduleResolution: bundler`, `verbatimModuleSyntax`, no emit in the root config) and documented the new artifact names in the site docs.
+
 ### 🔒 Security
 
-- **Credential exposure in TokenRefreshPlugin:** Mask tokens in `onTokenRefreshed` events to prevent credential leakage to third-party event listeners. The event now receives an opaque descriptor (e.g. `[token:72]`) instead of the raw token.
 - **Timing attack vulnerability:** Implemented constant-time string comparison (`safeStringEqual`) in TokenRefreshPlugin to prevent timing-oracle attacks when comparing failed auth header values.
 - **Header injection:** Enhanced header sanitization to include Unicode line separators (`\u2028`, `\u2029`) in addition to existing CRLF and null character filtering.
 - **Memory leaks in tracking:** Fixed memory leaks in CachingPlugin, EventBus, RetryManager, and RetryScheduler by using tracking IDs instead of config objects as Map keys. Config objects could retain large request payloads and prevent garbage collection.
 - **ReDoS documentation:** Added security warning to CircuitBreakerPlugin `excludeUrls` option documenting the risk of catastrophically backtracking regex patterns that can block the event loop.
-- **Unbounded memory growth in TokenRefreshPlugin:** Added `maxRefreshQueueSize` option (default: 1000) to cap the number of requests queued during token refresh. Requests beyond this limit are immediately rejected with `TokenRefreshFailedError` to prevent memory exhaustion under high load.
 - **Unbounded memory growth in CircuitBreakerPlugin:** Added scope eviction when `maxTrackedScopes` is reached to prevent unbounded growth of the scope tracking map. Uses FIFO eviction on the oldest scope entries.
 - **Race condition in CircuitBreakerPlugin state updates:** Implemented scope locking (`_withScopeLock`) to serialize async read-modify-write operations on circuit breaker state, preventing lost updates when using external state adapters.
 - **Race condition in CachingPlugin cache operations:** Added cache locking to serialize async read-modify-write operations on cache entries, preventing lost updates and inconsistent cache state under concurrent access.
-- **Cascading failures in ManualRetryPlugin:** Added error handling in `retryFailedRequests()` to continue replaying remaining requests even if one request fails. Prevents a single failing request from blocking the replay of all other stored requests.
 - **setTimeout safe integer overflow:** Added `MAX_BACKOFF_DELAY_MS` (60 seconds) to cap backoff delays before jitter is applied, preventing exponential backoff from exceeding setTimeout's safe integer range (~2^31 ms).
 
 ### 🧪 Testing

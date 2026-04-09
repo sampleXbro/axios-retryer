@@ -98,5 +98,5 @@ CI and local development typically use current Node.js **18+** (22.x is commonly
 
 ---
 
-**Last updated:** 2026-04-07  
-**Last full test run:** 67 test suites, 675 tests passing (see `npm test` in CI or locally).
+**Last updated:** 2026-04-09  
+**Last full test run:** 70 test suites, 769 tests passing (see `pnpm test` in CI or locally).

@@ -1,4 +1,5 @@
-export { ManualRetryPlugin, type ManualRetryPluginEvents, type ManualRetryPluginOptions } from './ManualRetryPlugin';
+export { ManualRetryPlugin } from './ManualRetryPlugin';
+export type { ManualRetryPluginEvents, ManualRetryPluginOptions } from './ManualRetryPlugin';
 export type { RequestStore } from '../../types';
 
 import { ManualRetryPlugin, type ManualRetryPluginOptions } from './ManualRetryPlugin';

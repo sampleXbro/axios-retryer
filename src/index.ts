@@ -54,6 +54,10 @@ import { DefaultRetryStrategy } from './core/strategies/DefaultRetryStrategy';
 import type { AxiosError } from 'axios';
 import type { AxiosRetryerBackoffType, RetryManagerOptions, RetryStrategy } from './types';
 
+// Prevents TypeScript from widening TPluginEvents based on call-site usage,
+// ensuring the type parameter is always inferred from the declaration site only.
+type NoInferType<T> = [T][T extends unknown ? 0 : never];
+
 /**
  * Creates a new RetryManager instance with the given options.
  * Functional alternative to using the `new RetryManager()` constructor.
@@ -67,8 +71,8 @@ import type { AxiosRetryerBackoffType, RetryManagerOptions, RetryStrategy } from
  * retryer.axiosInstance.get('/api/data').then(response => console.log(response.data));
  * ```
  */
-export function createRetryer<TPluginEvents extends object = Record<never, never>>(
-  options?: RetryManagerOptions,
+export function createRetryer<TPluginEvents extends object = {}>(
+  options?: RetryManagerOptions<NoInferType<TPluginEvents>>,
 ): RetryManager<TPluginEvents> {
   return new RetryManager<TPluginEvents>(options);
 }

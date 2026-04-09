@@ -174,11 +174,10 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
    * Retries all stored failed requests that have not expired.
    * Requests older than `manualRetryMaxAge` are discarded.
    *
-   * Each request is retried independently. A failure on one request is logged
-   * and skipped — remaining requests continue to be replayed. The returned array
-   * contains only successful responses.
+   * Replay is fail-fast: if any replayed request fails, the promise rejects
+   * with that error and remaining stored requests are not replayed.
    *
-   * @returns Array of successful responses.
+   * @returns Array of replay responses.
    */
   public async retryFailedRequests<T = unknown>(): Promise<AxiosResponse<T>[]> {
     const allStored = this.store.getAll();
@@ -243,16 +242,8 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
         await new Promise<void>((resolve) => setTimeout(resolve, Math.min(200 * i, 2000)));
       }
 
-      try {
-        const response = await this.context.axiosInstance.request<T>(transformedConfig);
-        results.push(response);
-      } catch (err) {
-        this.context.getLogger()?.warn('[ManualRetryPlugin] Replay failed for request', {
-          requestId: getRequestMetadata(transformedConfig)?.requestId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        // Continue replaying the remaining requests.
-      }
+      const response = await this.context.axiosInstance.request<T>(transformedConfig);
+      results.push(response);
     }
 
     return results;

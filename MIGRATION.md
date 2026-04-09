@@ -19,7 +19,7 @@ If you are upgrading from any `1.x` release, use this checklist.
 5. Update any TypeScript code that listens to plugin-specific events so the manager type is widened through `use()` or an explicit generic.
 6. Re-check `maxRefreshAttempts` if you use `TokenRefreshPlugin`.
 7. Move any manual replay usage to `ManualRetryPlugin`. Root `retryFailedRequests()`, `maxRequestsToStore`, `requestStore`, and `beforeManualRetry` are removed in `2.0`.
-8. If you used the browser bundle, build it locally with `npm run build:browser`.
+8. If you used the browser bundle, build it locally with `pnpm build:browser`.
 9. Replace `hooks: { ... }` on `createRetryer()` with `retryer.on(...)` after construction (and after `use()` when you need plugin-typed events).
 10. If you imported `RequestDependencyPlugin`, remove it and use `blockingPriorityThreshold` / `cancelPendingOnDependencyFailure` on `createRetryer()` instead.
 
@@ -229,7 +229,7 @@ If you tuned this number around the old bug, lower it by `1` to preserve the pre
 The browser bundle is no longer treated as a default published artifact in package metadata. Build it locally when you need a script-tag bundle:
 
 ```bash
-npm run build:browser
+pnpm build:browser
 ```
 
 ## Import Guidance
