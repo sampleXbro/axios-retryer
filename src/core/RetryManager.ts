@@ -40,6 +40,7 @@ const DEFAULT_CONFIG = {
   THROW_ON_CANCEL: true,
   DEBUG: false,
   MAX_CONCURRENT_REQUESTS: 5,
+  MAX_QUEUE_SIZE: 1000,
   CANCEL_PENDING_ON_DEPENDENCY_FAILURE: true,
 };
 
@@ -122,7 +123,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
     this.requestQueue = new RequestQueue({
       maxConcurrent: options.maxConcurrentRequests ?? DEFAULT_CONFIG.MAX_CONCURRENT_REQUESTS,
       queueDelay: options.queueDelay,
-      maxQueueSize: options.maxQueueSize,
+      maxQueueSize: options.maxQueueSize ?? DEFAULT_CONFIG.MAX_QUEUE_SIZE,
     });
 
     this._axiosInstance = options.axiosInstance || this.createAxiosInstance();

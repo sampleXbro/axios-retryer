@@ -4,10 +4,18 @@ type HookListeners<TPluginEvents extends object> = {
   [K in keyof RetryManagerEvents<TPluginEvents>]?: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[];
 };
 
+const DEFAULT_MAX_LISTENERS_PER_EVENT = 50;
+
 export class EventBus<TPluginEvents extends object = Record<never, never>> {
   private listeners: HookListeners<TPluginEvents> = {};
+  private readonly maxListenersPerEvent: number;
 
-  constructor(private readonly logger: Logger) {}
+  constructor(
+    private readonly logger: Logger,
+    maxListenersPerEvent: number = DEFAULT_MAX_LISTENERS_PER_EVENT,
+  ) {
+    this.maxListenersPerEvent = maxListenersPerEvent;
+  }
 
   public emit<K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,
@@ -39,6 +47,14 @@ export class EventBus<TPluginEvents extends object = Record<never, never>> {
     listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
   ): void {
     const listeners = (this.listeners[event] ?? []) as RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[];
+    if (listeners.length >= this.maxListenersPerEvent) {
+      this.logger.warn(
+        `EventBus: listener limit (${this.maxListenersPerEvent}) reached for event "${String(event)}". ` +
+          'This may indicate a listener leak. Call off() to remove unused listeners.',
+        { event, count: listeners.length },
+      );
+      return;
+    }
     listeners.push(listener);
     this.listeners[event] = listeners as HookListeners<TPluginEvents>[K];
     this.logger.debug('Event listener added', { event });

@@ -11,9 +11,12 @@ import type { Logger, PluginContext, RetryPlugin } from '../../types';
 export interface TokenRefreshPluginEvents {
   /**
    * Called immediately after a new token is successfully obtained from the refresh flow.
-   * @param newToken - The newly acquired token string.
+   * @param maskedToken - A masked representation of the new token (e.g. `"[token:72]"`).
+   *   The raw token is intentionally withheld from the event payload to prevent credential
+   *   exposure to third-party event listeners. Retrieve the live token from
+   *   `axiosInstance.defaults.headers.common['Authorization']` if needed.
    */
-  onTokenRefreshed?: (newToken: string) => void;
+  onTokenRefreshed?: (maskedToken: string) => void;
   /**
    * Called when all token refresh attempts have failed.
    */
@@ -116,7 +119,26 @@ function setHeader(config: AxiosRequestConfig, headerName: string, value: string
 }
 
 function sanitizeHeaderValue(value: string): string {
-  return value.replace(/[\r\n\0]/g, '');
+  return value.replace(/[\r\n\0\u2028\u2029]/g, '');
+}
+
+/** Returns an opaque descriptor so listeners can observe a refresh without receiving the credential. */
+function maskToken(token: string): string {
+  return `[token:${token.length}]`;
+}
+
+/**
+ * Constant-time string equality check to prevent timing-oracle attacks on token comparisons.
+ * Returns false immediately when lengths differ (unavoidable length leak), then compares
+ * all characters via XOR without short-circuiting.
+ */
+function safeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 function extractTokenFromAuthHeader(authHeaderValue: string, tokenPrefix: string): string {
@@ -147,10 +169,7 @@ type RefreshQueueEntry =
       reject: (e: Error) => void;
     };
 
-function createRefreshAxios(
-  context: { axiosInstance: AxiosInstance },
-  refreshTimeout: number,
-): AxiosInstance {
+function createRefreshAxios(context: { axiosInstance: AxiosInstance }, refreshTimeout: number): AxiosInstance {
   const defaults = context.axiosInstance.defaults;
 
   return axios.create({
@@ -170,7 +189,7 @@ function createRefreshAxios(
  * A RetryPlugin that manages token refresh on certain status codes (e.g., 401).
  * It intercepts failed requests, attempts to refresh the token,
  * and re-dispatches any queued requests if refresh succeeds.
- * 
+ *
  * Can also detect custom auth errors in response bodies for APIs that return 200 OK
  * with error messages in the body (like GraphQL).
  */
@@ -197,10 +216,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   };
   private logger: Logger | null = null;
 
-  constructor(
-    refreshToken: TokenRefreshHandler,
-    options?: TokenRefreshPluginOptions,
-  ) {
+  constructor(refreshToken: TokenRefreshHandler, options?: TokenRefreshPluginOptions) {
     this.refreshToken = refreshToken;
     this.options = { ...PLUGIN_DEFAULTS, ...options };
 
@@ -284,7 +300,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
         if (
           this.failedAuthHeaderValue !== null &&
           requestTokenValue !== null &&
-          requestTokenValue === this.failedAuthHeaderValue
+          safeStringEqual(requestTokenValue, this.failedAuthHeaderValue)
         ) {
           this.context.releaseRequestTracking(config);
           return Promise.reject(this.bindRefreshErrorToRequest(new TokenRefreshFailedError(), config));
@@ -354,11 +370,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     }
   }
 
-  private bindRefreshErrorToRequest(
-    error: Error,
-    config: AxiosRequestConfig,
-    response?: AxiosResponse,
-  ): AxiosError {
+  private bindRefreshErrorToRequest(error: Error, config: AxiosRequestConfig, response?: AxiosResponse): AxiosError {
     const axiosError = new AxiosError(
       error.message,
       'TOKEN_REFRESH_FAILED',
@@ -368,8 +380,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     );
 
     axiosError.name = error.name;
-    (axiosError as Error & { cause?: unknown }).cause =
-      (error as Error & { cause?: unknown }).cause ?? error;
+    (axiosError as Error & { cause?: unknown }).cause = (error as Error & { cause?: unknown }).cause ?? error;
 
     return axiosError;
   }
@@ -379,9 +390,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
       this.context.releaseRequestTracking(entry.config);
       entry.reject(this.bindRefreshErrorToRequest(logicalError, entry.config));
     } else if (entry.kind === 'retry-after-error') {
-      entry.reject(
-        this.bindRefreshErrorToRequest(logicalError, entry.request, entry.sourceError.response),
-      );
+      entry.reject(this.bindRefreshErrorToRequest(logicalError, entry.request, entry.sourceError.response));
     } else {
       entry.reject(this.bindRefreshErrorToRequest(logicalError, entry.response.config, entry.response));
     }
@@ -411,7 +420,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     this.ensureActive();
     const { customErrorDetector } = this.options;
     const metadata = getRequestMetadata(response.config);
-    
+
     // Skip if request is a refresh request or if no detector provided
     if (metadata?.isRetryRefreshRequest || !customErrorDetector) {
       return response;
@@ -421,7 +430,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     if (customErrorDetector(response.data)) {
       this.logger?.debug(`[${this.name}] Custom auth error detected in response body`);
       this.context.releaseRequestTracking(response.config);
-      
+
       if (this.isRefreshing) {
         // Queue the request and wait for token refresh to complete
         return new Promise((resolve, reject) => {
@@ -433,7 +442,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
           });
         });
       }
-      
+
       try {
         // Start refresh flow
         this.isRefreshing = true;
@@ -546,9 +555,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
       return this.withTeardown(this.retryRequest(originalRequest, token));
     } catch (err) {
       const refreshError = this.handleRefreshFailure(err);
-      return Promise.reject(
-        this.bindRefreshErrorToRequest(refreshError, originalRequest, originalError.response),
-      );
+      return Promise.reject(this.bindRefreshErrorToRequest(refreshError, originalRequest, originalError.response));
     } finally {
       this.isRefreshing = false;
     }
@@ -593,7 +600,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
           this.logger?.debug(`[${this.name}] Refresh handler returned no token; skipping refresh`);
           return null;
         }
-        this.context.triggerAndEmit('onTokenRefreshed', token);
+        this.context.triggerAndEmit('onTokenRefreshed', maskToken(token));
         this.logger?.debug(`[${this.name}] Token successfully refreshed`);
         return token;
       } catch (error) {

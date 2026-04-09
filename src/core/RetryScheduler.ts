@@ -4,6 +4,9 @@ import type { Logger, RetryStrategy } from '../types';
 import { getRequestMetadata } from '../utils/requestMetadata';
 import { TimerManager } from './TimerManager';
 
+/** Maximum delay enforced from a server-supplied Retry-After header (5 minutes). */
+export const MAX_RETRY_AFTER_MS = 5 * 60 * 1000;
+
 export function parseRetryAfterMs(headerValue: string | undefined | null): number {
   if (!headerValue) {
     return 0;
@@ -11,13 +14,13 @@ export function parseRetryAfterMs(headerValue: string | undefined | null): numbe
 
   const seconds = Number(headerValue);
   if (Number.isFinite(seconds) && seconds > 0) {
-    return Math.ceil(seconds * 1000);
+    return Math.min(Math.ceil(seconds * 1000), MAX_RETRY_AFTER_MS);
   }
 
   const dateMs = Date.parse(headerValue);
   if (!Number.isNaN(dateMs)) {
     // Preserve millisecond precision for HTTP-date values — do not round to the nearest second.
-    return Math.max(0, dateMs - Date.now());
+    return Math.min(Math.max(0, dateMs - Date.now()), MAX_RETRY_AFTER_MS);
   }
 
   return 0;

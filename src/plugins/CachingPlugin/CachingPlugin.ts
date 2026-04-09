@@ -242,6 +242,17 @@ function requestHasAuthHeaders(config: AxiosRequestConfig): boolean {
 
 export interface CachingPluginOptions {
   /**
+   * Response header names that are stripped before a response is written to the cache.
+   * This prevents sensitive per-user or session-establishing headers (e.g. `Set-Cookie`)
+   * from being replayed to different callers who receive a cached response.
+   *
+   * Matching is case-insensitive.
+   *
+   * @default ['set-cookie']
+   */
+  sensitiveResponseHeaders?: readonly string[];
+
+  /**
    * If true, include the entire headers object in the cache key.
    * @default false
    */
@@ -396,11 +407,23 @@ function sortCacheEntriesByAccess(entries: readonly CacheStorageEntry[]): CacheS
   );
 }
 
-function createCachedResponseSnapshot(response: AxiosResponse<unknown>): AxiosResponse<unknown> {
+function createCachedResponseSnapshot(
+  response: AxiosResponse<unknown>,
+  sensitiveHeaders: readonly string[],
+): AxiosResponse<unknown> {
+  const headers = cloneValue(response.headers) as Record<string, unknown>;
+  if (sensitiveHeaders.length > 0) {
+    const blocked = new Set(sensitiveHeaders.map((h) => h.toLowerCase()));
+    for (const key of Object.keys(headers)) {
+      if (blocked.has(key.toLowerCase())) {
+        delete headers[key];
+      }
+    }
+  }
   return {
     config: {} as AxiosRequestConfig,
     data: cloneValue(response.data),
-    headers: cloneValue(response.headers),
+    headers,
     status: response.status,
     statusText: response.statusText,
   } as AxiosResponse<unknown>;
@@ -431,14 +454,19 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
 
   private readonly cache = new Map<string, CachedItem>();
   private readonly inflightRequests = new Map<string, InflightCacheEntry>();
-  private readonly inflightLeaders = new WeakMap<AxiosRequestConfig, string>();
-  private readonly inflightFollowers = new WeakMap<AxiosRequestConfig, string>();
-  private readonly servedFromCache = new WeakSet<AxiosRequestConfig>();
+  // Keyed by a stable tracking ID rather than object identity (survives config object spreads
+  // in upstream interceptors). The RetryManager's requestId is used when available; otherwise
+  // a fallback ID is generated and stored in a WeakMap local to this plugin instance.
+  private readonly inflightLeaders = new Map<string, string>();
+  private readonly inflightFollowers = new Map<string, string>();
+  private readonly servedFromCache = new Set<string>();
+  private readonly trackingIdFallback = new WeakMap<AxiosRequestConfig, string>();
   private readonly options: Required<CachingPluginOptions>;
   private readonly storage: CacheStorage;
 
   constructor(options?: CachingPluginOptions) {
     this.options = {
+      sensitiveResponseHeaders: ['set-cookie'],
       compareHeaders: false,
       timeToRevalidate: 0,
       cacheMethods: [AXIOS_RETRYER_HTTP_METHODS.GET],
@@ -504,6 +532,9 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       this.context.axiosInstance.interceptors.response.eject(this.interceptorIdRes);
     }
     this.stopPeriodicCleanup();
+    this.inflightLeaders.clear();
+    this.inflightFollowers.clear();
+    this.servedFromCache.clear();
   }
 
   private getCacheKeyFingerprint(cacheKey: string): string {
@@ -540,6 +571,24 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
 
     return {};
+  }
+
+  /**
+   * Returns a stable tracking ID for this config object.
+   * Prefers the RetryManager-assigned requestId (stable across config spreads in upstream
+   * interceptors). Falls back to a WeakMap-based local ID for environments where the
+   * RetryManager interceptors are not active (e.g. isolated unit tests).
+   */
+  private getOrAssignTrackingId(config: AxiosRequestConfig): string {
+    const requestId = getRequestMetadata(config)?.requestId;
+    if (requestId) return requestId;
+
+    let fallbackId = this.trackingIdFallback.get(config);
+    if (!fallbackId) {
+      fallbackId = `ct_${Math.random().toString(36).slice(2)}`;
+      this.trackingIdFallback.set(config, fallbackId);
+    }
+    return fallbackId;
   }
 
   /**
@@ -605,7 +654,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
           config,
           ageMs,
         });
-        this.servedFromCache.add(config);
+        this.servedFromCache.add(this.getOrAssignTrackingId(config));
         return {
           ...config,
           adapter: () => Promise.resolve(cloneAxiosResponse(touchedItem.response, config)) as never,
@@ -636,7 +685,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
 
     const inflightEntry = this.inflightRequests.get(cacheKey);
     if (inflightEntry) {
-      this.inflightFollowers.set(config, cacheKey);
+      this.inflightFollowers.set(this.getOrAssignTrackingId(config), cacheKey);
       this.context.getLogger()?.debug('[CachingPlugin] Piggybacking on in-flight request', {
         cacheKeyFingerprint,
       });
@@ -647,7 +696,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
 
     this.inflightRequests.set(cacheKey, createInflightCacheEntry());
-    this.inflightLeaders.set(config, cacheKey);
+    this.inflightLeaders.set(this.getOrAssignTrackingId(config), cacheKey);
     return config;
   }
 
@@ -656,15 +705,16 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
    */
   private async handleResponseSuccess(response: AxiosResponse): Promise<AxiosResponse> {
     const metadata = response.config ? getRequestMetadata(response.config) : undefined;
-    const followerKey = response.config ? this.inflightFollowers.get(response.config) : undefined;
+    const responseId = response.config ? this.getOrAssignTrackingId(response.config) : undefined;
+    const followerKey = responseId ? this.inflightFollowers.get(responseId) : undefined;
 
     if (followerKey) {
-      this.inflightFollowers.delete(response.config);
+      if (responseId) this.inflightFollowers.delete(responseId);
       return response;
     }
 
-    if (response.config && this.servedFromCache.has(response.config)) {
-      this.servedFromCache.delete(response.config);
+    if (responseId && this.servedFromCache.has(responseId)) {
+      this.servedFromCache.delete(responseId);
       return response;
     }
 
@@ -707,7 +757,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
         });
 
         await this.upsertCacheEntry(cacheKey, {
-          response: createCachedResponseSnapshot(response),
+          response: createCachedResponseSnapshot(response, this.options.sensitiveResponseHeaders),
           timestamp: Date.now(),
           ttr,
           lastAccessedAt: Date.now(),
@@ -730,7 +780,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   private handleResponseError(error: AxiosError): Promise<never> {
     if (error.config) {
       this.rejectInflightRequest(error.config, error);
-      this.inflightFollowers.delete(error.config);
+      this.inflightFollowers.delete(this.getOrAssignTrackingId(error.config));
     }
 
     return Promise.reject(error);
@@ -1052,7 +1102,8 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       return;
     }
 
-    const leaderKey = this.inflightLeaders.get(config);
+    const trackingId = this.getOrAssignTrackingId(config);
+    const leaderKey = this.inflightLeaders.get(trackingId);
     if (!leaderKey) {
       return;
     }
@@ -1063,11 +1114,12 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       this.inflightRequests.delete(leaderKey);
     }
 
-    this.inflightLeaders.delete(config);
+    this.inflightLeaders.delete(trackingId);
   }
 
   private rejectInflightRequest(config: AxiosRequestConfig, error: unknown): void {
-    const leaderKey = this.inflightLeaders.get(config);
+    const trackingId = this.getOrAssignTrackingId(config);
+    const leaderKey = this.inflightLeaders.get(trackingId);
     if (!leaderKey) {
       return;
     }
@@ -1078,6 +1130,6 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       this.inflightRequests.delete(leaderKey);
     }
 
-    this.inflightLeaders.delete(config);
+    this.inflightLeaders.delete(trackingId);
   }
 }

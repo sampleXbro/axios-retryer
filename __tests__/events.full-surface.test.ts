@@ -10,11 +10,7 @@
  */
 import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
-import {
-  AXIOS_RETRYER_HTTP_METHODS,
-  RETRY_MODES,
-  RetryManager,
-} from '../src';
+import { AXIOS_RETRYER_HTTP_METHODS, RETRY_MODES, RetryManager } from '../src';
 import { createCachePlugin } from '../src/plugins/CachingPlugin';
 import { CircuitBreakerPlugin, CIRCUIT_BREAKER_STATES } from '../src/plugins/CircuitBreakerPlugin';
 import { createTokenRefreshPlugin } from '../src/plugins/TokenRefreshPlugin';
@@ -267,7 +263,7 @@ describe('Public event surface (emission conditions)', () => {
 
     expect(onBeforeTokenRefresh).toHaveBeenCalledTimes(1);
     expect(onTokenRefreshed).toHaveBeenCalledTimes(1);
-    expect(onTokenRefreshed).toHaveBeenCalledWith('refreshed-access');
+    expect(onTokenRefreshed).toHaveBeenCalledWith('[token:16]'); // masked: 'refreshed-access'.length === 16
     expect(onTokenRefreshFailed).not.toHaveBeenCalled();
 
     mock.restore();

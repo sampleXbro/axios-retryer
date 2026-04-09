@@ -103,6 +103,14 @@ export interface CircuitBreakerOptions {
   /**
    * Allow specific endpoints to be excluded from circuit breaking.
    * These URLs will always be allowed through regardless of circuit state.
+   *
+   * String patterns use exact URL equality. `RegExp` patterns are tested against
+   * the full request URL on every request — prefer string patterns when possible.
+   *
+   * **Security note (ReDoS):** Avoid catastrophically backtracking patterns such as
+   * `/(a+)+$/` combined with long non-matching URLs. JavaScript's regex engine is
+   * single-threaded and synchronous; a pathological pattern will block the event loop.
+   * Validate any user-controlled or externally-sourced patterns before use.
    */
   excludeUrls?: readonly (string | RegExp)[];
 
