@@ -2,6 +2,12 @@ import type { AxiosRetryerBackoffType } from '../types';
 import { AXIOS_RETRYER_BACKOFF_TYPES } from '../types';
 
 /**
+ * Maximum delay for any backoff strategy. Caps exponential growth to prevent
+ * exceeding setTimeout's safe range (~2^31 ms) and to bound retry wait times.
+ */
+export const MAX_BACKOFF_DELAY_MS = 60_000;
+
+/**
  * Returns a delay (in milliseconds) given an attempt number and a backoff strategy.
  *
  * @param attempt - The number of the current retry attempt (1-based)
@@ -9,7 +15,9 @@ import { AXIOS_RETRYER_BACKOFF_TYPES } from '../types';
  *    - 'static': returns a fixed 1000ms delay
  *    - 'linear': grows linearly with attempt (1000 * attempt)
  *    - 'exponential': doubles with each attempt (1000 * 2^(attempt - 1))
-
+ *
+ * All strategies are capped at MAX_BACKOFF_DELAY_MS (60 s) before jitter is applied.
+ *
  * @returns The calculated delay in milliseconds.
  *
  * @example
@@ -37,6 +45,9 @@ export function getBackoffDelay(attempt: number, backoffType: AxiosRetryerBackof
       baseDelay = 1000 * 2 ** (attempt - 1);
       break;
   }
+
+  // Cap before jitter to prevent exceeding setTimeout's safe integer range.
+  baseDelay = Math.min(baseDelay, MAX_BACKOFF_DELAY_MS);
 
   // Full jitter: randomize between 0 and baseDelay to prevent thundering herd
   return Math.floor(Math.random() * (baseDelay + 1));

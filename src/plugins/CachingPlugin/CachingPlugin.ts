@@ -351,6 +351,18 @@ export interface CachingPluginOptions {
    * ```
    */
   varyHeaders?: readonly string[];
+
+  /**
+   * Maximum byte size of a response body (measured via `JSON.stringify` length) that
+   * will be written to the cache. Responses whose serialized body exceeds this limit
+   * are served normally but not stored.
+   *
+   * Use this to prevent a single large response from consuming excessive memory.
+   * Set to `0` to disable the check (no limit).
+   *
+   * @default 0
+   */
+  maxEntrySize?: number;
 }
 
 export interface CachingRequestOptions {
@@ -473,6 +485,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       cleanupInterval: 0,
       maxAge: 0,
       maxItems: 1000,
+      maxEntrySize: 0,
       cacheOnlyRetriedRequests: false,
       storage: options?.storage ?? new InMemoryCacheStorage(),
       dedupeConcurrentRequests: true,
@@ -495,6 +508,13 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
     if (!Number.isInteger(this.options.maxItems) || this.options.maxItems < 0) {
       throw new RetryerConfigError('maxItems must be a non-negative integer', 'maxItems', this.options.maxItems);
+    }
+    if (!Number.isInteger(this.options.maxEntrySize) || this.options.maxEntrySize < 0) {
+      throw new RetryerConfigError(
+        'maxEntrySize must be a non-negative integer',
+        'maxEntrySize',
+        this.options.maxEntrySize,
+      );
     }
     if (!Number.isInteger(this.options.timeToRevalidate) || this.options.timeToRevalidate < 0) {
       throw new RetryerConfigError(
@@ -749,6 +769,25 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       const cacheKey = this.buildCacheKey(response.config);
       const cacheKeyFingerprint = this.getCacheKeyFingerprint(cacheKey);
       const ttr = cachingOptions?.ttr;
+
+      if (this.options.maxEntrySize > 0) {
+        try {
+          const estimatedSize = JSON.stringify(response.data)?.length ?? 0;
+          if (estimatedSize > this.options.maxEntrySize) {
+            this.context.getLogger()?.debug('[CachingPlugin] Skipping oversized response', {
+              cacheKeyFingerprint,
+              estimatedSize,
+              maxEntrySize: this.options.maxEntrySize,
+            });
+            this.resolveInflightRequest(response.config, response);
+            return response;
+          }
+        } catch {
+          // JSON.stringify may throw for circular structures; skip caching defensively.
+          this.resolveInflightRequest(response.config, response);
+          return response;
+        }
+      }
 
       try {
         this.context.getLogger()?.debug('[CachingPlugin] Caching response', {

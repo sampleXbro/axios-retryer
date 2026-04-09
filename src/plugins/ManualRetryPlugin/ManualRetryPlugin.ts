@@ -153,10 +153,7 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
 
   public initialize(context: PluginContext<ManualRetryPluginEvents>): void {
     this.context = context;
-    this.store = this.customStore ?? new InMemoryRequestStore(
-      this.maxRequestsToStore,
-      context.triggerAndEmit,
-    );
+    this.store = this.customStore ?? new InMemoryRequestStore(this.maxRequestsToStore, context.triggerAndEmit);
 
     this.onFailureHandler = (config: AxiosRequestConfig) => {
       const preparedConfig = this.prepareStoredRequest(config);
@@ -176,6 +173,10 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
   /**
    * Retries all stored failed requests that have not expired.
    * Requests older than `manualRetryMaxAge` are discarded.
+   *
+   * Each request is retried independently. A failure on one request is logged
+   * and skipped — remaining requests continue to be replayed. The returned array
+   * contains only successful responses.
    *
    * @returns Array of successful responses.
    */
@@ -242,8 +243,16 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
         await new Promise<void>((resolve) => setTimeout(resolve, Math.min(200 * i, 2000)));
       }
 
-      const response = await this.context.axiosInstance.request<T>(transformedConfig);
-      results.push(response);
+      try {
+        const response = await this.context.axiosInstance.request<T>(transformedConfig);
+        results.push(response);
+      } catch (err) {
+        this.context.getLogger()?.warn('[ManualRetryPlugin] Replay failed for request', {
+          requestId: getRequestMetadata(transformedConfig)?.requestId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Continue replaying the remaining requests.
+      }
     }
 
     return results;
@@ -316,7 +325,9 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
       return true;
     }
 
-    return Object.keys(config.headers ?? {}).some((headerName) => SENSITIVE_REPLAY_HEADER_SET.has(headerName.toLowerCase()));
+    return Object.keys(config.headers ?? {}).some((headerName) =>
+      SENSITIVE_REPLAY_HEADER_SET.has(headerName.toLowerCase()),
+    );
   }
 
   private hasHeader(config: AxiosRequestConfig, headerName: string): boolean {

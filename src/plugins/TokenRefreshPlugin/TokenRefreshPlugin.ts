@@ -51,6 +51,7 @@ const PLUGIN_DEFAULTS: Required<Omit<TokenRefreshPluginOptions, 'customErrorDete
   retryOnRefreshFail: true,
   tokenPrefix: 'Bearer ',
   maxRefreshBackoffMs: 30_000,
+  maxRefreshQueueSize: 1000,
 };
 
 function hasHeader(config: AxiosRequestConfig, headerName: string): boolean {
@@ -282,6 +283,10 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
       if (!metadata.isRetryRefreshRequest && hasHeader(config, authHeaderName)) {
         if (this.isRefreshing) {
           // Refresh in progress — queue this request until the new token arrives.
+          if (this.refreshQueue.length >= this.options.maxRefreshQueueSize) {
+            this.context.releaseRequestTracking(config);
+            return Promise.reject(this.bindRefreshErrorToRequest(new TokenRefreshFailedError(), config));
+          }
           return new Promise((resolve, reject) => {
             this.refreshQueue.push({
               kind: 'hold-request',
@@ -667,6 +672,11 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
    * If a 401 is encountered while a refresh is already in progress, queue the request.
    */
   private queueRefreshRequest(request: AxiosRequestConfig, sourceError: AxiosError): Promise<AxiosResponse> {
+    if (this.refreshQueue.length >= this.options.maxRefreshQueueSize) {
+      return Promise.reject(
+        this.bindRefreshErrorToRequest(new TokenRefreshFailedError(), request, sourceError.response),
+      );
+    }
     return new Promise((resolve, reject) => {
       this.refreshQueue.push({
         kind: 'retry-after-error',

@@ -285,6 +285,8 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   _responseMetrics: Record<string, ResponseTimeMetrics> = {};
   private readonly _scopeStateCache = new Map<string, CircuitBreakerScopeState>();
   private readonly _knownScopes = new Map<string, ScopeDetails>();
+  /** Per-scope promise chain that serializes async read-modify-write cycles. */
+  private readonly _scopeLocks = new Map<string, Promise<void>>();
 
   /**
    * Creates an instance of CircuitBreakerPlugin with advanced options.
@@ -373,34 +375,50 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       }
 
       const scopeDetails = this._getScopeDetails(config);
-      let scopeState = await this._readScopeState(scopeDetails.scopeKey);
 
-      if (scopeState.state === CIRCUIT_BREAKER_STATES.OPEN) {
-        if (Date.now() >= scopeState.nextAttempt) {
-          scopeState = await this._transitionToHalfOpen(scopeDetails.scopeKey, scopeState);
-        } else {
-          const remainingTime = scopeState.nextAttempt - Date.now();
+      // Serialize read-modify-write within a scope to prevent lost updates under concurrency.
+      const decision = await this._withScopeLock(scopeDetails.scopeKey, async () => {
+        let scopeState = await this._readScopeState(scopeDetails.scopeKey);
+
+        if (scopeState.state === CIRCUIT_BREAKER_STATES.OPEN) {
+          if (Date.now() >= scopeState.nextAttempt) {
+            scopeState = await this._transitionToHalfOpen(scopeDetails.scopeKey, scopeState);
+          } else {
+            return { action: 'reject-open', scopeState } as const;
+          }
+        }
+
+        if (scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN) {
+          if (scopeState.halfOpenCount >= this._options.halfOpenMax) {
+            return { action: 'reject-half-open', scopeState } as const;
+          }
+
+          scopeState.halfOpenCount++;
+          await this._writeScopeState(scopeDetails.scopeKey, scopeState);
           this._log(
             'debug',
-            `Circuit is OPEN for ${scopeDetails.scopeKey}: failing fast. Will retry in ${remainingTime}ms`,
-          );
-          return Promise.reject(this._createCircuitStateError(config, scopeState, 'Circuit is open: failing fast.'));
-        }
-      }
-
-      if (scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN) {
-        if (scopeState.halfOpenCount >= this._options.halfOpenMax) {
-          this._log('debug', `Circuit is HALF_OPEN for ${scopeDetails.scopeKey}: too many test requests.`);
-          return Promise.reject(
-            this._createCircuitStateError(config, scopeState, 'Circuit is half-open: too many test requests.'),
+            `HALF_OPEN test request #${scopeState.halfOpenCount} of ${this._options.halfOpenMax} for ${scopeDetails.scopeKey}`,
           );
         }
 
-        scopeState.halfOpenCount++;
-        await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+        return { action: 'allow', scopeState } as const;
+      });
+
+      if (decision.action === 'reject-open') {
+        const remainingTime = decision.scopeState.nextAttempt - Date.now();
         this._log(
           'debug',
-          `HALF_OPEN test request #${scopeState.halfOpenCount} of ${this._options.halfOpenMax} for ${scopeDetails.scopeKey}`,
+          `Circuit is OPEN for ${scopeDetails.scopeKey}: failing fast. Will retry in ${remainingTime}ms`,
+        );
+        return Promise.reject(
+          this._createCircuitStateError(config, decision.scopeState, 'Circuit is open: failing fast.'),
+        );
+      }
+
+      if (decision.action === 'reject-half-open') {
+        this._log('debug', `Circuit is HALF_OPEN for ${scopeDetails.scopeKey}: too many test requests.`);
+        return Promise.reject(
+          this._createCircuitStateError(config, decision.scopeState, 'Circuit is half-open: too many test requests.'),
         );
       }
 
@@ -426,31 +444,34 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
         }
 
         const scopeDetails = this._getScopeDetails(response.config);
-        const scopeState = await this._readScopeState(scopeDetails.scopeKey);
 
-        if (scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN) {
-          scopeState.successCount++;
-          const successThreshold = this._options.successThreshold || 1;
+        await this._withScopeLock(scopeDetails.scopeKey, async () => {
+          const scopeState = await this._readScopeState(scopeDetails.scopeKey);
 
-          if (scopeState.successCount >= successThreshold) {
-            this._log(
-              'debug',
-              `HALF_OPEN success threshold reached (${scopeState.successCount}/${successThreshold}) for ${scopeDetails.scopeKey}`,
-            );
-            await this._resetScope(scopeDetails.scopeKey);
-          } else {
+          if (scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN) {
+            scopeState.successCount++;
+            const successThreshold = this._options.successThreshold || 1;
+
+            if (scopeState.successCount >= successThreshold) {
+              this._log(
+                'debug',
+                `HALF_OPEN success threshold reached (${scopeState.successCount}/${successThreshold}) for ${scopeDetails.scopeKey}`,
+              );
+              await this._resetScope(scopeDetails.scopeKey);
+            } else {
+              await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+              this._log(
+                'debug',
+                `HALF_OPEN success: ${scopeState.successCount}/${successThreshold} successful test requests for ${scopeDetails.scopeKey}`,
+              );
+            }
+          } else if (scopeState.state === CIRCUIT_BREAKER_STATES.CLOSED && scopeState.failureCount > 0) {
+            scopeState.failureCount = 0;
+            scopeState.lastFailureStatus = undefined;
+            scopeState.lastFailureCode = undefined;
             await this._writeScopeState(scopeDetails.scopeKey, scopeState);
-            this._log(
-              'debug',
-              `HALF_OPEN success: ${scopeState.successCount}/${successThreshold} successful test requests for ${scopeDetails.scopeKey}`,
-            );
           }
-        } else if (scopeState.state === CIRCUIT_BREAKER_STATES.CLOSED && scopeState.failureCount > 0) {
-          scopeState.failureCount = 0;
-          scopeState.lastFailureStatus = undefined;
-          scopeState.lastFailureCode = undefined;
-          await this._writeScopeState(scopeDetails.scopeKey, scopeState);
-        }
+        });
 
         return response;
       },
@@ -469,38 +490,41 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
         }
 
         const scopeDetails = this._getScopeDetails(error.config);
-        const scopeState = await this._readScopeState(scopeDetails.scopeKey);
-        this._rememberFailure(scopeState, error);
 
-        if (this._options.useSlidingWindow) {
-          this._addFailureToSlidingWindow(scopeState, error);
-          const currentCount = this._getFailureCountInWindow(scopeState);
+        await this._withScopeLock(scopeDetails.scopeKey, async () => {
+          const scopeState = await this._readScopeState(scopeDetails.scopeKey);
+          this._rememberFailure(scopeState, error);
 
-          if (currentCount >= this._options.failureThreshold) {
+          if (this._options.useSlidingWindow) {
+            this._addFailureToSlidingWindow(scopeState, error);
+            const currentCount = this._getFailureCountInWindow(scopeState);
+
+            if (currentCount >= this._options.failureThreshold) {
+              this._log(
+                'debug',
+                `Sliding window failure threshold reached for ${scopeDetails.scopeKey}: ${currentCount} failures in window`,
+              );
+              await this._tripScope(scopeDetails.scopeKey, scopeState);
+            } else {
+              await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+            }
+          } else {
+            scopeState.failureCount++;
             this._log(
               'debug',
-              `Sliding window failure threshold reached for ${scopeDetails.scopeKey}: ${currentCount} failures in window`,
+              `Failure count increased for ${scopeDetails.scopeKey}: ${scopeState.failureCount}/${this._options.failureThreshold}`,
             );
-            await this._tripScope(scopeDetails.scopeKey, scopeState);
-          } else {
-            await this._writeScopeState(scopeDetails.scopeKey, scopeState);
-          }
-        } else {
-          scopeState.failureCount++;
-          this._log(
-            'debug',
-            `Failure count increased for ${scopeDetails.scopeKey}: ${scopeState.failureCount}/${this._options.failureThreshold}`,
-          );
 
-          if (
-            scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN ||
-            scopeState.failureCount >= this._options.failureThreshold
-          ) {
-            await this._tripScope(scopeDetails.scopeKey, scopeState);
-          } else {
-            await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+            if (
+              scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN ||
+              scopeState.failureCount >= this._options.failureThreshold
+            ) {
+              await this._tripScope(scopeDetails.scopeKey, scopeState);
+            } else {
+              await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+            }
           }
-        }
+        });
 
         return Promise.reject(error);
       },
@@ -894,6 +918,25 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     };
   }
 
+  /**
+   * Serializes async read-modify-write operations for a single scope key.
+   * Each call chains onto the previous promise for that key, preventing concurrent
+   * interleaving that would cause lost updates (especially with external state adapters).
+   */
+  private _withScopeLock<T>(scopeKey: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this._scopeLocks.get(scopeKey) ?? Promise.resolve();
+    const next = prev.then(fn, fn) as Promise<T>;
+    // Store a void-typed chain so the lock map stays GC-friendly.
+    this._scopeLocks.set(
+      scopeKey,
+      next.then(
+        () => {},
+        () => {},
+      ),
+    );
+    return next;
+  }
+
   private async _readScopeState(scopeKey: string): Promise<CircuitBreakerScopeState> {
     const storedState = await this._options.stateAdapter.get(scopeKey);
     // Clone once: isolate from the adapter's internal storage.
@@ -932,13 +975,18 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       }
     }
 
-    const scopeDetails = {
-      scopeKey,
-      normalizedUrl,
-      host,
-    };
-    this._knownScopes.set(scopeKey, scopeDetails);
-    return scopeDetails;
+    if (!this._knownScopes.has(scopeKey)) {
+      // Evict the oldest entry when the cap is reached to keep both tracking
+      // maps bounded. Uses insertion-order iteration of Map as a cheap FIFO.
+      if (this._knownScopes.size >= this._options.maxTrackedScopes) {
+        const oldestKey = this._knownScopes.keys().next().value as string;
+        this._knownScopes.delete(oldestKey);
+        this._scopeStateCache.delete(oldestKey);
+      }
+      this._knownScopes.set(scopeKey, { scopeKey, normalizedUrl, host });
+    }
+
+    return this._knownScopes.get(scopeKey)!;
   }
 
   private _extractPathFromConfig(config: AxiosRequestConfig): string {
