@@ -7,7 +7,7 @@
  * UI pattern: Scenarios → Tools / session controls → Live state → Setup (config box).
  * Base URLs use http://{section}-demo for clarity in logs.
  *
- * Outside this repo: set `"axios-retryer": "^2.0.4"` (or your version) in package.json instead of `file:..`.
+ * Outside this repo: set `"axios-retryer": "^2.1.6"` (or your version) in package.json instead of `file:..`.
  */
 
 import axios from 'axios';

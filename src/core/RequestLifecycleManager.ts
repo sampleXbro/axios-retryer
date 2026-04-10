@@ -19,6 +19,11 @@ type RequestLifecycleManagerOptions = {
   onRequestCancelled: (requestId: string) => void;
 };
 
+type CancelAllRequestsOptions = {
+  includeQueued?: boolean;
+  preservedQueuedRequestIds?: ReadonlySet<string>;
+};
+
 export type BeginRequestResult = {
   requestId: string;
   priority: AxiosRetryerRequestPriority;
@@ -108,18 +113,30 @@ export class RequestLifecycleManager {
     this.options.retryScheduler.cancelRetryTimer(requestId);
   }
 
-  public cancelAllRequests(): void {
+  public cancelAllRequests(options: CancelAllRequestsOptions = {}): void {
+    const includeQueued = options.includeQueued ?? true;
+    const preservedQueuedRequestIds = options.preservedQueuedRequestIds;
     const timerStats = this.options.retryScheduler.getTimerStats();
     this.options.logger.warn('Cancelling all requests', {
       activeCount: this.activeRequests.size,
       queuedCount: this.options.requestQueue.getWaitingCount(),
       activeRetryTimers: timerStats.activeRetryTimers,
+      includeQueued,
     });
 
     this.activeRequests.forEach((controller, requestId) => {
-      controller.abort();
       this.releaseAbortSignalLink(controller);
-      this.options.requestQueue.cancelQueuedRequest(requestId);
+      if (
+        !includeQueued &&
+        (preservedQueuedRequestIds?.has(requestId) || this.options.requestQueue.hasQueuedRequest(requestId))
+      ) {
+        return;
+      }
+
+      controller.abort();
+      if (includeQueued) {
+        this.options.requestQueue.cancelQueuedRequest(requestId);
+      }
       this.options.onRequestCancelled(requestId);
     });
     this.activeRequests.clear();

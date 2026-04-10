@@ -1,4 +1,11 @@
-import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import type {
+  AxiosError,
+  AxiosInstance,
+  AxiosRequestConfig,
+  AxiosResponse,
+  AxiosResponseHeaders,
+  RawAxiosResponseHeaders,
+} from 'axios';
 
 import type { Logger, RetryMode, RetryStrategy } from '../../types';
 import { RETRY_MODES, AXIOS_RETRYER_REQUEST_PRIORITIES } from '../../types';
@@ -70,9 +77,14 @@ export class ErrorInterceptorHandler {
       effectiveMetadata.requestRetries !== undefined ? effectiveMetadata.requestRetries : this.options.retries;
     const requestMode = effectiveMetadata.requestMode || this.options.mode;
     const attempt = (effectiveMetadata.retryAttempt || 0) + 1;
+    const isNonRetryableInternalError = this.isNonRetryableInternalError(error);
 
-    if (requestMode === RETRY_MODES.AUTOMATIC && this.options.retryStrategy.shouldRetry(error, attempt, maxRetries)) {
-      const retryAfterHeader = error.response?.headers?.['retry-after'];
+    if (
+      requestMode === RETRY_MODES.AUTOMATIC &&
+      !isNonRetryableInternalError &&
+      this.options.retryStrategy.shouldRetry(error, attempt, maxRetries)
+    ) {
+      const retryAfterHeader = this.getRetryAfterHeader(error.response?.headers);
       const retryAfterMs = parseRetryAfterMs(retryAfterHeader);
       if (retryAfterMs > 0) {
         setRequestMetadataValue(config, 'retryAfterMs', retryAfterMs);
@@ -214,5 +226,53 @@ export class ErrorInterceptorHandler {
     if (queryIndex < 0) return url.slice(0, hashIndex);
     if (hashIndex < 0) return url.slice(0, queryIndex);
     return url.slice(0, Math.min(queryIndex, hashIndex));
+  }
+
+  private getRetryAfterHeader(
+    headers: AxiosResponseHeaders | Partial<RawAxiosResponseHeaders> | undefined,
+  ): string | undefined {
+    if (!headers) {
+      return undefined;
+    }
+
+    const axiosHeaders = headers as { get?: (name: string) => unknown };
+    if (typeof axiosHeaders.get === 'function') {
+      const value = axiosHeaders.get('retry-after');
+      return this.normalizeRetryAfterHeader(value);
+    }
+
+    for (const [name, value] of Object.entries(headers)) {
+      if (name.toLowerCase() === 'retry-after') {
+        return this.normalizeRetryAfterHeader(value);
+      }
+    }
+
+    return undefined;
+  }
+
+  private normalizeRetryAfterHeader(value: unknown): string | undefined {
+    if (Array.isArray(value)) {
+      return value.length > 0 ? this.normalizeRetryAfterHeader(value[0]) : undefined;
+    }
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return String(value);
+    }
+
+    return undefined;
+  }
+
+  private isNonRetryableInternalError(error: AxiosError): boolean {
+    return (
+      error.code === 'REQUEST_CANCELED' ||
+      error.code === 'EREQUEST_ABORTED' ||
+      error.code === 'QUEUE_DESTROYED' ||
+      error.code === 'QUEUE_CLEARED' ||
+      error.code === 'QUEUE_FULL'
+    );
   }
 }

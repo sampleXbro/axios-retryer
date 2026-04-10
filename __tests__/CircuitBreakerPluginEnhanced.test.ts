@@ -105,15 +105,15 @@ describe('Enhanced CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
       // Advance time to enter HALF_OPEN
       jest.advanceTimersByTime(10000);
 
-      // First successful test request - should NOT close the circuit yet
-      mock.onGet('/api/test').reply(200, { test: 'success' });
-      await axiosInstance.get('/api/test');
+      // Probe the same tripped scope so HALF_OPEN progresses on the active circuit.
+      mock.onGet('/api/failing').reply(200, { test: 'success' });
+      await axiosInstance.get('/api/failing');
 
       // Circuit should still be in HALF_OPEN state
       expect(plugin.getState()).toBe('HALF_OPEN');
 
       // Second successful test request - should close the circuit
-      await axiosInstance.get('/api/test');
+      await axiosInstance.get('/api/failing');
 
       // Now the circuit should be CLOSED
       expect(plugin.getState()).toBe('CLOSED');
@@ -141,8 +141,8 @@ describe('Enhanced CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
       const metricsResponse = await axiosInstance.get('/metrics/system');
       expect(metricsResponse.data).toMatchObject({ cpu: 50, memory: 70 });
 
-      // Non-excluded endpoint should still be blocked
-      await expect(axiosInstance.get('/api/users')).rejects.toThrow(/Circuit is open/);
+      // The tripped scope should still be blocked even while excluded URLs bypass the breaker.
+      await expect(axiosInstance.get('/api/data')).rejects.toThrow(/Circuit is open/);
     });
   });
 

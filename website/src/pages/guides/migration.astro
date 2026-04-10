@@ -21,7 +21,7 @@ const _shikiCode14 = "import { createRetryer, RETRY_MODES } from 'axios-retryer'
 const _shikiCode15 = "import { CachingPlugin, TokenRefreshPlugin } from 'axios-retryer/plugins';";
 const _shikiCode16 = "import { CachingPlugin } from 'axios-retryer/plugins/CachingPlugin';\nimport { TokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';";
 ---
-<DocsLayout title="Migration 1.x → 2.0" section="Guides" description="Migrate from axios-retryer 1.x to 2.0 — sanitization plugin, MetricsPlugin, ManualRetryPlugin replay, maxRefreshAttempts fix.">
+<DocsLayout title="Migration 1.x → 2.0" section="Guides" description="Migrate from axios-retryer 1.x to 2.0 — sanitization plugin, MetricsPlugin, ManualRetryPlugin replay, maxRefreshAttempts fix. Includes 2.1.6 behavior notes (queue teardown errors, circuit scope, token detector).">
 
 <h1 class="page-title">Migration Guide: 1.x → 2.0</h1>
 <p class="page-lead">v2.0 makes the core-vs-plugin boundary explicit. Most changes are additive — the primary work is moving configuration from core options into the relevant plugins.</p>
@@ -103,6 +103,17 @@ const _shikiCode16 = "import { CachingPlugin } from 'axios-retryer/plugins/Cachi
 <h2>Typical end state</h2>
 <p>Most 1.x apps end up close to this shape:</p>
 <CodeBlock code={_shikiCode14} lang="typescript" />
+
+<h2>2.1.6 behavior notes</h2>
+<p>Applies when upgrading <strong>to 2.1.6</strong> from an earlier <strong>2.0.x</strong> or <strong>2.1.x</strong> release (for example <code>2.0.5</code> → <code>2.1.6</code>). Extends the checklist above — not a second migration from <code>1.x</code>.</p>
+<ul>
+  <li><strong>Queue teardown error class:</strong> On <code>RetryManager</code> destroy, waiters still in the queue get <code>QueueDestroyedError</code>. Earlier <code>2.0.x</code> / <code>2.1.x</code> could surface <code>QueueClearedError</code> on that path — handle <code>QueueDestroyedError</code> or both if you branch on <code>instanceof</code>.</li>
+  <li><strong>Circuit breaker default scope without host:</strong> Default <code>host+url</code> no longer collapses relative URLs into one <code>__global__</code> bucket; keys use the normalized path (or <code>unknown</code>). Use a custom <code>scope</code> callback if you need the old aggregation.</li>
+  <li><strong>TokenRefreshPlugin <code>customErrorDetector</code>:</strong> If it throws on a success response, the error is logged and the response is returned (no body-triggered refresh).</li>
+  <li><strong>Internal errors:</strong> Automatic retries are skipped for internal queue/cancel outcomes (<code>QUEUE_DESTROYED</code>, <code>QUEUE_CLEARED</code>, <code>QUEUE_FULL</code>, <code>REQUEST_CANCELED</code>, <code>EREQUEST_ABORTED</code>).</li>
+  <li><strong><code>Retry-After</code>:</strong> Read in a header-tolerant, case-insensitive way — correctness fix, no API change.</li>
+  <li><strong>Manual replay:</strong> Failed manual replays are not re-stored (avoids recursive store loops).</li>
+</ul>
 
 <h2>Browser bundle</h2>
 <p>The UMD browser bundle is no longer published as a built artifact. Generate it locally:</p>

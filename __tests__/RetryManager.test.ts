@@ -114,9 +114,7 @@ describe('RetryManager', () => {
     try {
       firstMock.onGet('/fails').reply(500, 'Server Error');
 
-      await expect(firstManager.axiosInstance.get('/fails')).rejects.toThrow(
-        'Request failed with status code 500',
-      );
+      await expect(firstManager.axiosInstance.get('/fails')).rejects.toThrow('Request failed with status code 500');
 
       expect(firstManager.getMetrics().completelyFailedRequests).toBe(1);
       expect(firstManager.getMetrics().requestCountsByPriority).toEqual({ 1: 1 });
@@ -148,9 +146,7 @@ describe('RetryManager', () => {
   test('should exhaust retries and throw error', async () => {
     mock.onGet('/retry-fail').reply(500, 'Server Error');
 
-    await expect(retryManager.axiosInstance.get('/retry-fail')).rejects.toThrow(
-      'Request failed with status code 500',
-    );
+    await expect(retryManager.axiosInstance.get('/retry-fail')).rejects.toThrow('Request failed with status code 500');
   });
 
   test('should count a terminal failure when retries are disabled', async () => {
@@ -187,10 +183,7 @@ describe('RetryManager', () => {
     );
     mock.onGet('/queued').reply(200, { ok: true });
 
-    await Promise.all([
-      retryManager.axiosInstance.get('/slow'),
-      retryManager.axiosInstance.get('/queued'),
-    ]);
+    await Promise.all([retryManager.axiosInstance.get('/slow'), retryManager.axiosInstance.get('/queued')]);
 
     expect(retryManager.getMetrics().avgQueueWait).toBeGreaterThan(0);
   });
@@ -294,9 +287,9 @@ describe('RetryManager', () => {
     // Attempt manual retry and expect it to throw
     await expect(manualRetry.retryFailedRequests()).rejects.toThrow(/Request failed with status code 500/);
 
-    // Verify that the failed request remains in the store
+    // Manual replay failures are not re-stored recursively.
     const storedRequestsAfter = manualRetry.getStoredRequests();
-    expect(storedRequestsAfter).toHaveLength(1);
+    expect(storedRequestsAfter).toHaveLength(0);
   });
 
   test('should throw error on cancel if throwErrorOnCancelRequest is true', async () => {
@@ -554,10 +547,7 @@ describe('RetryManager', () => {
 
     mock.onGet('/complete-all').reply(500, 'Fail');
 
-    await retryManager
-      .axiosInstance
-      .get('/complete-all')
-      .catch(() => {});
+    await retryManager.axiosInstance.get('/complete-all').catch(() => {});
 
     expect(hooks.onRetryProcessFinished).toHaveBeenCalledTimes(1);
   });
@@ -577,10 +567,7 @@ describe('RetryManager', () => {
 
     mock.onGet('/manual-mode').reply(500, 'Fail Immediately');
 
-    await retryManager
-      .axiosInstance
-      .get('/manual-mode')
-      .catch(() => {});
+    await retryManager.axiosInstance.get('/manual-mode').catch(() => {});
 
     const stored = manualRetry.getStoredRequests();
     expect(stored).toHaveLength(1);
@@ -611,7 +598,6 @@ describe('RetryManager', () => {
     }
     expect(err).toBeTruthy();
     expect((err as any).message).toMatch(/Request failed/);
-
   });
 
   test('cancelling after the first retry is scheduled but before it fires', async () => {
@@ -628,12 +614,9 @@ describe('RetryManager', () => {
     // Always fail to trigger retries
     mock.onGet('/cancel-late').reply(500, 'Error');
 
-    const requestPromise = retryManager
-      .axiosInstance
-      .get('/cancel-late')
-      .catch((err) => {
-        expect(err.message).toMatch(/Request aborted/);
-      });
+    const requestPromise = retryManager.axiosInstance.get('/cancel-late').catch((err) => {
+      expect(err.message).toMatch(/Request aborted/);
+    });
 
     await new Promise<void>((resolve, reject) => {
       const startedAt = Date.now();
@@ -658,7 +641,6 @@ describe('RetryManager', () => {
     retryManager.cancelAllRequests();
 
     await requestPromise;
-
   });
 
   test('Ensure afterRetry is called on a retry failure', async () => {
@@ -679,16 +661,12 @@ describe('RetryManager', () => {
       return [500, 'Fail'];
     });
 
-    await retryManager
-      .axiosInstance
-      .get('/after-retry-fail')
-      .catch(() => {});
+    await retryManager.axiosInstance.get('/after-retry-fail').catch(() => {});
 
     // afterRetry is called after a retry fails
     expect(hooks.afterRetry).toHaveBeenCalledTimes(1);
     // onFailure is always called now that retries are done
     expect(hooks.onFailure).toHaveBeenCalledTimes(1);
-
   });
 
   test('should register a new plugin', () => {
@@ -698,9 +676,7 @@ describe('RetryManager', () => {
     manager.use(plugin);
 
     expect(manager.listPlugins()).toEqual([{ name: 'TestPlugin', version: '1.0.0' }]);
-    expect(plugin.initialize).toHaveBeenCalledWith(
-      expect.objectContaining({ axiosInstance: manager.axiosInstance }),
-    );
+    expect(plugin.initialize).toHaveBeenCalledWith(expect.objectContaining({ axiosInstance: manager.axiosInstance }));
   });
 
   test('should throw an error when registering a duplicate plugin', () => {
@@ -858,10 +834,7 @@ describe('RetryManager', () => {
     mock = new AxiosMockAdapter(retryManager.axiosInstance);
 
     mock.onGet('/fail1').reply(500, 'Error');
-    await retryManager
-      .axiosInstance
-      .get('/fail1')
-      .catch(() => {});
+    await retryManager.axiosInstance.get('/fail1').catch(() => {});
   });
 
   test('sequential requests', async () => {
@@ -875,14 +848,8 @@ describe('RetryManager', () => {
     mock.onGet('/fail1').reply(500, 'Error');
     mock.onGet('/fail2').reply(500, 'Error');
 
-    await retryManager
-      .axiosInstance
-      .get('/fail1')
-      .catch(() => {});
-    await retryManager
-      .axiosInstance
-      .get('/fail2')
-      .catch(() => {});
+    await retryManager.axiosInstance.get('/fail1').catch(() => {});
+    await retryManager.axiosInstance.get('/fail2').catch(() => {});
   });
 
   test('should store multiple concurrent failed requests', async () => {
@@ -902,14 +869,8 @@ describe('RetryManager', () => {
 
     // Make concurrent requests
     await Promise.all([
-      retryManager
-        .axiosInstance
-        .get('/fail1')
-        .catch(() => {}),
-      retryManager
-        .axiosInstance
-        .get('/fail2')
-        .catch(() => {}),
+      retryManager.axiosInstance.get('/fail1').catch(() => {}),
+      retryManager.axiosInstance.get('/fail2').catch(() => {}),
     ]);
 
     // Check the request store
@@ -924,7 +885,7 @@ describe('RetryManager', () => {
   test('should reject requests with QueueFullError when queue size limit is reached', async () => {
     // Create spies to monitor what's happening
     const consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation();
-    
+
     // Reinitialize with a max queue size of 2
     const options = {
       mode: 'automatic' as const,
@@ -944,34 +905,33 @@ describe('RetryManager', () => {
 
     // Make our requests and track them
     console.log('Making first request - should be in process');
-    retryManager.axiosInstance.get('/test-queue-limit/1').catch(e => e);
-    
+    retryManager.axiosInstance.get('/test-queue-limit/1').catch((e) => e);
+
     // Wait long enough for first request to start processing
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
     console.log('Making second request - should be queued (position 1)');
-    retryManager.axiosInstance.get('/test-queue-limit/2').catch(e => e);
-    
+    retryManager.axiosInstance.get('/test-queue-limit/2').catch((e) => e);
+
     // Wait to ensure second request is properly queued
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
     console.log('Making third request - should be queued (position 2)');
-    retryManager.axiosInstance.get('/test-queue-limit/3').catch(e => e);
-    
+    retryManager.axiosInstance.get('/test-queue-limit/3').catch((e) => e);
+
     // Wait to ensure third request is properly queued
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
     // Check queue size using RequestQueue's internal method via the private field
     // Note: In a real application you should avoid accessing private fields
     const queueSize = retryManager['requestQueue'].getWaitingCount();
     console.log(`Current queue size: ${queueSize}`);
     expect(queueSize).toBe(2); // Verify queue actually has 2 items
-    
+
     console.log('Making fourth request - should be rejected');
     // The 4th request should now be rejected with QueueFullError
-    await expect(retryManager.axiosInstance.get('/test-queue-limit/4'))
-      .rejects.toThrow('Request queue is full');
-    
+    await expect(retryManager.axiosInstance.get('/test-queue-limit/4')).rejects.toThrow('Request queue is full');
+
     // Clean up
     consoleDebugSpy.mockRestore();
     retryManager.cancelAllRequests();
@@ -1013,21 +973,21 @@ describe('RetryManager', () => {
     const debugMock = new AxiosMockAdapter(debugManager.axiosInstance);
     const loggerSpy = jest.spyOn(debugManager.getLogger(), 'error').mockImplementation();
 
-    debugMock.onPost('/auth?token=secret-token').reply(
-      500,
-      { password: 'server-secret' },
-      { 'x-api-key': 'server-secret' },
-    );
+    debugMock
+      .onPost('/auth?token=secret-token')
+      .reply(500, { password: 'server-secret' }, { 'x-api-key': 'server-secret' });
 
-    await debugManager.axiosInstance.post(
-      '/auth?token=secret-token',
-      { password: 'secret123' },
-      {
-        headers: {
-          Authorization: 'Bearer secret-token',
+    await debugManager.axiosInstance
+      .post(
+        '/auth?token=secret-token',
+        { password: 'secret123' },
+        {
+          headers: {
+            Authorization: 'Bearer secret-token',
+          },
         },
-      },
-    ).catch(() => undefined);
+      )
+      .catch(() => undefined);
 
     const logEntry = loggerSpy.mock.calls.find(([message]) => message === 'Request failed');
 

@@ -1,3 +1,4 @@
+/** @see package.json: `test:run` (parallel), `test:quick` (skip heavy dirs), `test:ci` (--runInBand). */
 module.exports = {
   testEnvironment: 'node',
   verbose: false,

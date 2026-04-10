@@ -92,11 +92,11 @@ CI and local development typically use current Node.js **18+** (22.x is commonly
 
 ## Reporting issues
 
-1. Check this document and [MIGRATION.md](./MIGRATION.md).  
-2. Search [GitHub issues](https://github.com/sampleXbro/axios-retryer/issues).  
+1. Check this document and [MIGRATION.md](./MIGRATION.md).
+2. Search [GitHub issues](https://github.com/sampleXbro/axios-retryer/issues).
 3. Open a new issue with reproduction steps, environment, expected vs actual behavior, and library version.
 
 ---
 
-**Last updated:** 2026-04-09  
-**Last full test run:** 70 test suites, 769 tests passing (see `pnpm test` in CI or locally).
+**Last updated:** 2026-04-10  
+**Last full test run:** 83 test suites, 1070 tests passing (see `pnpm test:run` in CI or locally).

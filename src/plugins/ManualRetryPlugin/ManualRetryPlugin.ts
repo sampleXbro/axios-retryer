@@ -277,6 +277,13 @@ export class ManualRetryPlugin implements RetryPlugin<ManualRetryPluginEvents> {
   }
 
   private prepareStoredRequest(config: AxiosRequestConfig): AxiosRequestConfig | null {
+    if (getRequestMetadata(config)?.manualReplayAttempt) {
+      this.context.getLogger()?.debug('[ManualRetryPlugin] Skipping replay failure to avoid re-storing it', {
+        requestId: getRequestMetadata(config)?.requestId,
+      });
+      return null;
+    }
+
     if (!this.isEligible(config)) {
       return null;
     }

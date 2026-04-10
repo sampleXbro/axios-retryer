@@ -186,9 +186,7 @@ import { createRetryer } from 'axios-retryer';
 import { createTokenRefreshPlugin, type TokenRefreshPluginEvents } from 'axios-retryer/plugins/TokenRefreshPlugin';
 
 const retryer = createRetryer();
-const withRefresh = retryer.use(
-  createTokenRefreshPlugin(async () => ({ token: 'fresh-token' })),
-);
+const withRefresh = retryer.use(createTokenRefreshPlugin(async () => ({ token: 'fresh-token' })));
 
 withRefresh.on('onTokenRefreshed', (token) => {
   console.log(token);
@@ -280,11 +278,7 @@ Most `1.x` applications end up looking like this after migration:
 
 ```typescript
 import { createRetryer, RETRY_MODES } from 'axios-retryer';
-import {
-  createDebugSanitizationPlugin,
-  createMetricsPlugin,
-  createTokenRefreshPlugin,
-} from 'axios-retryer/plugins';
+import { createDebugSanitizationPlugin, createMetricsPlugin, createTokenRefreshPlugin } from 'axios-retryer/plugins';
 
 const retryer = createRetryer({
   mode: RETRY_MODES.AUTOMATIC,
@@ -307,6 +301,34 @@ retryer.use(
   }),
 );
 ```
+
+## 2.1.6 behavior notes
+
+These notes apply when upgrading **to `2.1.6`** from an earlier **`2.0.x` or `2.1.x`** release (for example `2.0.5` → `2.1.6`). They extend the **1.x → 2.0** checklist above — not a second migration from `1.x`.
+
+### Queue teardown error class
+
+When `RetryManager` is **destroyed** while requests are still **waiting in the queue**, those waiters are rejected with **`QueueDestroyedError`**. Earlier **`2.0.x` / `2.1.x`** builds could surface **`QueueClearedError`** on that path. If you use `instanceof` in `catch`, handle **`QueueDestroyedError`** (or treat both teardown errors the same).
+
+### `CircuitBreakerPlugin` default scope without a resolvable host
+
+With default **`host+url`** scope, relative requests (no host) **no longer** share a single internal **`__global__`** bucket. Scoping uses the **normalized path** (or `unknown`) per pattern instead, which can change when the circuit trips. Use an explicit `scope` callback if you need the old “everything relative in one bucket” behavior.
+
+### `TokenRefreshPlugin` `customErrorDetector`
+
+If **`customErrorDetector`** **throws** while inspecting a **successful** response body, the error is **logged** and the **response is returned** (no refresh triggered from that path). Do not rely on throwing to abort handling.
+
+### Automatic retries and internal errors
+
+Automatic retries are **not** scheduled for internal queue/cancel outcomes (for example **`QUEUE_DESTROYED`**, **`QUEUE_CLEARED`**, **`QUEUE_FULL`**, **`REQUEST_CANCELED`**, **`EREQUEST_ABORTED`**).
+
+### `Retry-After` handling
+
+`Retry-After` is read in a **header-shape-tolerant**, **case-insensitive** way (including Axios header objects). This is a correctness fix; the public API is unchanged.
+
+### Manual replay storage
+
+`ManualRetryPlugin` does **not** re-store a request that **already failed during a manual replay**, avoiding recursive store loops.
 
 ## Notes
 

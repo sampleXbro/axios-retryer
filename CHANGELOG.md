@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.1.6 - 10.04.2026
+
+### ⚠️ Behavior changes
+
+- **Queue teardown:** When the manager tears down, requests still **waiting in the queue** are rejected with **`QueueDestroyedError`**. Earlier **`2.0.x` / `2.1.x`** builds could surface **`QueueClearedError`** on that path. Handle **`QueueDestroyedError`** (or both) if you branch on `instanceof`.
+- **`CircuitBreakerPlugin` default `host+url` scope without a resolvable host:** Relative URLs **no longer** share one internal **`__global__`** scope; keys use the **normalized path** (or `unknown`) so isolation matches host-resolved traffic. Circuit open/close timing may change; use an explicit `scope` callback if you need the old aggregation.
+
+### 🐛 Bug fixes & robustness
+
+- **`CircuitBreakerPlugin`:** Implements documented **`manualReset`**, **`resetMetrics`**, and **`getAdaptiveTimeoutMetrics`**; targeted distributed reset uses **`stateAdapter.delete()`**, full reset uses **`stateAdapter.clear()`**; adapter read/write failures fall back to in-memory state; **`shouldCountError`** and custom **`scope`** failures degrade safely (log + sensible defaults); adaptive timeouts activate only after the configured sample size is collected.
+- **`RetryManager` destroy path:** **`RetryManagerDisposer`** captures queued request IDs, destroys the queue first, then **`cancelAllRequests({ includeQueued: false, preservedQueuedRequestIds })`** so teardown order matches rejection semantics.
+- **`RequestQueue`:** Processing gates that throw no longer stall or crash dequeue; shared helper rejects waiting items for **`clear()`** and **`destroy()`**.
+- **`ErrorInterceptor`:** Reads **`Retry-After`** in a header-shape-tolerant, case-insensitive way; skips automatic retries for internal queue/cancel outcomes (**`QUEUE_DESTROYED`**, **`QUEUE_CLEARED`**, **`QUEUE_FULL`**, **`REQUEST_CANCELED`**, **`EREQUEST_ABORTED`**).
+- **`TokenRefreshPlugin`:** If **`customErrorDetector`** throws on a success response, the error is logged and the response is passed through (no body-triggered refresh).
+- **`ManualRetryPlugin`:** Failed manual replays are not stored again (avoids recursive store loops).
+
+### 📚 Documentation
+
+- Circuit breaker plugin docs: ReDoS warning on **`excludeUrls`** patterns and behavior notes aligned with implementation.
+- **Migration guide (`MIGRATION.md` + website):** Added **2.1.6** behavior notes to the existing **1.x → 2.0** guide (no separate migration doc).
+
+### 🧪 Testing
+
+- Added **14** P0 contract test modules (**305** tests) across core, queue, interceptors, strategies, plugins, concurrency, security, and real-world scenarios.
+- Updated circuit breaker, regression, and integration tests for destroy ordering, scope keys, distributed reset, and interceptor edge cases.
+- **`pnpm test:run`** no longer forces **`--runInBand`**, so Jest uses parallel workers and the full suite finishes much faster on multi-core machines.
+- **`pnpm test:quick`** skips integration, performance, and **`package-contract`** tests for faster local feedback.
+- **`pnpm test:ci`** runs the full suite with **`--runInBand`** when you need serial execution (e.g. reproducing order-dependent failures).
+
 ## 2.0.5 - 09.04.2026
 
 ### 📦 Packaging

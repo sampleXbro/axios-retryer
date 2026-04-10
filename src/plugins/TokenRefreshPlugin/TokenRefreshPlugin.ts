@@ -419,7 +419,17 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     }
 
     // Check if response contains auth error that should trigger refresh
-    if (customErrorDetector(response.data)) {
+    let hasCustomAuthError: boolean;
+    try {
+      hasCustomAuthError = customErrorDetector(response.data);
+    } catch (error) {
+      this.logger?.warn(`[${this.name}] customErrorDetector threw; ignoring body-auth refresh signal`, {
+        error: error instanceof Error ? error.message : error,
+      });
+      return response;
+    }
+
+    if (hasCustomAuthError) {
       this.logger?.debug(`[${this.name}] Custom auth error detected in response body`);
       this.context.releaseRequestTracking(response.config);
 

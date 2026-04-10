@@ -80,18 +80,18 @@ class PriorityHeap {
 
     const item = this.heap[index];
     this.sortedCache = null;
-    
+
     // Replace with last element and restore heap property
     if (index === this.heap.length - 1) {
       return this.heap.pop();
     }
-    
+
     this.heap[index] = this.heap.pop()!;
-    
+
     // Restore heap property - might need to go up or down
     this.heapifyUp(index);
     this.heapifyDown(index);
-    
+
     return item;
   }
 
@@ -120,12 +120,12 @@ class PriorityHeap {
   private heapifyUp(index: number): void {
     while (index > 0) {
       const parentIndex = Math.floor((index - 1) / 2);
-      
+
       // If parent has higher or equal priority, we're done
       if (this.compareFn(this.heap[parentIndex], this.heap[index]) <= 0) {
         break;
       }
-      
+
       // Swap with parent
       [this.heap[parentIndex], this.heap[index]] = [this.heap[index], this.heap[parentIndex]];
       index = parentIndex;
@@ -139,13 +139,11 @@ class PriorityHeap {
       let smallest = index;
 
       // Find the highest priority among node and its children
-      if (leftChild < this.heap.length && 
-          this.compareFn(this.heap[leftChild], this.heap[smallest]) < 0) {
+      if (leftChild < this.heap.length && this.compareFn(this.heap[leftChild], this.heap[smallest]) < 0) {
         smallest = leftChild;
       }
-      
-      if (rightChild < this.heap.length && 
-          this.compareFn(this.heap[rightChild], this.heap[smallest]) < 0) {
+
+      if (rightChild < this.heap.length && this.compareFn(this.heap[rightChild], this.heap[smallest]) < 0) {
         smallest = rightChild;
       }
 
@@ -193,7 +191,11 @@ export class RequestQueue {
   constructor(options: RequestQueueOptions = {}) {
     const { maxConcurrent = 5, queueDelay = 100, maxQueueSize, canProcess } = options;
     if (maxConcurrent < 1) {
-      throw new RetryerConfigError(`maxConcurrent must be >= 1. Received: ${maxConcurrent}`, 'maxConcurrent', maxConcurrent);
+      throw new RetryerConfigError(
+        `maxConcurrent must be >= 1. Received: ${maxConcurrent}`,
+        'maxConcurrent',
+        maxConcurrent,
+      );
     }
     if (!Number.isInteger(queueDelay) || queueDelay < 0) {
       throw new RetryerConfigError(`queueDelay must be >= 0. Received: ${queueDelay}`, 'queueDelay', queueDelay);
@@ -282,6 +284,17 @@ export class RequestQueue {
     this.tryDequeue();
   }
 
+  public hasQueuedRequest(requestId: string): boolean {
+    return this.waiting.getAll().some((item) => getRequestMetadata(item.config)?.requestId === requestId);
+  }
+
+  public getQueuedRequestIds(): string[] {
+    return this.waiting
+      .getAll()
+      .map((item) => getRequestMetadata(item.config)?.requestId)
+      .filter((requestId): requestId is string => typeof requestId === 'string');
+  }
+
   /**
    * Cancel a specific request in the queue before it starts.
    * @param requestId The request ID to cancel.
@@ -289,7 +302,7 @@ export class RequestQueue {
    */
   public cancelQueuedRequest(requestId: string): boolean {
     const request = this.waiting.removeByRequestId(requestId);
-    
+
     if (!request) {
       return false; // Not found, possibly already dequeued or wrong ID
     }
@@ -305,14 +318,7 @@ export class RequestQueue {
    * Clears all waiting requests from the queue and rejects them
    */
   public clear(): void {
-    // Get all items and clear the heap
-    const items = this.waiting.clear();
-    
-    // Reject all pending requests
-    for (const item of items) {
-      item.reject(new QueueClearedError(item.config));
-      this.cleanupRequest(item);
-    }
+    this.rejectWaitingRequests((item) => new QueueClearedError(item.config));
   }
 
   /**
@@ -326,12 +332,8 @@ export class RequestQueue {
       this.dequeueTimer = null;
     }
     this.microtaskScheduled = false;
-
-    // Clear all waiting requests
-    this.clear();
-    
-    // Mark as destroyed
     this.isDestroyed = true;
+    this.rejectWaitingRequests((item) => new QueueDestroyedError(item.config));
     this.inProgressCount = 0;
   }
 
@@ -398,12 +400,12 @@ export class RequestQueue {
   }
 
   private canProcess(config: AxiosRequestConfig): boolean {
-    if (!this.baseCanProcess(config)) {
+    if (!this.evaluateGate(this.baseCanProcess, config)) {
       return false;
     }
 
     for (const gate of Array.from(this.processingGates.values())) {
-      if (!gate(config)) {
+      if (!this.evaluateGate(gate, config)) {
         return false;
       }
     }
@@ -432,12 +434,29 @@ export class RequestQueue {
     const iB = b.insertionOrder ?? 0;
     return iA - iB;
   }
-  
+
   /**
    * Clear callback references once the queue item has been fully handled.
    */
   private cleanupRequest(item: EnqueuedItem): void {
     item.resolve = () => {};
     item.reject = () => {};
+  }
+
+  private rejectWaitingRequests(createError: (item: EnqueuedItem) => unknown): void {
+    const items = this.waiting.clear();
+
+    for (const item of items) {
+      item.reject(createError(item));
+      this.cleanupRequest(item);
+    }
+  }
+
+  private evaluateGate(gate: (request: AxiosRequestConfig) => boolean, config: AxiosRequestConfig): boolean {
+    try {
+      return gate(config);
+    } catch {
+      return false;
+    }
   }
 }

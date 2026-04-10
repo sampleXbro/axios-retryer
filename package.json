@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "2.0.5",
+  "version": "2.1.6",
   "description": "TypeScript-first Axios retry library with concurrency limits, request priority, token refresh, response caching, and circuit breaker plugins.",
   "packageManager": "pnpm@10.30.3",
   "main": "dist/index.cjs.js",
@@ -17,7 +17,9 @@
     "analyze": "open stats/bundle-stats-*.html",
     "prepare": "pnpm build && husky",
     "test": "jest --coverage --silent",
-    "test:run": "jest --runInBand --silent",
+    "test:run": "jest --silent",
+    "test:quick": "jest --silent --testPathIgnorePatterns=/__tests__/integration/ --testPathIgnorePatterns=/__tests__/performance/ --testPathIgnorePatterns=package-contract.test.ts",
+    "test:ci": "jest --runInBand --silent",
     "test:coverage": "jest --coverage --silent",
     "lint": "eslint src __tests__",
     "lint:fix": "eslint src __tests__ --fix",

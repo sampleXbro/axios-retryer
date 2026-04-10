@@ -457,7 +457,8 @@ describe('Targeted Coverage Regressions', () => {
 
       plugin['_knownScopes'].set('api.example.com/users/:id', scope);
       plugin['_reset']('api.example.com/users/:id');
-      expect(stateAdapter.set).toHaveBeenCalled();
+      // Targeted resets use stateAdapter.delete(); full resets use stateAdapter.clear().
+      expect(stateAdapter.delete).toHaveBeenCalled();
       expect(plugin.getState('api.example.com/users/:id')).toBe(CIRCUIT_BREAKER_STATES.CLOSED);
     });
 

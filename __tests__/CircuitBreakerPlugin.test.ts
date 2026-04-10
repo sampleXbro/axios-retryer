@@ -95,9 +95,9 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     // The circuit is now OPEN. Advance time by openTimeout => next request triggers HALF_OPEN
     jest.advanceTimersByTime(10000);
 
-    // Now mock a successful response for the next request => should transition from HALF_OPEN to CLOSED
-    mock.onGet('/test').reply(200, { message: 'Recovered' });
-    const response = await axiosInstance.get('/test');
+    // Probe the same scoped request so the half-open transition applies to the tripped scope.
+    mock.onGet('/fail').reply(200, { message: 'Recovered' });
+    const response = await axiosInstance.get('/fail');
     expect(response.status).toBe(200);
     expect(response.data).toEqual({ message: 'Recovered' });
 
@@ -118,12 +118,12 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     // Advance timer => next request is in HALF_OPEN
     jest.advanceTimersByTime(10000);
 
-    // The next request fails => re-trip circuit to OPEN
-    mock.onGet('/testFail').reply(500);
-    await expect(axiosInstance.get('/testFail')).rejects.toThrow();
+    // Re-probe the same scoped request so the half-open transition applies to the tripped scope.
+    mock.onGet('/fail').reply(500);
+    await expect(axiosInstance.get('/fail')).rejects.toThrow();
 
     // Circuit should remain OPEN => subsequent requests fail-fast
-    await expect(axiosInstance.get('/anotherReq')).rejects.toThrow(/Circuit is open/);
+    await expect(axiosInstance.get('/fail')).rejects.toThrow(/Circuit is open/);
 
     // Check if the plugin logged an error about re-tripping
     const errorCalls = fakeLogger.error.mock.calls.map((call) => call[0]);
@@ -140,13 +140,13 @@ describe('CircuitBreakerPlugin (Jest + axios-mock-adapter)', () => {
     // Move clock => next request is half-open
     jest.advanceTimersByTime(10000);
 
-    // First half-open request => fails => circuit goes OPEN
-    mock.onGet('/testFail').reply(500);
-    await expect(axiosInstance.get('/testFail')).rejects.toThrow();
+    // Re-probe the same scope and fail it so the circuit returns to OPEN immediately.
+    mock.onGet('/failAgain').reply(500);
+    await expect(axiosInstance.get('/failAgain')).rejects.toThrow();
 
-    // Because halfOpenMax=1, the next request should fail immediately
-    mock.onGet('/exceedHalfOpen').reply(200); // even though "server" might respond 200, circuit is still OPEN
-    await expect(axiosInstance.get('/exceedHalfOpen')).rejects.toThrow(/Circuit is open/);
+    // Because the half-open probe failed, the circuit is OPEN again and the same scope fails fast.
+    mock.onGet('/failAgain').reply(200);
+    await expect(axiosInstance.get('/failAgain')).rejects.toThrow(/Circuit is open/);
   });
 
   test('should eject interceptors on onBeforeDestroyed', () => {

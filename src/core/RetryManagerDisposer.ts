@@ -20,14 +20,19 @@ export class RetryManagerDisposer {
 
   public destroy(context: PluginContext): void {
     const timerStats = this.options.retryScheduler.getTimerStats();
+    const queuedRequestIds = new Set(this.options.requestQueue.getQueuedRequestIds());
     this.options.logger.warn('Destroying RetryManager', {
       activeRequests: this.options.requestLifecycle.getActiveCount(),
+      queuedRequests: queuedRequestIds.size,
       activeRetryTimers: timerStats.activeRetryTimers,
       activeTimers: timerStats.activeTimers,
     });
 
-    this.options.requestLifecycle.cancelAllRequests();
     this.options.requestQueue.destroy();
+    this.options.requestLifecycle.cancelAllRequests({
+      includeQueued: false,
+      preservedQueuedRequestIds: queuedRequestIds,
+    });
     this.options.retryScheduler.destroy();
     this.options.ejectRetryerInterceptors();
     this.options.pluginRegistry.cleanup(context);

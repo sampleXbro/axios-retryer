@@ -238,6 +238,13 @@ interface ScopeDetails {
   host?: string;
 }
 
+interface ScopeMetricsBaseline {
+  failureCount: number;
+  successCount: number;
+  halfOpenCount: number;
+  resetAt: number;
+}
+
 function cloneScopeState(state: CircuitBreakerScopeState): CircuitBreakerScopeState {
   return {
     ...state,
@@ -285,6 +292,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   _responseMetrics: Record<string, ResponseTimeMetrics> = {};
   private readonly _scopeStateCache = new Map<string, CircuitBreakerScopeState>();
   private readonly _knownScopes = new Map<string, ScopeDetails>();
+  private readonly _metricBaselines = new Map<string, ScopeMetricsBaseline>();
   /** Per-scope promise chain that serializes async read-modify-write cycles. */
   private readonly _scopeLocks = new Map<string, Promise<void>>();
 
@@ -424,7 +432,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
 
       if (this._options.adaptiveTimeout) {
         const responseMetrics = this._responseMetrics[scopeDetails.scopeKey];
-        if (responseMetrics && responseMetrics.currentPercentileMs > 0) {
+        if (responseMetrics && this._isAdaptiveTimeoutActive(responseMetrics)) {
           config.timeout = Math.round(responseMetrics.currentPercentileMs * this._options.adaptiveTimeoutMultiplier);
           this._log('debug', `Setting adaptive timeout for ${scopeDetails.scopeKey}: ${config.timeout}ms`);
         }
@@ -484,7 +492,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
           return Promise.reject(error);
         }
 
-        if (this._options.shouldCountError && !this._options.shouldCountError(error)) {
+        if (!this._shouldCountError(error)) {
           this._log('debug', 'Error excluded from circuit breaking by shouldCountError');
           return Promise.reject(error);
         }
@@ -567,26 +575,76 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     return CIRCUIT_BREAKER_STATES.CLOSED;
   }
 
+  public manualReset(scopeKey?: string): void {
+    const scopeKeys = this._getTrackedScopeKeys(scopeKey);
+
+    scopeKeys.forEach((key) => {
+      const previousState = this._scopeStateCache.get(key)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
+      this._scopeStateCache.set(key, this._createInitialScopeState());
+      this._metricBaselines.delete(key);
+
+      if (previousState !== CIRCUIT_BREAKER_STATES.CLOSED) {
+        this._emitStateChange(key, previousState, CIRCUIT_BREAKER_STATES.CLOSED, 'manual-reset');
+      }
+    });
+
+    if (scopeKey) {
+      this._deleteDistributedScope(scopeKey);
+      this._log('debug', `Circuit reset: entering CLOSED state for ${scopeKey}.`);
+      return;
+    }
+
+    this._clearDistributedState(scopeKeys);
+    this._log('debug', 'Circuit reset: entering CLOSED state.');
+  }
+
+  /**
+   * Backwards-compatible alias retained for existing tests and internal callers.
+   * @internal
+   */
+  _reset(scopeKey?: string): void {
+    this.manualReset(scopeKey);
+  }
+
+  public resetMetrics(): void {
+    const resetAt = Date.now();
+
+    this._metricBaselines.clear();
+    this._getTrackedScopeKeys().forEach((scopeKey) => {
+      const state = this._scopeStateCache.get(scopeKey) ?? this._createInitialScopeState();
+      this._metricBaselines.set(scopeKey, {
+        failureCount: state.failureCount,
+        successCount: state.successCount,
+        halfOpenCount: state.halfOpenCount,
+        resetAt,
+      });
+    });
+
+    this._responseMetrics = {};
+    this._log('debug', 'Circuit metrics reset.');
+  }
+
+  public getAdaptiveTimeoutMetrics(): CircuitBreakerAdaptiveTimeoutMetrics[] {
+    if (!this._options.adaptiveTimeout) {
+      return [];
+    }
+
+    return Object.values(this._responseMetrics).map((metrics) => ({
+      scopeKey: metrics.scopeKey,
+      url: metrics.normalizedUrl,
+      host: metrics.host,
+      timeoutMs: Math.round(metrics.currentPercentileMs * this._options.adaptiveTimeoutMultiplier),
+      p95ResponseTimeMs: metrics.currentPercentileMs,
+      samplesCount: metrics.times.length,
+    }));
+  }
+
   /**
    * Returns metrics about the circuit breaker's operation.
    * Includes current failure count, state, and time until next attempt.
    */
   public getMetrics(): CircuitBreakerMetrics {
-    const now = Date.now();
-    const scopeMetrics = Array.from(this._knownScopes.values()).map((scope) => {
-      const state = this._scopeStateCache.get(scope.scopeKey) ?? this._createInitialScopeState();
-      return {
-        scopeKey: scope.scopeKey,
-        url: scope.normalizedUrl,
-        host: scope.host,
-        state: state.state,
-        failureCount: state.failureCount,
-        halfOpenCount: state.halfOpenCount,
-        successCount: state.successCount,
-        nextAttemptIn: Math.max(0, state.nextAttempt - now),
-        failuresInWindow: this._getFailureCountInWindow(state),
-      };
-    });
+    const scopeMetrics = this._getScopeMetrics();
 
     return {
       state: this.getState(),
@@ -595,41 +653,9 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       successCount: scopeMetrics.reduce((sum, scope) => sum + scope.successCount, 0),
       nextAttemptIn: scopeMetrics.reduce((max, scope) => Math.max(max, scope.nextAttemptIn), 0),
       failuresInWindow: scopeMetrics.reduce((sum, scope) => sum + scope.failuresInWindow, 0),
-      adaptiveTimeouts: this._options.adaptiveTimeout
-        ? Object.values(this._responseMetrics).map((metrics) => ({
-            scopeKey: metrics.scopeKey,
-            url: metrics.normalizedUrl,
-            host: metrics.host,
-            timeoutMs: Math.round(metrics.currentPercentileMs * this._options.adaptiveTimeoutMultiplier),
-            p95ResponseTimeMs: metrics.currentPercentileMs,
-            samplesCount: metrics.times.length,
-          }))
-        : [],
+      adaptiveTimeouts: this.getAdaptiveTimeoutMetrics(),
       scopeMetrics,
     };
-  }
-
-  /**
-   * Resets all known scopes immediately.
-   * @internal Exposed for test usage only; not part of the public API.
-   */
-  _reset(scopeKey?: string): void {
-    const scopeKeys = scopeKey ? [scopeKey] : Array.from(this._knownScopes.keys());
-
-    scopeKeys.forEach((key) => {
-      const previousState = this._scopeStateCache.get(key)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
-      const initialState = this._createInitialScopeState();
-      this._scopeStateCache.set(key, initialState);
-      const result = this._options.stateAdapter.set(key, cloneScopeState(initialState));
-      if (isPromiseLike(result)) {
-        void result;
-      }
-      if (previousState !== CIRCUIT_BREAKER_STATES.CLOSED) {
-        this._emitStateChange(key, previousState, CIRCUIT_BREAKER_STATES.CLOSED, 'manual-reset');
-      }
-    });
-
-    this._log('debug', 'Circuit reset: entering CLOSED state.');
   }
 
   private async _tripScope(scopeKey: string, scopeState: CircuitBreakerScopeState): Promise<void> {
@@ -824,8 +850,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
 
   /**
    * Updates the timeout percentile calculation for a specific scope.
-   * Recalculates only every 10 samples to avoid an O(n log n) sort on every response.
-   * Always calculates on the first sample (currentPercentileMs === 0).
+   * Activates once the configured sample size has been collected.
    */
   private _updateTimeoutPercentile(scopeKey: string): void {
     const metrics = this._responseMetrics[scopeKey];
@@ -833,9 +858,8 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       return;
     }
 
-    // Recalculate every min(10, sampleSize) samples to bound the O(n log n) sort cost.
-    const recalcInterval = Math.min(10, metrics.sampleSize);
-    if (metrics.currentPercentileMs > 0 && metrics.times.length % recalcInterval !== 0) {
+    if (metrics.times.length < metrics.sampleSize) {
+      metrics.currentPercentileMs = 0;
       return;
     }
 
@@ -849,6 +873,10 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       'debug',
       `Updated adaptive timeout for ${scopeKey}: ${metrics.currentPercentileMs}ms at ${percentile * 100}th percentile`,
     );
+  }
+
+  private _isAdaptiveTimeoutActive(metrics: ResponseTimeMetrics): boolean {
+    return metrics.times.length >= metrics.sampleSize && metrics.currentPercentileMs > 0;
   }
 
   /**
@@ -938,9 +966,19 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   }
 
   private async _readScopeState(scopeKey: string): Promise<CircuitBreakerScopeState> {
-    const storedState = await this._options.stateAdapter.get(scopeKey);
+    let storedState: CircuitBreakerScopeState | undefined;
+    try {
+      storedState = await this._options.stateAdapter.get(scopeKey);
+    } catch (error) {
+      this._handleAdapterError('get', scopeKey, error);
+    }
+    const cachedState = this._scopeStateCache.get(scopeKey);
     // Clone once: isolate from the adapter's internal storage.
-    const scopeState = storedState ? cloneScopeState(storedState) : this._createInitialScopeState();
+    const scopeState = storedState
+      ? cloneScopeState(storedState)
+      : cachedState
+        ? cloneScopeState(cachedState)
+        : this._createInitialScopeState();
     // Cache the same reference; _writeScopeState will replace it with a fresh clone.
     this._scopeStateCache.set(scopeKey, scopeState);
     return scopeState;
@@ -950,30 +988,18 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     // Clone once: isolate cache and adapter from the caller's mutable reference.
     const clonedState = cloneScopeState(scopeState);
     this._scopeStateCache.set(scopeKey, clonedState);
-    await this._options.stateAdapter.set(scopeKey, clonedState);
+    try {
+      await this._options.stateAdapter.set(scopeKey, clonedState);
+    } catch (error) {
+      this._handleAdapterError('set', scopeKey, error);
+    }
   }
 
   private _getScopeDetails(config: AxiosRequestConfig): ScopeDetails {
     const normalizedUrl = this._normalizeUrl(this._extractPathFromConfig(config));
     const host = this._extractHostFromConfig(config);
 
-    let scopeKey: string;
-    if (typeof this._options.scope === 'function') {
-      scopeKey = this._options.scope(config);
-    } else {
-      switch (this._options.scope) {
-        case 'host':
-          scopeKey = host || normalizedUrl || 'unknown';
-          break;
-        case 'url':
-          scopeKey = normalizedUrl || host || 'unknown';
-          break;
-        case 'host+url':
-        default:
-          scopeKey = host ? `${host}${normalizedUrl}` : '__global__';
-          break;
-      }
-    }
+    const scopeKey = this._resolveScopeKey(config, normalizedUrl, host);
 
     if (!this._knownScopes.has(scopeKey)) {
       // Evict the oldest entry when the cap is reached to keep both tracking
@@ -987,6 +1013,150 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     }
 
     return this._knownScopes.get(scopeKey)!;
+  }
+
+  private _shouldCountError(error: AxiosError): boolean {
+    if (!this._options.shouldCountError) {
+      return true;
+    }
+
+    try {
+      return this._options.shouldCountError(error);
+    } catch (callbackError) {
+      this._log('warn', 'shouldCountError callback threw; counting error by default', {
+        error: callbackError instanceof Error ? callbackError.message : callbackError,
+      });
+      return true;
+    }
+  }
+
+  private _resolveScopeKey(config: AxiosRequestConfig, normalizedUrl: string, host?: string): string {
+    const defaultScopeKey = host ? `${host}${normalizedUrl}` : normalizedUrl || 'unknown';
+
+    if (typeof this._options.scope === 'function') {
+      try {
+        const customScopeKey = this._options.scope(config);
+        if (typeof customScopeKey === 'string' && customScopeKey.length > 0) {
+          return customScopeKey;
+        }
+
+        this._log('warn', 'Custom scope callback returned an empty scope key; using default scope', {
+          url: config.url,
+        });
+        return defaultScopeKey;
+      } catch (error) {
+        this._log('warn', 'Custom scope callback threw; using default scope', {
+          error: error instanceof Error ? error.message : error,
+          url: config.url,
+        });
+        return defaultScopeKey;
+      }
+    }
+
+    switch (this._options.scope) {
+      case 'host':
+        return host || normalizedUrl || 'unknown';
+      case 'url':
+        return normalizedUrl || host || 'unknown';
+      case 'host+url':
+      default:
+        return defaultScopeKey;
+    }
+  }
+
+  private _handleAdapterError(operation: 'get' | 'set' | 'delete' | 'clear', scopeKey: string, error: unknown): void {
+    this._log('warn', `State adapter ${operation} failed; continuing with local circuit state`, {
+      scopeKey,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+
+  private _getTrackedScopeKeys(scopeKey?: string): string[] {
+    if (scopeKey) {
+      return [scopeKey];
+    }
+
+    return Array.from(new Set([...this._knownScopes.keys(), ...this._scopeStateCache.keys()]));
+  }
+
+  private _getScopeMetrics(): CircuitBreakerScopeMetrics[] {
+    const now = Date.now();
+
+    return Array.from(this._knownScopes.values()).map((scope) => {
+      const state = this._scopeStateCache.get(scope.scopeKey) ?? this._createInitialScopeState();
+
+      return {
+        scopeKey: scope.scopeKey,
+        url: scope.normalizedUrl,
+        host: scope.host,
+        state: state.state,
+        failureCount: this._getVisibleCounter(scope.scopeKey, 'failureCount', state.failureCount),
+        halfOpenCount: this._getVisibleCounter(scope.scopeKey, 'halfOpenCount', state.halfOpenCount),
+        successCount: this._getVisibleCounter(scope.scopeKey, 'successCount', state.successCount),
+        nextAttemptIn: Math.max(0, state.nextAttempt - now),
+        failuresInWindow: this._getVisibleFailuresInWindow(scope.scopeKey, state),
+      };
+    });
+  }
+
+  private _getVisibleCounter(
+    scopeKey: string,
+    counter: keyof Pick<ScopeMetricsBaseline, 'failureCount' | 'halfOpenCount' | 'successCount'>,
+    value: number,
+  ): number {
+    const baseline = this._metricBaselines.get(scopeKey);
+    return Math.max(0, value - (baseline?.[counter] ?? 0));
+  }
+
+  private _getVisibleFailuresInWindow(scopeKey: string, scopeState: CircuitBreakerScopeState): number {
+    if (!this._options.useSlidingWindow) {
+      return this._getVisibleCounter(scopeKey, 'failureCount', scopeState.failureCount);
+    }
+
+    this._cleanupOldFailures(scopeState);
+    const resetAt = this._metricBaselines.get(scopeKey)?.resetAt ?? 0;
+    return scopeState.recentFailures.filter((failure) => failure.timestamp >= resetAt).length;
+  }
+
+  private _deleteDistributedScope(scopeKey: string): void {
+    try {
+      const result = this._options.stateAdapter.delete(scopeKey);
+      if (isPromiseLike(result)) {
+        void result.catch((error) => {
+          this._handleAdapterError('delete', scopeKey, error);
+          this._restoreDistributedClosedState([scopeKey]);
+        });
+      }
+    } catch (error) {
+      this._handleAdapterError('delete', scopeKey, error);
+      this._restoreDistributedClosedState([scopeKey]);
+    }
+  }
+
+  private _clearDistributedState(scopeKeys: readonly string[]): void {
+    try {
+      const result = this._options.stateAdapter.clear();
+      if (isPromiseLike(result)) {
+        void result.catch((error) => {
+          this._handleAdapterError('clear', '*', error);
+          this._restoreDistributedClosedState(scopeKeys);
+        });
+      }
+    } catch (error) {
+      this._handleAdapterError('clear', '*', error);
+      this._restoreDistributedClosedState(scopeKeys);
+    }
+  }
+
+  private _restoreDistributedClosedState(scopeKeys: readonly string[]): void {
+    scopeKeys.forEach((scopeKey) => {
+      const result = this._options.stateAdapter.set(scopeKey, this._createInitialScopeState());
+      if (isPromiseLike(result)) {
+        void result.catch((error) => {
+          this._handleAdapterError('set', scopeKey, error);
+        });
+      }
+    });
   }
 
   private _extractPathFromConfig(config: AxiosRequestConfig): string {

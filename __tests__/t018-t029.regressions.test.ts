@@ -371,16 +371,16 @@ describe('T-023: CircuitBreakerPlugin single clone per direction', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T-024: CircuitBreakerPlugin adaptive timeout — percentile throttle
+// T-024: CircuitBreakerPlugin adaptive timeout — sampleSize gate
 // ---------------------------------------------------------------------------
-describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () => {
-  function makeAdaptivePlugin() {
+describe('T-024: CircuitBreakerPlugin adaptive timeout sampleSize gate', () => {
+  function makePlugin(sampleSize: number) {
     const plugin = new CircuitBreakerPlugin({
       failureThreshold: 100,
       openTimeout: 1000,
       halfOpenMax: 1,
       adaptiveTimeout: true,
-      adaptiveTimeoutSampleSize: 50,
+      adaptiveTimeoutSampleSize: sampleSize,
       adaptiveTimeoutPercentile: 0.95,
     });
     plugin.initialize({
@@ -392,83 +392,59 @@ describe('T-024: CircuitBreakerPlugin adaptive timeout percentile throttle', () 
     return plugin;
   }
 
-  test('currentPercentileMs updates on sample 1 (first entry, no prior value)', () => {
-    const plugin = makeAdaptivePlugin();
-
+  const track = (plugin: CircuitBreakerPlugin, ms: number) =>
     plugin._trackResponseTime({
       config: { url: '/route', baseURL: 'http://ex.com' },
-      headers: { 'x-response-time': '200' },
+      headers: { 'x-response-time': String(ms) },
     } as never);
+
+  test('currentPercentileMs stays 0 before sampleSize samples are collected', () => {
+    const plugin = makePlugin(5);
+
+    // 4 samples (< sampleSize=5): percentile must remain 0
+    for (let i = 0; i < 4; i++) {
+      track(plugin, 100);
+    }
 
     const metrics = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>);
     expect(metrics.length).toBeGreaterThan(0);
-    expect(metrics[0].currentPercentileMs).toBeGreaterThan(0);
+    expect(metrics[0].currentPercentileMs).toBe(0);
   });
 
-  test('currentPercentileMs is not recalculated on every intermediate sample', () => {
-    // Use sampleSize=50 so recalcInterval = min(10, 50) = 10.
-    const plugin = new CircuitBreakerPlugin({
-      failureThreshold: 100,
-      openTimeout: 1000,
-      halfOpenMax: 1,
-      adaptiveTimeout: true,
-      adaptiveTimeoutSampleSize: 50,
-      adaptiveTimeoutPercentile: 0.95,
-    });
-    plugin.initialize({
-      axiosInstance: axios.create({ baseURL: 'http://ex.com' }),
-      getLogger: () => ({ debug: () => {}, error: () => {}, warn: () => {} }),
-      triggerAndEmit: () => {},
-      releaseRequestTracking: () => {},
-    } as never);
+  test('currentPercentileMs is calculated once sampleSize samples are collected', () => {
+    // sampleSize=5, all samples 100ms → p95 should be 100 once threshold is met
+    const plugin = makePlugin(5);
 
-    const track = (ms: number) =>
-      plugin._trackResponseTime({
-        config: { url: '/route', baseURL: 'http://ex.com' },
-        headers: { 'x-response-time': String(ms) },
-      } as never);
-
-    // First sample — always calculates.
-    track(100);
-
-    const afterFirst: number = Object.values(
-      plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
-    )[0].currentPercentileMs;
-    expect(afterFirst).toBe(100);
-
-    // Samples 2–9: extreme values that would shift the percentile if recalculated.
-    for (let i = 2; i <= 9; i++) {
-      track(9999);
-    }
-
-    const afterNine: number = Object.values(
-      plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
-    )[0].currentPercentileMs;
-    expect(afterNine).toBe(afterFirst); // unchanged until sample 10
-
-    // Sample 10 — triggers recalculation (recalcInterval = 10, 10 % 10 === 0).
-    track(9999);
-
-    const afterTen: number = Object.values(
-      plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
-    )[0].currentPercentileMs;
-    expect(afterTen).toBeGreaterThan(afterFirst);
-  });
-
-  test('adaptive timeout values remain accurate after throttle change', () => {
-    const plugin = makeAdaptivePlugin();
-
-    // Add 10 uniform samples of 100ms → p95 should be 100.
-    for (let i = 0; i < 10; i++) {
-      plugin._trackResponseTime({
-        config: { url: '/stable', baseURL: 'http://ex.com' },
-        headers: { 'x-response-time': '100' },
-      } as never);
+    for (let i = 0; i < 5; i++) {
+      track(plugin, 100);
     }
 
     const p95: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0]
       .currentPercentileMs;
     expect(p95).toBe(100);
+  });
+
+  test('adaptive timeout values update as the rolling window fills with new samples', () => {
+    // sampleSize=3; fill with 100ms samples → p95=100, then add 1000ms samples
+    // to verify the rolling window picks them up once old samples age out.
+    const plugin = makePlugin(3);
+
+    // First window: all 100ms → p95 = 100
+    for (let i = 0; i < 3; i++) {
+      track(plugin, 100);
+    }
+    const after3: number = Object.values(plugin._responseMetrics as Record<string, { currentPercentileMs: number }>)[0]
+      .currentPercentileMs;
+    expect(after3).toBe(100);
+
+    // Push in 3 high samples so old 100ms values roll out of the window
+    for (let i = 0; i < 3; i++) {
+      track(plugin, 9999);
+    }
+    const afterHigh: number = Object.values(
+      plugin._responseMetrics as Record<string, { currentPercentileMs: number }>,
+    )[0].currentPercentileMs;
+    expect(afterHigh).toBeGreaterThan(100);
   });
 });
 
