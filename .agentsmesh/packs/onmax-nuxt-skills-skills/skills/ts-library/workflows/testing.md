@@ -10,7 +10,7 @@ pnpm add -D vitest
 
 ```typescript
 // vitest.config.ts
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
@@ -18,7 +18,7 @@ export default defineConfig({
     testTimeout: 30_000,
     reporters: 'dot',
   },
-})
+});
 ```
 
 ### With Coverage
@@ -33,7 +33,7 @@ export default defineConfig({
       reporter: ['text', 'lcovonly', 'html'],
     },
   },
-})
+});
 ```
 
 ## Workspace Projects
@@ -55,7 +55,7 @@ export default defineConfig({
       },
     ],
   },
-})
+});
 ```
 
 ## Fixture-Based Testing
@@ -63,20 +63,20 @@ export default defineConfig({
 Test transforms with file fixtures:
 
 ```typescript
-import { describe, expect, it } from 'vitest'
-import { transform } from '../src'
+import { describe, expect, it } from 'vitest';
+import { transform } from '../src';
 
-const fixtures = import.meta.glob('./fixtures/*.ts', { as: 'raw' })
+const fixtures = import.meta.glob('./fixtures/*.ts', { as: 'raw' });
 
 describe('transform', () => {
   for (const [path, getContent] of Object.entries(fixtures)) {
     it(path, async () => {
-      const content = await getContent()
-      const result = await transform(content)
-      expect(result).toMatchSnapshot()
-    })
+      const content = await getContent();
+      const result = await transform(content);
+      expect(result).toMatchSnapshot();
+    });
   }
-})
+});
 ```
 
 ## Idempotency Testing
@@ -85,12 +85,12 @@ Ensure transforms are stable:
 
 ```typescript
 it('transform is idempotent', async () => {
-  const pass1 = (await transform(fixture))?.code ?? fixture
-  expect(pass1).toMatchSnapshot()
+  const pass1 = (await transform(fixture))?.code ?? fixture;
+  expect(pass1).toMatchSnapshot();
 
-  const pass2 = (await transform(pass1))?.code ?? pass1
-  expect(pass2).toBe(pass1)  // Should not change
-})
+  const pass2 = (await transform(pass1))?.code ?? pass1;
+  expect(pass2).toBe(pass1); // Should not change
+});
 ```
 
 ## Type-Level Testing
@@ -103,19 +103,19 @@ export default defineConfig({
   test: {
     typecheck: { enabled: true },
   },
-})
+});
 ```
 
 ```typescript
 // test/types.test-d.ts
-import { describe, expectTypeOf, it } from 'vitest'
-import type { Input, Output } from '../src'
+import { describe, expectTypeOf, it } from 'vitest';
+import type { Input, Output } from '../src';
 
 describe('types', () => {
   it('infers input correctly', () => {
-    expectTypeOf<Input<typeof schema>>().toEqualTypeOf<{ id: string }>()
-  })
-})
+    expectTypeOf<Input<typeof schema>>().toEqualTypeOf<{ id: string }>();
+  });
+});
 ```
 
 ## Multi-TS Version Testing
@@ -139,20 +139,18 @@ jobs:
 Validate published package:
 
 ```bash
-# Check exports are correct
-pnpm dlx publint
-
-# Check types work in different moduleResolutions
-pnpm dlx @arethetypeswrong/cli --pack .
+npm pack --json --ignore-scripts
 ```
 
-Add to tsdown config:
+Prefer a package-contract test over builder-specific hooks:
 
-```typescript
-export default defineConfig({
-  attw: { profile: 'esm-only' },  // or 'node16'
-})
-```
+1. Build the package.
+2. Pack the tarball.
+3. Install it into a clean temp consumer.
+4. Verify `require()` and `import` for every documented public subpath.
+5. Run `tsc --noEmit` under `moduleResolution: "Bundler"` and, when Node consumers matter, `moduleResolution: "NodeNext"`.
+
+`publint` and `@arethetypeswrong/cli` are useful supplemental checks, but they do not replace a packed-consumer contract test.
 
 ## Test Scripts
 
@@ -170,15 +168,15 @@ export default defineConfig({
 ## Mocking
 
 ```typescript
-import { vi } from 'vitest'
+import { vi } from 'vitest';
 
 vi.mock('fs', () => ({
   readFileSync: vi.fn(() => 'mocked content'),
-}))
+}));
 
 // Spy on method
-const spy = vi.spyOn(console, 'log')
-expect(spy).toHaveBeenCalledWith('expected')
+const spy = vi.spyOn(console, 'log');
+expect(spy).toHaveBeenCalledWith('expected');
 ```
 
 ## Testing Plugins
@@ -187,15 +185,17 @@ Dogfood your own plugin in tests:
 
 ```typescript
 // vitest.config.ts
-import { defineConfig } from 'vitest/config'
-import MyPlugin from './src/vite'
+import { defineConfig } from 'vitest/config';
+import MyPlugin from './src/vite';
 
 export default defineConfig({
   plugins: [
-    MyPlugin({ /* options */ }),
+    MyPlugin({
+      /* options */
+    }),
   ],
   test: {
     include: ['test/**/*.test.ts'],
   },
-})
+});
 ```

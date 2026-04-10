@@ -32,12 +32,10 @@ function run(cmd, args, cwd, env = {}) {
 }
 
 if (!process.env.SANDBOX_SKIP_LIB_BUILD) {
-  run('npm', ['run', 'build'], repoRoot);
+  run('pnpm', ['build'], repoRoot);
 }
 
-run('npm', ['ci'], sandboxDir);
-
-run('npm', ['run', 'build'], sandboxDir, { SANDBOX_VITE_BASE: sandboxViteBase });
+run('pnpm', ['build'], sandboxDir, { SANDBOX_VITE_BASE: sandboxViteBase });
 
 mkdirSync(join(websiteDir, 'public'), { recursive: true });
 rmSync(outDir, { recursive: true, force: true });

@@ -14,7 +14,7 @@ Or manual setup:
 ```bash
 mkdir my-lib && cd my-lib
 pnpm init
-pnpm add -D typescript tsdown vitest eslint @antfu/eslint-config
+pnpm add -D typescript rollup rollup-plugin-typescript2 rollup-plugin-dts @rollup/plugin-node-resolve @rollup/plugin-commonjs @rollup/plugin-terser vitest eslint @antfu/eslint-config
 ```
 
 ### Directory Structure
@@ -29,7 +29,8 @@ my-lib/
 ├── dist/             # Build output (gitignored)
 ├── package.json
 ├── tsconfig.json
-├── tsdown.config.ts
+├── tsconfig.build.json
+├── rollup.config.js
 ├── eslint.config.ts
 └── vitest.config.ts
 ```
@@ -50,7 +51,7 @@ my-monorepo/
 │   ├── core/
 │   │   ├── src/
 │   │   ├── package.json
-│   │   └── tsdown.config.ts
+│   │   └── rollup.config.js
 │   └── cli/
 │       ├── src/
 │       └── package.json
@@ -70,8 +71,12 @@ packages:
 
 catalogs:
   build:
-    tsdown: ^0.15.0
-    unbuild: ^3.0.0
+    rollup: ^3.0.0
+    rollup-plugin-typescript2: ^0.37.0
+    rollup-plugin-dts: ^6.4.1
+    '@rollup/plugin-node-resolve': ^15.0.0
+    '@rollup/plugin-commonjs': ^24.0.0
+    '@rollup/plugin-terser': ^0.4.4
   lint:
     eslint: ^9.0.0
     '@antfu/eslint-config': ^4.0.0
@@ -85,20 +90,20 @@ catalogs:
 
 Organize dependencies by purpose (from antfu's blog post):
 
-| Category | Contents                           |
-| -------- | ---------------------------------- |
-| build    | tsdown, unbuild, rollup plugins    |
-| lint     | eslint, @antfu/eslint-config       |
-| test     | vitest, @vue/test-utils            |
-| types    | typescript, @types/\*              |
-| prod     | Runtime deps: consola, defu, pathe |
+| Category | Contents                             |
+| -------- | ------------------------------------ |
+| build    | rollup, rollup plugins, dts bundling |
+| lint     | eslint, @antfu/eslint-config         |
+| test     | vitest, @vue/test-utils              |
+| types    | typescript, @types/\*                |
+| prod     | Runtime deps: consola, defu, pathe   |
 
 ### Using Catalogs
 
 ```json
 {
   "devDependencies": {
-    "tsdown": "catalog:build",
+    "rollup": "catalog:build",
     "eslint": "catalog:lint",
     "vitest": "catalog:test",
     "typescript": "catalog:types"
@@ -114,13 +119,13 @@ pnpm add -D eslint @antfu/eslint-config
 
 ```typescript
 // eslint.config.ts
-import antfu from '@antfu/eslint-config'
+import antfu from '@antfu/eslint-config';
 
 export default antfu({
   type: 'lib',
   pnpm: true,
   formatters: true,
-})
+});
 ```
 
 ## Git Hooks
@@ -144,8 +149,8 @@ Run `pnpm prepare` after adding.
 ```json
 {
   "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
+    "build": "rollup -c --bundleConfigAsCjs",
+    "dev": "rollup -c -w --bundleConfigAsCjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
@@ -155,3 +160,9 @@ Run `pnpm prepare` after adding.
   }
 }
 ```
+
+For an existing published package, freeze the current public contract before changing the build:
+
+- copy the existing `exports` map
+- note all documented subpaths
+- verify the packed tarball from a clean consumer install

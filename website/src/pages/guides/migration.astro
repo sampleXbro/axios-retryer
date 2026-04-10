@@ -13,7 +13,7 @@ const _shikiCode7 = "createRetryer({\n  hooks: {\n    onTokenRefreshed: (token) 
 const _shikiCode8 = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\nconst withRefresh = createRetryer().use(\n  createTokenRefreshPlugin(async (axiosInstance) => {\n    const { data } = await axiosInstance.post('/auth/refresh');\n    return { token: data.accessToken };\n  }),\n);\nwithRefresh.on('onTokenRefreshed', (token) => console.log(token));";
 const _shikiCode8b = "import { createRetryer } from 'axios-retryer';\nimport { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\n\n// Or assign the widened manager from an existing instance:\nconst retryer = createRetryer();\nconst withRefresh = retryer.use(\n  createTokenRefreshPlugin(async (axiosInstance) => {\n    const { data } = await axiosInstance.post('/auth/refresh');\n    return { token: data.accessToken };\n  }),\n);\nwithRefresh.on('onTokenRefreshed', (token) => console.log(token));";
 const _shikiCode9 = "// Inside a custom plugin's initialize():\nplugin.initialize = (retryer) => {\n  retryer.on('beforeRetry', (config) => {\n    // Custom logic\n  });\n};";
-const _shikiCode10 = "npm run build:browser\n# Output: dist/browser/";
+const _shikiCode10 = "pnpm build:browser\n# Output: dist/browser/";
 const _shikiCode11 = "import { createTokenRefreshPlugin } from 'axios-retryer/plugins/TokenRefreshPlugin';\nimport { createMetricsPlugin } from 'axios-retryer/plugins/MetricsPlugin';";
 const _shikiCode12 = "import { createTokenRefreshPlugin, createMetricsPlugin } from 'axios-retryer/plugins';";
 const _shikiCode13 = "const cachePlugin = createCachePlugin();\nconst userKey = cachePlugin.buildCacheKey({ method: 'get', url: '/users/1' });\n\ncachePlugin.invalidateCache({ exact: userKey });\ncachePlugin.invalidateCache({ prefix: 'GET|/users/' });";
@@ -35,7 +35,7 @@ const _shikiCode16 = "import { CachingPlugin } from 'axios-retryer/plugins/Cachi
   <li>Update TypeScript listeners for plugin events: widen the manager type via <code>use()</code> or <code>createRetryer&lt;PluginEvents&gt;()</code></li>
   <li>Re-check <code>maxRefreshAttempts</code> if you use <code>TokenRefreshPlugin</code></li>
   <li>Move manual replay to <code>ManualRetryPlugin</code> (root replay surface removed)</li>
-  <li>Build the browser bundle locally if you need it (<code>npm run build:browser</code>)</li>
+  <li>Build the browser bundle locally if you need it (<code>pnpm build:browser</code>)</li>
   <li>Replace <code>hooks: {'{'} ... {'}'}</code> on <code>createRetryer()</code> with <code>retryer.on(...)</code> after construction</li>
   <li>Remove <code>RequestDependencyPlugin</code>; use <code>blockingPriorityThreshold</code> / <code>cancelPendingOnDependencyFailure</code> on the core manager</li>
 </ol>

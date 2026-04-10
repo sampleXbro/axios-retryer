@@ -2,7 +2,7 @@ import type { UserConfig } from 'vite';
 import { defineConfig } from 'vite';
 
 /**
- * Default `/` keeps standalone `npm run dev` in this folder ergonomic.
+ * Default `/` keeps standalone `pnpm dev` in this folder ergonomic.
  * Website embed sets `SANDBOX_VITE_BASE` to match `website/site-base.mjs` + `sandbox/`.
  */
 function sandboxBase(): string {
@@ -14,6 +14,8 @@ function sandboxBase(): string {
   return '/';
 }
 
-export default defineConfig((): UserConfig => ({
-  base: sandboxBase(),
-}));
+export default defineConfig(
+  (): UserConfig => ({
+    base: sandboxBase(),
+  }),
+);

@@ -6,9 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Packaging
 
-- Migrated the main library build to `unbuild`, restoring a working release build for modern TypeScript syntax while keeping dual ESM/CJS outputs plus the optional browser bundle.
-- Updated published entry files to ESM-first `.mjs` / `.cjs` outputs, narrowed the npm publish surface to `dist/`, and added `publint` + `attw` package validation scripts.
-- Aligned TypeScript config with modern library defaults (`moduleResolution: bundler`, `verbatimModuleSyntax`, no emit in the root config) and documented the new artifact names in the site docs.
+- Added package contract regression coverage that installs the packed tarball into a clean consumer and verifies CommonJS plus TypeScript `NodeNext` / `Bundler` resolution for all public plugin entry points.
 
 ### 🔒 Security
 
@@ -32,8 +30,8 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - **Interactive sandbox on the docs site:** `/sandbox` page (shared docs sidebar + top bar) embeds the browser playground in an iframe; static bundle is served from `/playground/` so Astro’s `/sandbox/index.html` remains the docs page.
-- **Website build & repo layout:** `website/site-base.mjs` centralizes the Pages `base` for both Astro and the Vite embed. `website/scripts/embed-sandbox.mjs` builds the library, runs `npm ci` + `vite build` in `sandbox/` with `SANDBOX_VITE_BASE`, and copies `sandbox/dist` → `website/public/playground/`. `website` scripts: `build` = embed + `astro build`; `embed-sandbox`; `dev:with-playground` = embed then `astro dev`. `sandbox/vite.config.ts` uses `SANDBOX_VITE_BASE` when set, else `/` for local `sandbox` dev. Sidebar nav (“Sandbox” under Getting Started) and the marketing homepage link to `/sandbox`.
-- **CI & gitignore:** Deploy workflow runs root `npm ci && npm run build`, then website `npm ci && SANDBOX_SKIP_LIB_BUILD=1 npm run build`; path filters include `sandbox/**` and library roots; npm cache uses root + website + sandbox lockfiles. `website/.gitignore` lists `public/playground/`. Root `.gitignore` no longer ignores `sandbox/` so the playground sources are tracked.
+- **Website build & repo layout:** `website/site-base.mjs` centralizes the Pages `base` for both Astro and the Vite embed. `website/scripts/embed-sandbox.mjs` builds the library, runs the sandbox build in `sandbox/` with `SANDBOX_VITE_BASE`, and copies `sandbox/dist` → `website/public/playground/`. `website` scripts: `build` = embed + `astro build`; `embed-sandbox`; `dev:with-playground` = embed then `astro dev`. `sandbox/vite.config.ts` uses `SANDBOX_VITE_BASE` when set, else `/` for local `sandbox` dev. Sidebar nav (“Sandbox” under Getting Started) and the marketing homepage link to `/sandbox`.
+- **CI & gitignore:** Deploy workflow builds the pnpm workspace, then website `SANDBOX_SKIP_LIB_BUILD=1 pnpm build`; path filters include `sandbox/**`, library roots, and the workspace lockfile. `website/.gitignore` lists `public/playground/`. Root `.gitignore` no longer ignores `sandbox/` so the playground sources are tracked.
 - **Sandbox page copy:** explains what the in-browser playground is for and how to use it (sidebar, scenarios, color-coded log, open in new tab).
 - **CodeSandbox removed from docs:** Quick Start “Try it live” links to the on-site sandbox; README uses a “Try it” link to the hosted sandbox instead of the CodeSandbox badge; dropped remaining CodeSandbox mentions (including the `sandbox/src/main.ts` file-dependency note).
 
@@ -71,7 +69,7 @@ All notable changes to this project will be documented in this file.
 - **Legacy `plugin.hooks` support was removed.** Plugins must subscribe through `retryer.on(...)` inside `initialize()`.
 - **`RequestDependencyPlugin` removed.** Dependency-style gating lives in the core: `blockingPriorityThreshold`, `cancelPendingOnDependencyFailure` (default `true`), and related events. Drop the separate plugin import and package export.
 - **`onRetryProcessFinished` is now lifecycle-only.** It no longer carries a metrics payload; use `onMetricsUpdated` with `MetricsPlugin` when you need snapshots.
-- **The browser bundle is now an optional local build.** Generate it with `npm run build:browser` when you need a script-tag artifact.
+- **The browser bundle is now an optional local build.** Generate it with `pnpm build:browser` when you need a script-tag artifact.
 - **`maxRefreshAttempts` now means the exact number of refresh attempts.** Previously the loop ran `maxRefreshAttempts + 1` times, so `maxRefreshAttempts: 3` silently produced 4 attempts. If you relied on the old (off-by-one) behavior, decrease your value by 1 (e.g. `3` → `2` to keep the same total attempts).
 - **`CriticalRequestPlugin` removed.** Prefer built-in request priority (`CRITICAL` / `RequestPriority`) and queue `canProcess` customization for similar behavior.
 - **`afterRetry` signature extended.** Handlers receive an optional third argument, `error`, when the retry attempt failed. Existing two-parameter listeners remain valid.

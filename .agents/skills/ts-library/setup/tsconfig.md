@@ -65,9 +65,7 @@
     "rootDir": "src"
   },
   "include": ["src"],
-  "references": [
-    { "path": "../utils" }
-  ]
+  "references": [{ "path": "../utils" }]
 }
 ```
 
@@ -102,25 +100,41 @@ For internal imports in monorepos:
 
 ## Type Declarations
 
-Let build tool generate declarations:
+Use a dedicated build tsconfig for declaration emit:
 
-```typescript
-// tsdown.config.ts
-export default defineConfig({
-  dts: true,                    // Generate .d.ts
-  dts: { resolve: ['@antfu/utils'] }  // Inline specific types
-})
+```json
+// tsconfig.build.json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationDir": "dist/types",
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "noEmit": false
+  },
+  "include": ["src/**/*"]
+}
 ```
 
-Or with unbuild:
+Then bundle only the public declaration entry points:
 
-```typescript
-// build.config.ts
-export default defineBuildConfig({
-  declaration: 'node16',        // For Node.js compatibility
-  declaration: true,            // For bundler resolution
-})
+```javascript
+// rollup.config.js
+import dts from 'rollup-plugin-dts';
+
+export default [
+  {
+    input: 'dist/types/index.d.ts',
+    output: { file: 'dist/index.d.ts', format: 'es' },
+    plugins: [dts()],
+  },
+];
 ```
+
+This keeps internal source paths out of the published package and lets you preserve flat declaration files for public subpaths.
 
 ## Common Issues
 
@@ -136,7 +150,7 @@ Check `moduleResolution` matches your target:
 Enable `verbatimModuleSyntax` and use explicit:
 
 ```typescript
-import type { Foo } from './types'
+import type { Foo } from './types';
 ```
 
 ### Slow type checking

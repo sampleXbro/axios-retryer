@@ -20,12 +20,7 @@ import {
   RETRY_MODES,
   QueueFullError,
 } from 'axios-retryer';
-import type {
-  AxiosRetryerRequestPriority,
-  CoreRetryEvents,
-  Logger,
-  RetryManager,
-} from 'axios-retryer';
+import type { AxiosRetryerRequestPriority, CoreRetryEvents, Logger, RetryManager } from 'axios-retryer';
 import type { AxiosRequestConfig } from 'axios';
 import { CachingPlugin } from 'axios-retryer/plugins/CachingPlugin';
 import type { CachingPluginEvents } from 'axios-retryer/plugins/CachingPlugin';
@@ -43,15 +38,7 @@ import type { TokenRefreshPluginEvents } from 'axios-retryer/plugins/TokenRefres
 
 type Level = 'info' | 'success' | 'error' | 'warn' | 'highlight' | 'critical' | 'dim';
 /** Visual group for scanning the log (left accent + tint). */
-type LogChannel =
-  | 'action'
-  | 'event-core'
-  | 'event-plugin'
-  | 'http'
-  | 'result'
-  | 'tool'
-  | 'library'
-  | 'misc';
+type LogChannel = 'action' | 'event-core' | 'event-plugin' | 'http' | 'result' | 'tool' | 'library' | 'misc';
 type RequestFactory<T = unknown> = () => Promise<T>;
 
 function inferLogChannel(msg: string, level: Level): LogChannel {
@@ -191,10 +178,12 @@ async function runMixedDispatch<T>(requestFactories: RequestFactory<T>[]): Promi
 
   // 2) Then stream: 4 one-by-one
   for (let i = 0; i < 4 && cursor < requestFactories.length; i++) {
-    settled.push(await requestFactories[cursor]().then(
-      (value) => ({ status: 'fulfilled', value } as PromiseFulfilledResult<T>),
-      (reason) => ({ status: 'rejected', reason } as PromiseRejectedResult),
-    ));
+    settled.push(
+      await requestFactories[cursor]().then(
+        (value) => ({ status: 'fulfilled', value }) as PromiseFulfilledResult<T>,
+        (reason) => ({ status: 'rejected', reason }) as PromiseRejectedResult,
+      ),
+    );
     cursor++;
   }
 
@@ -233,35 +222,44 @@ function wireAllCoreRetryEvents<T extends object = object>(manager: RetryManager
   const urlOf = (cfg: { url?: string }) => cfg.url ?? '(no url)';
   const ev = (msg: string, level: Level = 'dim') => log(logId, msg, level, 'event-core');
   manager.on('onRetryProcessStarted', () => ev('  event: onRetryProcessStarted'));
+  //@ts-expect-error
   manager.on('beforeRetry', (cfg: AxiosRequestConfig) => ev(`  event: beforeRetry ${urlOf(cfg)}`));
+  //@ts-expect-error
   manager.on('onRetryScheduled', (delayMs: number, cfg: AxiosRequestConfig) =>
     ev(`  event: onRetryScheduled delayMs=${delayMs} ${urlOf(cfg)}`),
   );
+  //@ts-expect-error
   manager.on('afterRetry', (cfg: AxiosRequestConfig, success: boolean, err?: AxiosError) =>
-    ev(
-      `  event: afterRetry success=${success} ${urlOf(cfg)}${!success && err?.message ? ` err=${err.message}` : ''}`,
-    ),
+    ev(`  event: afterRetry success=${success} ${urlOf(cfg)}${!success && err?.message ? ` err=${err.message}` : ''}`),
   );
+  //@ts-expect-error
   manager.on('onFailure', (cfg: AxiosRequestConfig) => ev(`  event: onFailure ${urlOf(cfg)}`, 'warn'));
+  //@ts-expect-error
   manager.on('onRequestQueued', (p: CoreQueued) =>
     ev(`  event: onRequestQueued ${p.requestId} pri=${p.priority} queueSize=${p.queueSize}`),
   );
+  //@ts-expect-error
   manager.on('onRequestDispatched', (p: CoreDispatched) =>
     ev(`  event: onRequestDispatched ${p.requestId} waitMs=${p.queuedForMs}`),
   );
+  //@ts-expect-error
   manager.on('onRequestSucceeded', (p: CoreSucceeded) =>
     ev(`  event: onRequestSucceeded ${urlOf(p.config)} status=${p.status} attempts=${p.attempts}`),
   );
+  //@ts-expect-error
   manager.on('onRequestError', (payload: CoreErrorEv) =>
     ev(
       `  event: onRequestError ${urlOf(payload.config)} status=${payload.status ?? '—'} attempts=${payload.attempts} retryable=${payload.retryable}`,
     ),
   );
   manager.on('onRetryProcessFinished', () => ev('  event: onRetryProcessFinished'));
+  //@ts-expect-error
   manager.on('onRequestCancelled', (id: string) => ev(`  event: onRequestCancelled ${id}`, 'warn'));
+  //@ts-expect-error
   manager.on('onInternetConnectionError', (cfg: AxiosRequestConfig) =>
     ev(`  event: onInternetConnectionError ${urlOf(cfg)}`, 'error'),
   );
+  //@ts-expect-error
   manager.on('onBlockingRequestFailed', (cfg: AxiosRequestConfig) =>
     ev(`  event: onBlockingRequestFailed ${urlOf(cfg)}`, 'error'),
   );
@@ -331,9 +329,9 @@ All CoreRetryEvents wired (see log). Mock: /offline uses networkError(); other p
         return [200, { message: 'recovered after 2 failures' }];
       }),
     );
-    mock.onGet(/\/(exhaust|static|override)\/\d+/).reply(() =>
-      withRandomDelay(() => [500, { error: 'permanent failure' }]),
-    );
+    mock
+      .onGet(/\/(exhaust|static|override)\/\d+/)
+      .reply(() => withRandomDelay(() => [500, { error: 'permanent failure' }]));
     mock.onGet('/offline').networkError();
 
     const manager = createRetryer({
@@ -381,9 +379,15 @@ All CoreRetryEvents wired (see log). Mock: /offline uses networkError(); other p
 
     on('b-retry-flaky', () => guard(() => fire('flaky', 'Flaky (503×2 then 200)')));
     on('b-retry-exhaust', () => guard(() => fire('exhaust', 'Exhaust (always 500)')));
-    on('b-retry-static', () => guard(() => fire('static', 'Static backoff', { __axiosRetryer: { backoffType: BACKOFF.STATIC } })));
-    on('b-retry-linear', () => guard(() => fire('exhaust', 'Linear backoff', { __axiosRetryer: { backoffType: BACKOFF.LINEAR } })));
-    on('b-retry-override', () => guard(() => fire('override', 'Override retries=1', { __axiosRetryer: { requestRetries: 1 } })));
+    on('b-retry-static', () =>
+      guard(() => fire('static', 'Static backoff', { __axiosRetryer: { backoffType: BACKOFF.STATIC } })),
+    );
+    on('b-retry-linear', () =>
+      guard(() => fire('exhaust', 'Linear backoff', { __axiosRetryer: { backoffType: BACKOFF.LINEAR } })),
+    );
+    on('b-retry-override', () =>
+      guard(() => fire('override', 'Override retries=1', { __axiosRetryer: { requestRetries: 1 } })),
+    );
 
     on('b-retry-offline', () =>
       guard(async () => {
@@ -512,7 +516,9 @@ Dispatch order (expected): CRITICAL → HIGHEST → HIGH → MEDIUM → LOW (2 a
           .get('/queue/extra-test', {
             __axiosRetryer: { priority: P.MEDIUM, extra: { sandboxDemo: 'metadata-extra' } },
           })
-          .then(() => log('priority', '  ✓ extra metadata accepted (see types AxiosRetryerRequestMetadata.extra)', 'success'))
+          .then(() =>
+            log('priority', '  ✓ extra metadata accepted (see types AxiosRetryerRequestMetadata.extra)', 'success'),
+          )
           .catch((e: unknown) => log('priority', `  ✗ ${e instanceof Error ? e.message : String(e)}`, 'error'));
         setInfoRow('priority', 'summary', 'extra metadata');
         log('priority', '■ done', 'dim');
@@ -523,9 +529,7 @@ Dispatch order (expected): CRITICAL → HIGHEST → HIGH → MEDIUM → LOW (2 a
       guard(async () => {
         const axQ = axios.create({ baseURL: 'http://priority-queuefull' });
         const mockQ = new MockAdapter(axQ);
-        mockQ.onGet(/\/slow\/\d+/).reply(
-          () => new Promise((r) => setTimeout(() => r([200, { ok: true }]), 600)),
-        );
+        mockQ.onGet(/\/slow\/\d+/).reply(() => new Promise((r) => setTimeout(() => r([200, { ok: true }]), 600)));
         const mgrQ = createRetryer({
           axiosInstance: axQ,
           retries: 0,
@@ -535,9 +539,7 @@ Dispatch order (expected): CRITICAL → HIGHEST → HIGH → MEDIUM → LOW (2 a
         });
         wireAllCoreRetryEvents(mgrQ, 'priority');
         log('priority', '→ 6 parallel slow GETs — waiting heap max 3 → expect ≥1 QueueFullError', 'highlight');
-        const results = await Promise.allSettled(
-          [1, 2, 3, 4, 5, 6].map((n) => mgrQ.axiosInstance.get(`/slow/${n}`)),
-        );
+        const results = await Promise.allSettled([1, 2, 3, 4, 5, 6].map((n) => mgrQ.axiosInstance.get(`/slow/${n}`)));
         let full = 0;
         results.forEach((res, i) => {
           if (res.status === 'rejected' && res.reason instanceof QueueFullError) {
@@ -546,7 +548,11 @@ Dispatch order (expected): CRITICAL → HIGHEST → HIGH → MEDIUM → LOW (2 a
           } else if (res.status === 'fulfilled') {
             log('priority', `  ✓ /slow/${i + 1}`, 'success');
           } else {
-            log('priority', `  ✗ /slow/${i + 1}: ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`, 'warn');
+            log(
+              'priority',
+              `  ✗ /slow/${i + 1}: ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`,
+              'warn',
+            );
           }
         });
         setInfoRow('priority', 'summary', `queue-full: QueueFullError×${full}`);
@@ -611,18 +617,17 @@ Note: onAllBlockingRequestsResolved fires only after all blocking requests succe
     const guard = createBusyGuard('blocking');
 
     let gateFails = false;
-    mock.onGet('/gate/critical').reply(
-      () =>
-        new Promise((r) =>
-          setTimeout(
-            () => r(gateFails ? [500, { error: 'gate failed' }] : [200, { role: 'CRITICAL' }]),
-            1000,
+    mock
+      .onGet('/gate/critical')
+      .reply(
+        () =>
+          new Promise((r) =>
+            setTimeout(() => r(gateFails ? [500, { error: 'gate failed' }] : [200, { role: 'CRITICAL' }]), 1000),
           ),
-        ),
-    );
-    mock.onGet(/\/gate\/medium\/\d+/).reply(
-      () => new Promise((r) => setTimeout(() => r([200, { role: 'MEDIUM' }]), getRandomDelayMs())),
-    );
+      );
+    mock
+      .onGet(/\/gate\/medium\/\d+/)
+      .reply(() => new Promise((r) => setTimeout(() => r([200, { role: 'MEDIUM' }]), getRandomDelayMs())));
 
     const manager = createRetryer({
       axiosInstance: ax,
@@ -687,12 +692,12 @@ Note: onAllBlockingRequestsResolved fires only after all blocking requests succe
       guard(async () => {
         const ax2 = axios.create({ baseURL: 'http://blocking-demo-nc' });
         const mock2 = new MockAdapter(ax2);
-        mock2.onGet('/gate/critical').reply(
-          () => new Promise((r) => setTimeout(() => r([500, { error: 'gate failed' }]), 800)),
-        );
-        mock2.onGet(/\/gate\/medium\/\d+/).reply(
-          () => new Promise((r) => setTimeout(() => r([200, { role: 'MEDIUM' }]), getRandomDelayMs())),
-        );
+        mock2
+          .onGet('/gate/critical')
+          .reply(() => new Promise((r) => setTimeout(() => r([500, { error: 'gate failed' }]), 800)));
+        mock2
+          .onGet(/\/gate\/medium\/\d+/)
+          .reply(() => new Promise((r) => setTimeout(() => r([200, { role: 'MEDIUM' }]), getRandomDelayMs())));
         const mgr2 = createRetryer({
           axiosInstance: ax2,
           retries: 0,
@@ -778,9 +783,7 @@ GET /cache/items/:id — increments mock fetch counter, random 100–700 ms</div
     manager.on('onCacheHit', (p) =>
       log('caching', `  event: onCacheHit ${p.config.url}  ageMs=${Math.round(p.ageMs)}`, 'dim'),
     );
-    manager.on('onCacheMiss', (p) =>
-      log('caching', `  event: onCacheMiss ${p.config.url}  (${p.reason})`, 'dim'),
-    );
+    manager.on('onCacheMiss', (p) => log('caching', `  event: onCacheMiss ${p.config.url}  (${p.reason})`, 'dim'));
     manager.on('onCacheInvalidated', (p) =>
       log('caching', `  event: onCacheInvalidated  count=${p.count}  matcher=${p.matcher}`, 'dim'),
     );
@@ -888,7 +891,11 @@ GET /cache/items/:id — increments mock fetch counter, random 100–700 ms</div
         const normUrl = segs[1] ?? '';
         const urlDir = normUrl.replace(/\/[^/]+$/, '/');
         const prefix = `${segs[0]}|${urlDir}`;
-        log('caching', `→ Warm /cache/items/1, invalidateCache({ prefix: "${prefix.slice(0, 48)}…" }), refetch`, 'highlight');
+        log(
+          'caching',
+          `→ Warm /cache/items/1, invalidateCache({ prefix: "${prefix.slice(0, 48)}…" }), refetch`,
+          'highlight',
+        );
         await manager.axiosInstance.get('/cache/items/1', {
           __axiosRetryer: { priority: P.MEDIUM },
         });
@@ -900,7 +907,11 @@ GET /cache/items/:id — increments mock fetch counter, random 100–700 ms</div
         });
         setInfoRow('caching', 'size', cachingPlugin.getCacheStats().size);
         setInfoRow('caching', 'summary', `fetches +${fetchCount - beforeInv}`);
-        log('caching', `■ done — expect +1 fetch after invalidation (fetches=${fetchCount})`, fetchCount > beforeInv ? 'success' : 'warn');
+        log(
+          'caching',
+          `■ done — expect +1 fetch after invalidation (fetches=${fetchCount})`,
+          fetchCount > beforeInv ? 'success' : 'warn',
+        );
       }),
     );
   },
@@ -946,11 +957,9 @@ GET /cb/api — 500 or 200 after random 100–700 ms when unhealthy/healthy</div
     const guard = createBusyGuard('circuit');
 
     let upstreamHealthy = false;
-    mock.onGet('/cb/api').reply(() =>
-      withRandomDelay(() =>
-        upstreamHealthy ? [200, { ok: true }] : [500, { error: 'upstream down' }],
-      ),
-    );
+    mock
+      .onGet('/cb/api')
+      .reply(() => withRandomDelay(() => (upstreamHealthy ? [200, { ok: true }] : [500, { error: 'upstream down' }])));
 
     const cb = new CircuitBreakerPlugin({
       failureThreshold: 3,
@@ -970,11 +979,7 @@ GET /cb/api — 500 or 200 after random 100–700 ms when unhealthy/healthy</div
     const manager = createRetryer<CircuitBreakerPluginEvents>({ axiosInstance: ax, retries: 0 });
     wireAllCoreRetryEvents(manager, 'circuit');
     manager.on('onCircuitStateChanged', (p) => {
-      log(
-        'circuit',
-        `  event: onCircuitStateChanged  ${p.scopeKey}  ${p.from}→${p.to}  (${p.reason})`,
-        'dim',
-      );
+      log('circuit', `  event: onCircuitStateChanged  ${p.scopeKey}  ${p.from}→${p.to}  (${p.reason})`, 'dim');
       refreshBadge();
     });
     manager.use(cb);
@@ -998,11 +1003,7 @@ GET /cb/api — 500 or 200 after random 100–700 ms when unhealthy/healthy</div
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             const state = cb.getState();
-            log(
-              'circuit',
-              `  ✗ #${i}: ${state === 'OPEN' ? 'short-circuited (OPEN)' : msg}`,
-              'error',
-            );
+            log('circuit', `  ✗ #${i}: ${state === 'OPEN' ? 'short-circuited (OPEN)' : msg}`, 'error');
             refreshBadge();
           }
         }
@@ -1137,20 +1138,26 @@ GET /metrics/ok/:id — 200 · /metrics/flaky/:id — 500 unless global counter 
         log('metrics', '→ 20 GETs mixed dispatch', 'highlight');
         flakyN = 0;
         await runMixedDispatch([
-          ...Array.from({ length: 10 }, (_, i) => () =>
-            manager.axiosInstance.get(`/metrics/ok/${i + 1}`, {
-              __axiosRetryer: { priority: getRandomNonCriticalPriority() },
-            }),
+          ...Array.from(
+            { length: 10 },
+            (_, i) => () =>
+              manager.axiosInstance.get(`/metrics/ok/${i + 1}`, {
+                __axiosRetryer: { priority: getRandomNonCriticalPriority() },
+              }),
           ),
-          ...Array.from({ length: 5 }, (_, i) => () =>
-            manager.axiosInstance.get(`/metrics/flaky/${i + 1}`, {
-              __axiosRetryer: { priority: getRandomNonCriticalPriority() },
-            }),
+          ...Array.from(
+            { length: 5 },
+            (_, i) => () =>
+              manager.axiosInstance.get(`/metrics/flaky/${i + 1}`, {
+                __axiosRetryer: { priority: getRandomNonCriticalPriority() },
+              }),
           ),
-          ...Array.from({ length: 5 }, (_, i) => () =>
-            manager.axiosInstance
-              .get(`/metrics/fail/${i + 1}`, { __axiosRetryer: { priority: getRandomNonCriticalPriority() } })
-              .catch(() => null),
+          ...Array.from(
+            { length: 5 },
+            (_, i) => () =>
+              manager.axiosInstance
+                .get(`/metrics/fail/${i + 1}`, { __axiosRetryer: { priority: getRandomNonCriticalPriority() } })
+                .catch(() => null),
           ),
         ]);
         log('metrics', '■ done — open “Log getMetrics()” for breakdown', 'success');
@@ -1174,7 +1181,11 @@ GET /metrics/ok/:id — 200 · /metrics/flaky/:id — 500 unless global counter 
       log('metrics', `  errorTypes.server5xx: ${m.errorTypesDistribution.server5xx}`, 'info');
       log('metrics', `  avgQueueWait: ${m.avgQueueWait.toFixed(3)} s`, 'info');
       log('metrics', `  avgRetryDelay: ${m.avgRetryDelay.toFixed(3)} s`, 'info');
-      log('metrics', `  timerHealth.score: ${m.timerHealth.healthScore}`, m.timerHealth.healthScore < 10 ? 'success' : 'warn');
+      log(
+        'metrics',
+        `  timerHealth.score: ${m.timerHealth.healthScore}`,
+        m.timerHealth.healthScore < 10 ? 'success' : 'warn',
+      );
       if (m.priorityMetrics.length) {
         log('metrics', '  by priority:', 'dim');
         m.priorityMetrics.forEach((pm) =>
@@ -1234,11 +1245,11 @@ GET /manual/docs/:id — 503 or 200</div>
     const guard = createBusyGuard('manual');
 
     let upstreamDown = true;
-    mock.onGet(/\/manual\/docs\/\d+/).reply(() =>
-      withRandomDelay(() =>
-        upstreamDown ? [503, { error: 'service unavailable' }] : [200, { data: 'restored' }],
-      ),
-    );
+    mock
+      .onGet(/\/manual\/docs\/\d+/)
+      .reply(() =>
+        withRandomDelay(() => (upstreamDown ? [503, { error: 'service unavailable' }] : [200, { data: 'restored' }])),
+      );
 
     const manualRetry = new ManualRetryPlugin({ storeNonIdempotent: false, maxRequestsToStore: 2 });
     const manager = createRetryer<ManualRetryPluginEvents>({
@@ -1247,9 +1258,7 @@ GET /manual/docs/:id — 503 or 200</div>
       retries: 0,
     });
     wireAllCoreRetryEvents(manager, 'manual');
-    manager.on('onManualRetryProcessStarted', () =>
-      log('manual', '  event: onManualRetryProcessStarted', 'highlight'),
-    );
+    manager.on('onManualRetryProcessStarted', () => log('manual', '  event: onManualRetryProcessStarted', 'highlight'));
     manager.on('onRequestRemovedFromStore', (cfg) =>
       log('manual', `  event: onRequestRemovedFromStore ${cfg.url}`, 'dim'),
     );
@@ -1271,10 +1280,12 @@ GET /manual/docs/:id — 503 or 200</div>
         upstreamDown = true;
         log('manual', '→ Capture: 10 failing GETs', 'highlight');
         await runMixedDispatch(
-          Array.from({ length: 10 }, (_, i) => () =>
-            manager.axiosInstance
-              .get(`/manual/docs/${i + 1}`, { __axiosRetryer: { priority: getRandomNonCriticalPriority() } })
-              .catch(() => log('manual', `  ✗ /manual/docs/${i + 1}`, 'error')),
+          Array.from(
+            { length: 10 },
+            (_, i) => () =>
+              manager.axiosInstance
+                .get(`/manual/docs/${i + 1}`, { __axiosRetryer: { priority: getRandomNonCriticalPriority() } })
+                .catch(() => log('manual', `  ✗ /manual/docs/${i + 1}`, 'error')),
           ),
         );
         syncStore();
@@ -1295,9 +1306,7 @@ GET /manual/docs/:id — 503 or 200</div>
         log('manual', '→ retryFailedRequests()', 'highlight');
         try {
           const results = await manualRetry.retryFailedRequests<{ data: string }>();
-          results.forEach((r) =>
-            log('manual', `  ✓ ${r.config.url} → ${JSON.stringify(r.data)}`, 'success'),
-          );
+          results.forEach((r) => log('manual', `  ✓ ${r.config.url} → ${JSON.stringify(r.data)}`, 'success'));
           if (results.length === 0) log('manual', '  (store empty)', 'warn');
         } catch (e) {
           log('manual', `  ✗ ${e instanceof Error ? e.message : e}`, 'error');
@@ -1509,15 +1518,17 @@ axios.defaults.headers.common['Authorization'] = 'Bearer …' · Mock GET /v1/it
     on('b-token-mixed', () =>
       guard(async () => {
         log('token', '→ Mixed dispatch: 12 requests (pattern: 3 parallel, 4 sequential, rest by 3)', 'highlight');
-        const factories = Array.from({ length: 12 }, (_, i) => () =>
-          manager.axiosInstance
-            .get(`/v1/items/${i + 1}`, { __axiosRetryer: { priority: getRandomNonCriticalPriority() } })
-            .then(() => {
-              log('token', `  ✓ /items/${i + 1}`, 'success');
-            })
-            .catch((e: unknown) => {
-              log('token', `  ✗ /items/${i + 1}: ${e instanceof Error ? e.message : String(e)}`, 'error');
-            }),
+        const factories = Array.from(
+          { length: 12 },
+          (_, i) => () =>
+            manager.axiosInstance
+              .get(`/v1/items/${i + 1}`, { __axiosRetryer: { priority: getRandomNonCriticalPriority() } })
+              .then(() => {
+                log('token', `  ✓ /items/${i + 1}`, 'success');
+              })
+              .catch((e: unknown) => {
+                log('token', `  ✗ /items/${i + 1}: ${e instanceof Error ? e.message : String(e)}`, 'error');
+              }),
         );
         const settled = await runMixedDispatch(factories);
         const ok = settled.filter((s) => s.status === 'fulfilled').length;
@@ -1549,7 +1560,11 @@ axios.defaults.headers.common['Authorization'] = 'Bearer …' · Mock GET /v1/it
             log('token', `  ✓ /items/${i + 1}`, 'success');
           } else {
             fail++;
-            log('token', `  ✗ /items/${i + 1}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`, 'error');
+            log(
+              'token',
+              `  ✗ /items/${i + 1}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
+              'error',
+            );
           }
         });
         setInfoRow('token', 'summary', `${results.length - fail} ok / ${fail} fail`);
@@ -1586,7 +1601,11 @@ axios.defaults.headers.common['Authorization'] = 'Bearer …' · Mock GET /v1/it
             log('token', `  ✓ /items/${i + 1}`, 'success');
           } else {
             fail++;
-            log('token', `  ✗ /items/${i + 1}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`, 'warn');
+            log(
+              'token',
+              `  ✗ /items/${i + 1}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
+              'warn',
+            );
           }
         });
         setInfoRow('token', 'summary', `${ok} ok / ${fail} fail`);
@@ -1619,7 +1638,11 @@ axios.defaults.headers.common['Authorization'] = 'Bearer …' · Mock GET /v1/it
 
     on('b-token-skip-refresh', () =>
       guard(async () => {
-        log('token', '→ Skip refresh: handler returns {} — expect onBeforeTokenRefresh in log, no onTokenRefreshed / onTokenRefreshFailed', 'highlight');
+        log(
+          'token',
+          '→ Skip refresh: handler returns {} — expect onBeforeTokenRefresh in log, no onTokenRefreshed / onTokenRefreshFailed',
+          'highlight',
+        );
         manager.unuse('TokenRefreshPlugin');
         manager.use(
           createTokenRefreshPlugin(async () => ({}), {
@@ -1673,9 +1696,9 @@ manager.use(new DebugSanitizationPlugin()) · Request carries Authorization + X-
     const mock = new MockAdapter(ax);
     const guard = createBusyGuard('sanitize');
 
-    mock.onGet('/debug/secure').reply(() =>
-      withRandomDelay(() => [401, { error: 'Unauthorized', password: 'should-not-leak' }]),
-    );
+    mock
+      .onGet('/debug/secure')
+      .reply(() => withRandomDelay(() => [401, { error: 'Unauthorized', password: 'should-not-leak' }]));
 
     const manager = createRetryer({
       axiosInstance: ax,
@@ -1697,9 +1720,7 @@ manager.use(new DebugSanitizationPlugin()) · Request carries Authorization + X-
             },
             __axiosRetryer: { requestId: 'sanitize-req-1' },
           })
-          .catch(() =>
-            log('sanitize', '  ■ terminal error (expected) — inspect logger output above', 'dim'),
-          );
+          .catch(() => log('sanitize', '  ■ terminal error (expected) — inspect logger output above', 'dim'));
         setInfoRow('sanitize', 'summary', new Date().toLocaleTimeString('en', { hour12: false }));
       }),
     );
@@ -1775,10 +1796,10 @@ function init() {
 
   // Tab navigation
   function activate(id: string) {
-    document.querySelectorAll<HTMLElement>('.sidebar-item').forEach(el => {
+    document.querySelectorAll<HTMLElement>('.sidebar-item').forEach((el) => {
       el.classList.toggle('active', el.dataset.section === id);
     });
-    document.querySelectorAll<HTMLElement>('.section').forEach(el => {
+    document.querySelectorAll<HTMLElement>('.section').forEach((el) => {
       el.classList.toggle('active', el.id === `section-${id}`);
     });
   }
