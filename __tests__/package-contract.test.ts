@@ -13,6 +13,10 @@ type PackageJson = {
   typesVersions?: Record<string, Record<string, string[]>>;
 };
 
+type DependencyPackageJson = {
+  dependencies?: Record<string, string>;
+};
+
 type ExportTarget = {
   default?: string;
   import?: string;
@@ -119,6 +123,10 @@ const runNode = (args: string[], cwd = repoRoot): string => runCommand(process.e
 
 const readPackageJson = (): PackageJson => {
   return JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as PackageJson;
+};
+
+const readSandboxPackageJson = (): DependencyPackageJson => {
+  return JSON.parse(fs.readFileSync(path.join(repoRoot, 'sandbox', 'package.json'), 'utf8')) as DependencyPackageJson;
 };
 
 const assertFileExists = (relativePath: string): void => {
@@ -240,6 +248,14 @@ describe('package contract', () => {
       assertFileExists(`${pluginContract.flatCompatPrefix}.esm.js`);
       assertFileExists(pluginContract.typesPath);
     }
+  });
+
+  it('keeps the sandbox wired to the live workspace package instead of an install-time file snapshot', () => {
+    const sandboxPackageJson = readSandboxPackageJson();
+    const workspaceConfig = fs.readFileSync(path.join(repoRoot, 'pnpm-workspace.yaml'), 'utf8');
+
+    expect(sandboxPackageJson.dependencies?.['axios-retryer']).toBe('workspace:*');
+    expect(workspaceConfig).toContain('  - .');
   });
 
   it('keeps CommonJS package self-requires working for the root, barrel, and plugin subpaths', () => {
