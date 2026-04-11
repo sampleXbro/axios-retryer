@@ -1,6 +1,6 @@
 export { MetricsPlugin } from './MetricsPlugin';
-export { MetricsCollector } from './MetricsCollector';
-export type { MetricsPluginEvents } from './MetricsPlugin';
+export { MetricsCollector } from './managers';
+export type { MetricsPluginEvents } from './types';
 export type { MetricsRecorder } from '../../types';
 
 import { MetricsPlugin } from './MetricsPlugin';
