@@ -30,7 +30,8 @@
     "benchmark:local": "pnpm build && node benchmark/local-mock-server.js --profile=standard",
     "benchmark:stress": "pnpm build && node benchmark/stress-testing.js --profile=standard",
     "benchmark:plugins": "pnpm build && node benchmark/plugin-integration.js --profile=standard",
-    "benchmark:existing": "pnpm build && node benchmark/priority-queue.js --profile=standard && node benchmark/caching.js --profile=standard && node benchmark/circuit-braker.js --profile=standard && node benchmark/token-refresh.js --profile=standard",
+    "benchmark:existing": "pnpm build && node benchmark/priority-queue.js --profile=standard && node benchmark/caching.js --profile=standard && node benchmark/circuit-braker.js --profile=standard && node benchmark/token-refresh.js --profile=standard && node benchmark/public-api.js --profile=standard",
+    "benchmark:public-api": "pnpm build && node benchmark/public-api.js --profile=standard",
     "benchmark:quick": "pnpm build && node benchmark/run-all-benchmarks.js --profile=quick",
     "benchmark:full": "pnpm build && node benchmark/run-all-benchmarks.js --profile=full"
   },

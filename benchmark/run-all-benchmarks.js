@@ -96,6 +96,15 @@ const BENCHMARKS = [
       full: 240000,
     },
   },
+  {
+    name: 'Public API Runtime',
+    file: 'public-api.js',
+    timeoutByProfile: {
+      quick: 60000,
+      standard: 90000,
+      full: 150000,
+    },
+  },
 ];
 
 function resolveBenchmarks(profileName, args) {
