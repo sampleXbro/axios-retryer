@@ -169,7 +169,7 @@ export interface CoreRetryEvents {
   onAllBlockingRequestsResolved?: () => void;
 }
 
-export type RetryManagerEvents<TPluginEvents extends object = Record<string, never>> = {
+export type RetryManagerEvents<TPluginEvents extends object = Record<never, never>> = {
   [K in keyof CoreRetryEvents | keyof TPluginEvents]: K extends keyof TPluginEvents
     ? K extends keyof CoreRetryEvents
       ? CoreRetryEvents[K] & TPluginEvents[K]

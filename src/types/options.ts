@@ -10,7 +10,7 @@ import type {
 import type { Logger, RetryStrategy } from './plugins';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export interface RetryManagerOptions<TPluginEvents extends object = Record<string, never>> {
+export interface RetryManagerOptions<TPluginEvents extends object = Record<never, never>> {
   /**
    * The mode of retrying requests.
    * - 'automatic': Automatically retry requests that meet the retry conditions.

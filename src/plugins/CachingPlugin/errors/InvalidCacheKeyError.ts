@@ -1,6 +1,6 @@
 export class InvalidCacheKeyError extends Error {
   constructor() {
-    super('Cannot generate cache key: request URL is missing.');
+    super('URL is required for cache key generation');
     this.name = 'InvalidCacheKeyError';
   }
 }

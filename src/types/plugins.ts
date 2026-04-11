@@ -64,7 +64,7 @@ export interface RequestStore {
  * Provides the plugin-facing view of RetryManager capabilities including
  * plugin-only wiring hooks that are not part of the public manager API.
  */
-export interface PluginContext<TPluginEvents extends object = Record<string, never>> {
+export interface PluginContext<TPluginEvents extends object = Record<never, never>> {
   /** The Axios instance managed by RetryManager. */
   readonly axiosInstance: AxiosInstance;
   /** Returns the configured logger. */
@@ -124,7 +124,7 @@ export interface PluginContext<TPluginEvents extends object = Record<string, nev
 /**
  * AxiosRetryer plugin interface that can be attached with {@link RetryManager.use} and removed with {@link RetryManager.unuse}
  * */
-export interface RetryPlugin<TPluginEvents extends object = Record<string, never>> {
+export interface RetryPlugin<TPluginEvents extends object = Record<never, never>> {
   /**
    * Plugin name. Should be unique
    * */
