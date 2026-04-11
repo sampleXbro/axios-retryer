@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## Next version - Unreleased
+
+### 📦 Structure & maintainability
+
+- **Public types:** Split the monolithic `src/types/index.ts` barrel into `common`, `events`, `metrics`, `options`, and `plugins` modules (package types entry continues to re-export the same public surface).
+- **Core:** Refined `EventBus`, `RetryScheduler`, and `ErrorInterceptor` behavior and `RetryManager` glue.
+- **CachingPlugin:** Reorganized into `configs/`, `errors/`, `storage/`, `types/`, and `utils/` with a smaller orchestrator; `InvalidCacheKeyError` lives under `errors/`.
+- **CircuitBreakerPlugin:** Extracted adaptive timeout tracking, per-scope state, shared types, and option resolution/validation; centralized `excludeUrls` validation in `src/utils/validateExcludeUrls.ts`. Follow-up layout pass adds `configs/`, `errors/`, `managers/`, and `types/` with legacy top-level filenames kept as thin re-exports where needed.
+- **DebugSanitizationPlugin, ManualRetryPlugin, MetricsPlugin, TokenRefreshPlugin:** Same modular pattern (`configs/`, `types/`, `utils/` and/or `errors/`, `managers/` for `MetricsCollector`) for smaller orchestrator classes and clearer boundaries.
+
+### 🐛 Fixes
+
+- **Plugin event typing:** Default plugin event map uses `Record<never, never>` so `RetryManagerEvents` does not widen `keyof` incorrectly (restores `RetryEventListener` inference for core events such as `onRetryScheduled` and `beforeRetry`).
+- **CachingPlugin:** `InvalidCacheKeyError` message for missing URLs matches the established contract expected by tests and docs.
+
+### 📚 Documentation
+
+- **Website:** New “Creating plugins” page (`docs/plugins/creating-plugins`) and plugins index / docs layout updates.
+- **Agents:** Added `plugin-architecture` skill and synced `ts-library` skill content via AgentsMesh (including generated `AGENTS.md`).
+
+### 🧪 Testing & benchmarks
+
+- **`validateExcludeUrls`:** Dedicated unit tests (`__tests__/validateExcludeUrls.test.ts`).
+- **Benchmarks:** New `benchmark/public-api.js`, `pnpm benchmark:public-api`, inclusion in `benchmark:existing`, updates to `benchmark/run-all-benchmarks.js`, and refreshed `benchmark/latest-benchmark-report.json`.
+
 ## 2.1.6 - 10.04.2026
 
 ### ⚠️ Behavior changes
