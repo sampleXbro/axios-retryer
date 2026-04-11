@@ -1,275 +1,45 @@
 import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
-import type { PluginContext } from '../../types';
-import type { RetryPlugin } from '../../types';
-import { assignRequestMetadata, ensureRequestMetadata, getRequestMetadata } from '../../utils/requestMetadata';
+import type { PluginContext, RetryPlugin } from '../../types';
+import { assignRequestMetadata, ensureRequestMetadata } from '../../utils/requestMetadata';
+import { validateExcludeUrls } from '../../utils/validateExcludeUrls';
+import { AdaptiveTimeoutTracker, type ResponseTimeMetrics } from './AdaptiveTimeoutTracker';
+import { CircuitBreakerScopeManager, InMemoryCircuitBreakerStateAdapter } from './CircuitBreakerScopeManager';
 import { CircuitBreakerStateError } from './CircuitBreakerStateError';
+import {
+  CIRCUIT_BREAKER_STATES,
+  CIRCUIT_BREAKER_SCOPES,
+  type CircuitBreakerMetrics,
+  type CircuitBreakerOptions,
+  type CircuitBreakerPluginEvents,
+  type CircuitBreakerScope,
+  type CircuitBreakerScopeMetrics,
+  type CircuitBreakerScopeState,
+  type CircuitBreakerState,
+  type CircuitBreakerStateAdapter,
+  type ScopeMetricsBaseline,
+} from './CircuitBreakerTypes';
 
-type MaybePromise<T> = T | Promise<T>;
-
-export const CIRCUIT_BREAKER_STATES = {
-  CLOSED: 'CLOSED',
-  OPEN: 'OPEN',
-  HALF_OPEN: 'HALF_OPEN',
-} as const;
-
-export type CircuitBreakerState = (typeof CIRCUIT_BREAKER_STATES)[keyof typeof CIRCUIT_BREAKER_STATES];
-
-export const CIRCUIT_BREAKER_SCOPES = {
-  HOST: 'host',
-  URL: 'url',
-  HOST_AND_URL: 'host+url',
-} as const;
-
-export type CircuitBreakerScope = (typeof CIRCUIT_BREAKER_SCOPES)[keyof typeof CIRCUIT_BREAKER_SCOPES];
-
-/**
- * Configuration options for the Circuit Breaker behavior.
- */
-export interface CircuitBreakerOptions {
-  /**
-   * Number of consecutive failures required to trip the circuit.
-   * Once this threshold is exceeded, the circuit transitions from `CLOSED` to `OPEN`.
-   */
-  failureThreshold: number;
-
-  /**
-   * Duration (in milliseconds) the circuit remains in the `OPEN` state
-   * before allowing a test request in the `HALF_OPEN` state.
-   */
-  openTimeout: number;
-
-  /**
-   * Maximum number of test requests allowed in `HALF_OPEN` state
-   * before deciding to either reset (back to `CLOSED`) or trip again to `OPEN`.
-   */
-  halfOpenMax: number;
-
-  /**
-   * Number of successful test requests required in HALF_OPEN state to reset the circuit.
-   * This allows for more confidence before fully closing the circuit.
-   * Must be <= halfOpenMax.
-   */
-  successThreshold?: number;
-
-  /**
-   * If true, uses a sliding window approach to count failures over time rather than consecutive failures.
-   * This provides more accurate failure detection in high-volume systems.
-   */
-  useSlidingWindow?: boolean;
-
-  /**
-   * The duration (in milliseconds) of the sliding window when useSlidingWindow is true.
-   * Only failures within this time period are counted toward the failure threshold.
-   */
-  slidingWindowSize?: number;
-
-  /**
-   * Callback function to determine which errors should contribute to circuit breaking.
-   * This allows selective monitoring of specific error types.
-   * If not provided, all errors count.
-   */
-  shouldCountError?: (error: AxiosError) => boolean;
-
-  /**
-   * Adaptive timeout configuration. When true, the circuit breaker will track response times
-   * and adjust timeouts accordingly.
-   */
-  adaptiveTimeout?: boolean;
-
-  /**
-   * Percentile (0-1) to use for adaptive timeout calculation. Default is 0.95 (95th percentile).
-   */
-  adaptiveTimeoutPercentile?: number;
-
-  /**
-   * Number of historical response times to track for adaptive timeout calculation.
-   */
-  adaptiveTimeoutSampleSize?: number;
-
-  /**
-   * Timeout multiplier (e.g., 1.5 = 150% of the calculated percentile).
-   */
-  adaptiveTimeoutMultiplier?: number;
-
-  /**
-   * Maximum number of unique scope keys tracked in the adaptive-timeout response-metrics map.
-   * Prevents unbounded memory growth under adversarial or high-cardinality URL spaces.
-   * When the cap is reached, the oldest entry is evicted. Default: 500.
-   */
-  maxTrackedScopes?: number;
-
-  /**
-   * Allow specific endpoints to be excluded from circuit breaking.
-   * These URLs will always be allowed through regardless of circuit state.
-   *
-   * String patterns use exact URL equality. `RegExp` patterns are tested against
-   * the full request URL on every request — prefer string patterns when possible.
-   *
-   * **Security note (ReDoS):** Avoid catastrophically backtracking patterns such as
-   * `/(a+)+$/` combined with long non-matching URLs. JavaScript's regex engine is
-   * single-threaded and synchronous; a pathological pattern will block the event loop.
-   * Validate any user-controlled or externally-sourced patterns before use.
-   */
-  excludeUrls?: readonly (string | RegExp)[];
-
-  /**
-   * Controls how circuit state is grouped.
-   * `host+url` scopes by host and normalized URL, which is the default.
-   */
-  scope?: CircuitBreakerScope | ((config: AxiosRequestConfig) => string);
-
-  /**
-   * Optional adapter for sharing circuit state across processes or hosts.
-   */
-  stateAdapter?: CircuitBreakerStateAdapter;
-}
-
-export interface CircuitBreakerFailureRecord {
-  timestamp: number;
-  url: string;
-  status?: number;
-  errorCode?: string;
-}
-
-export interface CircuitBreakerScopeState {
-  state: CircuitBreakerState;
-  failureCount: number;
-  successCount: number;
-  halfOpenCount: number;
-  nextAttempt: number;
-  recentFailures: CircuitBreakerFailureRecord[];
-  lastFailureStatus?: number;
-  lastFailureCode?: string;
-}
-
-export interface CircuitBreakerScopeMetrics {
-  scopeKey: string;
-  url: string;
-  host?: string;
-  state: CircuitBreakerState;
-  failureCount: number;
-  halfOpenCount: number;
-  successCount: number;
-  nextAttemptIn: number;
-  failuresInWindow: number;
-}
-
-export interface CircuitBreakerAdaptiveTimeoutMetrics {
-  scopeKey: string;
-  url: string;
-  host?: string;
-  timeoutMs: number;
-  p95ResponseTimeMs: number;
-  samplesCount: number;
-}
-
-export interface CircuitBreakerMetrics {
-  state: CircuitBreakerState;
-  failureCount: number;
-  halfOpenCount: number;
-  successCount: number;
-  nextAttemptIn: number;
-  failuresInWindow: number;
-  adaptiveTimeouts: CircuitBreakerAdaptiveTimeoutMetrics[];
-  scopeMetrics: CircuitBreakerScopeMetrics[];
-}
-
-export interface CircuitBreakerStateAdapter {
-  get(key: string): MaybePromise<CircuitBreakerScopeState | undefined>;
-  set(key: string, state: CircuitBreakerScopeState): MaybePromise<void>;
-  delete(key: string): MaybePromise<void>;
-  clear(): MaybePromise<void>;
-}
-
-export interface CircuitBreakerPluginEvents {
-  onCircuitStateChanged?: (payload: {
-    scopeKey: string;
-    from: CircuitBreakerState;
-    to: CircuitBreakerState;
-    reason:
-      | 'failure-threshold'
-      | 'half-open-failure'
-      | 'open-timeout-elapsed'
-      | 'success-threshold-reached'
-      | 'manual-reset';
-    nextAttemptIn?: number;
-  }) => void;
-}
-
-export class InMemoryCircuitBreakerStateAdapter implements CircuitBreakerStateAdapter {
-  private readonly state = new Map<string, CircuitBreakerScopeState>();
-
-  public get(key: string): CircuitBreakerScopeState | undefined {
-    const stored = this.state.get(key);
-    return stored ? cloneScopeState(stored) : undefined;
-  }
-
-  public set(key: string, state: CircuitBreakerScopeState): void {
-    this.state.set(key, cloneScopeState(state));
-  }
-
-  public delete(key: string): void {
-    this.state.delete(key);
-  }
-
-  public clear(): void {
-    this.state.clear();
-  }
-}
+export type {
+  CircuitBreakerAdaptiveTimeoutMetrics,
+  CircuitBreakerFailureRecord,
+  CircuitBreakerMetrics,
+  CircuitBreakerOptions,
+  CircuitBreakerPluginEvents,
+  CircuitBreakerScope,
+  CircuitBreakerScopeMetrics,
+  CircuitBreakerScopeState,
+  CircuitBreakerState,
+  CircuitBreakerStateAdapter,
+} from './CircuitBreakerTypes';
+export { CIRCUIT_BREAKER_STATES, CIRCUIT_BREAKER_SCOPES } from './CircuitBreakerTypes';
+export { InMemoryCircuitBreakerStateAdapter } from './CircuitBreakerScopeManager';
 
 /**
- * Interface to track response time metrics for adaptive timeouts
- */
-interface ResponseTimeMetrics {
-  times: number[];
-  sampleSize: number;
-  lastCalculated: number;
-  currentPercentileMs: number;
-  scopeKey: string;
-  normalizedUrl: string;
-  host?: string;
-}
-
-interface ScopeDetails {
-  scopeKey: string;
-  normalizedUrl: string;
-  host?: string;
-}
-
-interface ScopeMetricsBaseline {
-  failureCount: number;
-  successCount: number;
-  halfOpenCount: number;
-  resetAt: number;
-}
-
-function cloneScopeState(state: CircuitBreakerScopeState): CircuitBreakerScopeState {
-  return {
-    ...state,
-    recentFailures: state.recentFailures.map((failure) => ({ ...failure })),
-  };
-}
-
-function isPromiseLike<T>(value: unknown): value is Promise<T> {
-  return !!value && typeof (value as Promise<T>).then === 'function';
-}
-
-/**
- * Enhanced CircuitBreakerPlugin
- *
- * This plugin implements an advanced Circuit Breaker pattern with:
- * - Sliding window failure counting (time-based rather than just consecutive)
- * - Selective error monitoring (filter which errors should trip the circuit)
- * - Adaptive timeout management (learns from response times)
- * - Granular recovery with success threshold
- * - URL exclusion capabilities
- * - Scoped circuit state per host / normalized endpoint
- * - Optional distributed state adapters for shared circuit state
- *
- * When enabled, it monitors for failure patterns and temporarily "opens the circuit"
- * to prevent further calls to problematic services, with intelligent recovery mechanisms.
+ * Enhanced CircuitBreakerPlugin with sliding window failure counting,
+ * selective error monitoring, adaptive timeout management, granular recovery,
+ * URL exclusion, scoped circuit state, and optional distributed state adapters.
  *
  * @implements {RetryPlugin}
  */
@@ -288,18 +58,10 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   private _requestInterceptorId?: number;
   private _responseInterceptorId?: number;
   private _context!: PluginContext<CircuitBreakerPluginEvents>;
-  /** @internal Exposed for test inspection only; not part of the public API. */
-  _responseMetrics: Record<string, ResponseTimeMetrics> = {};
-  private readonly _scopeStateCache = new Map<string, CircuitBreakerScopeState>();
-  private readonly _knownScopes = new Map<string, ScopeDetails>();
+  private readonly _adaptiveTimeoutTracker: AdaptiveTimeoutTracker;
+  private readonly _scopeManager: CircuitBreakerScopeManager;
   private readonly _metricBaselines = new Map<string, ScopeMetricsBaseline>();
-  /** Per-scope promise chain that serializes async read-modify-write cycles. */
-  private readonly _scopeLocks = new Map<string, Promise<void>>();
 
-  /**
-   * Creates an instance of CircuitBreakerPlugin with advanced options.
-   * @param {Partial<CircuitBreakerOptions>} [options] - Configuration options.
-   */
   constructor(options: Partial<CircuitBreakerOptions> = {}) {
     const defaults: Required<Omit<CircuitBreakerOptions, 'shouldCountError' | 'scope' | 'stateAdapter'>> = {
       failureThreshold: 5,
@@ -323,52 +85,76 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       stateAdapter: options.stateAdapter ?? new InMemoryCircuitBreakerStateAdapter(),
     };
 
-    if (!Number.isInteger(this._options.failureThreshold) || this._options.failureThreshold < 1) {
-      throw new RetryerConfigError(
-        'failureThreshold must be a positive integer',
-        'failureThreshold',
-        this._options.failureThreshold,
-      );
-    }
-    if (!Number.isInteger(this._options.openTimeout) || this._options.openTimeout < 0) {
-      throw new RetryerConfigError(
-        'openTimeout must be a non-negative integer',
-        'openTimeout',
-        this._options.openTimeout,
-      );
-    }
-    if (!Number.isInteger(this._options.halfOpenMax) || this._options.halfOpenMax < 1) {
-      throw new RetryerConfigError('halfOpenMax must be a positive integer', 'halfOpenMax', this._options.halfOpenMax);
-    }
-    if (
-      this._options.successThreshold !== undefined &&
-      (!Number.isInteger(this._options.successThreshold) || this._options.successThreshold < 1)
-    ) {
-      throw new RetryerConfigError(
-        'successThreshold must be a positive integer',
-        'successThreshold',
-        this._options.successThreshold,
-      );
-    }
+    this._validateOptions();
 
-    if (this._options.successThreshold > this._options.halfOpenMax) {
-      this._options.successThreshold = this._options.halfOpenMax;
-    }
+    this._adaptiveTimeoutTracker = new AdaptiveTimeoutTracker({
+      percentile: this._options.adaptiveTimeoutPercentile,
+      sampleSize: this._options.adaptiveTimeoutSampleSize,
+      multiplier: this._options.adaptiveTimeoutMultiplier,
+      maxTrackedScopes: this._options.maxTrackedScopes,
+    });
+
+    // Logger not available at construction time; injected via setLogger() during initialize().
+    this._scopeManager = new CircuitBreakerScopeManager({
+      scope: this._options.scope,
+      stateAdapter: this._options.stateAdapter,
+      maxTrackedScopes: this._options.maxTrackedScopes,
+    });
   }
 
-  /**
-   * Initializes the plugin by setting up request and response interceptors.
-   * Called when the plugin is attached.
-   *
-   * @param {RetryManager} manager - The RetryManager instance.
-   */
+  // ---------------------------------------------------------------------------
+  // @internal — Test-facing delegation properties and methods (not part of the public API)
+  // ---------------------------------------------------------------------------
+
+  /** @internal */
+  get _responseMetrics(): Record<string, ResponseTimeMetrics> {
+    return this._adaptiveTimeoutTracker.responseMetrics;
+  }
+
+  /** @internal */
+  get _scopeStateCache(): Map<string, CircuitBreakerScopeState> {
+    return this._scopeManager.scopeStateCache;
+  }
+
+  /** @internal */
+  get _knownScopes(): Map<string, { scopeKey: string; normalizedUrl: string; host?: string }> {
+    return this._scopeManager.knownScopes;
+  }
+
+  /** @internal */
+  _normalizeUrl(url: string): string {
+    return this._scopeManager.normalizeUrl(url);
+  }
+
+  /** @internal */
+  _resolveScopeKey(config: AxiosRequestConfig, normalizedUrl: string, host?: string): string {
+    return this._scopeManager.resolveScopeKeyPublic(config, normalizedUrl, host);
+  }
+
+  /** @internal */
+  _getScopeDetails(config: AxiosRequestConfig): { scopeKey: string; normalizedUrl: string; host?: string } {
+    return this._scopeManager.getScopeDetails(config);
+  }
+
+  /** @internal */
+  async _writeScopeState(scopeKey: string, state: CircuitBreakerScopeState): Promise<void> {
+    return this._scopeManager.writeState(scopeKey, state);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Plugin lifecycle
+  // ---------------------------------------------------------------------------
+
   public initialize(context: PluginContext<CircuitBreakerPluginEvents>): void {
     this._context = context;
-    const axiosInstance = context.axiosInstance;
+    const logger = context.getLogger();
 
-    this._log('debug', 'Initializing CircuitBreakerPlugin with options:', {
-      ...this._options,
-    });
+    this._scopeManager.setLogger(logger);
+    this._scopeManager.baseURLGetter = () => context.axiosInstance.defaults.baseURL;
+
+    logger.debug('CircuitBreakerPlugin: Initializing with options:', { ...this._options });
+
+    const axiosInstance = context.axiosInstance;
 
     this._requestInterceptorId = axiosInstance.interceptors.request.use(async (config) => {
       const metadata = ensureRequestMetadata(config);
@@ -378,15 +164,14 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       }
 
       if (this._isUrlExcluded(config)) {
-        this._log('debug', `URL excluded from circuit breaking: ${config.url}`);
+        logger.debug(`CircuitBreakerPlugin: URL excluded from circuit breaking: ${config.url}`);
         return config;
       }
 
-      const scopeDetails = this._getScopeDetails(config);
+      const scopeDetails = this._scopeManager.getScopeDetails(config);
 
-      // Serialize read-modify-write within a scope to prevent lost updates under concurrency.
-      const decision = await this._withScopeLock(scopeDetails.scopeKey, async () => {
-        let scopeState = await this._readScopeState(scopeDetails.scopeKey);
+      const decision = await this._scopeManager.withLock(scopeDetails.scopeKey, async () => {
+        let scopeState = await this._scopeManager.readState(scopeDetails.scopeKey);
 
         if (scopeState.state === CIRCUIT_BREAKER_STATES.OPEN) {
           if (Date.now() >= scopeState.nextAttempt) {
@@ -400,12 +185,10 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
           if (scopeState.halfOpenCount >= this._options.halfOpenMax) {
             return { action: 'reject-half-open', scopeState } as const;
           }
-
           scopeState.halfOpenCount++;
-          await this._writeScopeState(scopeDetails.scopeKey, scopeState);
-          this._log(
-            'debug',
-            `HALF_OPEN test request #${scopeState.halfOpenCount} of ${this._options.halfOpenMax} for ${scopeDetails.scopeKey}`,
+          await this._scopeManager.writeState(scopeDetails.scopeKey, scopeState);
+          logger.debug(
+            `CircuitBreakerPlugin: HALF_OPEN test request #${scopeState.halfOpenCount} of ${this._options.halfOpenMax} for ${scopeDetails.scopeKey}`,
           );
         }
 
@@ -414,9 +197,8 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
 
       if (decision.action === 'reject-open') {
         const remainingTime = decision.scopeState.nextAttempt - Date.now();
-        this._log(
-          'debug',
-          `Circuit is OPEN for ${scopeDetails.scopeKey}: failing fast. Will retry in ${remainingTime}ms`,
+        logger.debug(
+          `CircuitBreakerPlugin: Circuit is OPEN for ${scopeDetails.scopeKey}: failing fast. Will retry in ${remainingTime}ms`,
         );
         return Promise.reject(
           this._createCircuitStateError(config, decision.scopeState, 'Circuit is open: failing fast.'),
@@ -424,17 +206,19 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       }
 
       if (decision.action === 'reject-half-open') {
-        this._log('debug', `Circuit is HALF_OPEN for ${scopeDetails.scopeKey}: too many test requests.`);
+        logger.debug(
+          `CircuitBreakerPlugin: Circuit is HALF_OPEN for ${scopeDetails.scopeKey}: too many test requests.`,
+        );
         return Promise.reject(
           this._createCircuitStateError(config, decision.scopeState, 'Circuit is half-open: too many test requests.'),
         );
       }
 
       if (this._options.adaptiveTimeout) {
-        const responseMetrics = this._responseMetrics[scopeDetails.scopeKey];
-        if (responseMetrics && this._isAdaptiveTimeoutActive(responseMetrics)) {
-          config.timeout = Math.round(responseMetrics.currentPercentileMs * this._options.adaptiveTimeoutMultiplier);
-          this._log('debug', `Setting adaptive timeout for ${scopeDetails.scopeKey}: ${config.timeout}ms`);
+        const timeout = this._adaptiveTimeoutTracker.getComputedTimeout(scopeDetails.scopeKey);
+        if (timeout !== undefined) {
+          config.timeout = timeout;
+          logger.debug(`CircuitBreakerPlugin: Setting adaptive timeout for ${scopeDetails.scopeKey}: ${timeout}ms`);
         }
       }
 
@@ -444,40 +228,44 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     this._responseInterceptorId = axiosInstance.interceptors.response.use(
       async (response) => {
         if (this._options.adaptiveTimeout && response.config.url) {
-          this._trackResponseTime(response);
+          const scopeDetails = this._scopeManager.getScopeDetails(response.config);
+          this._adaptiveTimeoutTracker.trackResponseTime(
+            response,
+            scopeDetails.scopeKey,
+            scopeDetails.normalizedUrl,
+            scopeDetails.host,
+          );
         }
 
         if (this._isUrlExcluded(response.config)) {
           return response;
         }
 
-        const scopeDetails = this._getScopeDetails(response.config);
+        const scopeDetails = this._scopeManager.getScopeDetails(response.config);
 
-        await this._withScopeLock(scopeDetails.scopeKey, async () => {
-          const scopeState = await this._readScopeState(scopeDetails.scopeKey);
+        await this._scopeManager.withLock(scopeDetails.scopeKey, async () => {
+          const scopeState = await this._scopeManager.readState(scopeDetails.scopeKey);
 
           if (scopeState.state === CIRCUIT_BREAKER_STATES.HALF_OPEN) {
             scopeState.successCount++;
             const successThreshold = this._options.successThreshold || 1;
 
             if (scopeState.successCount >= successThreshold) {
-              this._log(
-                'debug',
-                `HALF_OPEN success threshold reached (${scopeState.successCount}/${successThreshold}) for ${scopeDetails.scopeKey}`,
+              logger.debug(
+                `CircuitBreakerPlugin: HALF_OPEN success threshold reached (${scopeState.successCount}/${successThreshold}) for ${scopeDetails.scopeKey}`,
               );
               await this._resetScope(scopeDetails.scopeKey);
             } else {
-              await this._writeScopeState(scopeDetails.scopeKey, scopeState);
-              this._log(
-                'debug',
-                `HALF_OPEN success: ${scopeState.successCount}/${successThreshold} successful test requests for ${scopeDetails.scopeKey}`,
+              await this._scopeManager.writeState(scopeDetails.scopeKey, scopeState);
+              logger.debug(
+                `CircuitBreakerPlugin: HALF_OPEN success: ${scopeState.successCount}/${successThreshold} successful test requests for ${scopeDetails.scopeKey}`,
               );
             }
           } else if (scopeState.state === CIRCUIT_BREAKER_STATES.CLOSED && scopeState.failureCount > 0) {
             scopeState.failureCount = 0;
             scopeState.lastFailureStatus = undefined;
             scopeState.lastFailureCode = undefined;
-            await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+            await this._scopeManager.writeState(scopeDetails.scopeKey, scopeState);
           }
         });
 
@@ -493,14 +281,14 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
         }
 
         if (!this._shouldCountError(error)) {
-          this._log('debug', 'Error excluded from circuit breaking by shouldCountError');
+          logger.debug('CircuitBreakerPlugin: Error excluded from circuit breaking by shouldCountError');
           return Promise.reject(error);
         }
 
-        const scopeDetails = this._getScopeDetails(error.config);
+        const scopeDetails = this._scopeManager.getScopeDetails(error.config);
 
-        await this._withScopeLock(scopeDetails.scopeKey, async () => {
-          const scopeState = await this._readScopeState(scopeDetails.scopeKey);
+        await this._scopeManager.withLock(scopeDetails.scopeKey, async () => {
+          const scopeState = await this._scopeManager.readState(scopeDetails.scopeKey);
           this._rememberFailure(scopeState, error);
 
           if (this._options.useSlidingWindow) {
@@ -508,19 +296,17 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
             const currentCount = this._getFailureCountInWindow(scopeState);
 
             if (currentCount >= this._options.failureThreshold) {
-              this._log(
-                'debug',
-                `Sliding window failure threshold reached for ${scopeDetails.scopeKey}: ${currentCount} failures in window`,
+              logger.debug(
+                `CircuitBreakerPlugin: Sliding window failure threshold reached for ${scopeDetails.scopeKey}: ${currentCount} failures in window`,
               );
               await this._tripScope(scopeDetails.scopeKey, scopeState);
             } else {
-              await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+              await this._scopeManager.writeState(scopeDetails.scopeKey, scopeState);
             }
           } else {
             scopeState.failureCount++;
-            this._log(
-              'debug',
-              `Failure count increased for ${scopeDetails.scopeKey}: ${scopeState.failureCount}/${this._options.failureThreshold}`,
+            logger.debug(
+              `CircuitBreakerPlugin: Failure count increased for ${scopeDetails.scopeKey}: ${scopeState.failureCount}/${this._options.failureThreshold}`,
             );
 
             if (
@@ -529,7 +315,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
             ) {
               await this._tripScope(scopeDetails.scopeKey, scopeState);
             } else {
-              await this._writeScopeState(scopeDetails.scopeKey, scopeState);
+              await this._scopeManager.writeState(scopeDetails.scopeKey, scopeState);
             }
           }
         });
@@ -539,14 +325,8 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     );
   }
 
-  /**
-   * Called before the plugin is removed.
-   * Ejects the interceptors.
-   *
-   * @param {RetryManager} manager - The RetryManager instance.
-   */
   public onBeforeDestroyed(context: PluginContext<CircuitBreakerPluginEvents>): void {
-    this._log('debug', 'Removing CircuitBreakerPlugin');
+    context.getLogger().debug('CircuitBreakerPlugin: Removing CircuitBreakerPlugin');
     const axiosInstance = context.axiosInstance;
     if (this._requestInterceptorId !== undefined) {
       axiosInstance.interceptors.request.eject(this._requestInterceptorId);
@@ -556,31 +336,27 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     }
   }
 
-  /**
-   * Returns the current state of the circuit breaker.
-   * Useful for monitoring or metrics collection.
-   */
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
   public getState(scopeKey?: string): CircuitBreakerState {
     if (scopeKey) {
-      return this._scopeStateCache.get(scopeKey)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
+      return this._scopeManager.scopeStateCache.get(scopeKey)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
     }
 
-    const states = Array.from(this._scopeStateCache.values()).map((scopeState) => scopeState.state);
-    if (states.includes(CIRCUIT_BREAKER_STATES.OPEN)) {
-      return CIRCUIT_BREAKER_STATES.OPEN;
-    }
-    if (states.includes(CIRCUIT_BREAKER_STATES.HALF_OPEN)) {
-      return CIRCUIT_BREAKER_STATES.HALF_OPEN;
-    }
+    const states = Array.from(this._scopeManager.scopeStateCache.values()).map((s) => s.state);
+    if (states.includes(CIRCUIT_BREAKER_STATES.OPEN)) return CIRCUIT_BREAKER_STATES.OPEN;
+    if (states.includes(CIRCUIT_BREAKER_STATES.HALF_OPEN)) return CIRCUIT_BREAKER_STATES.HALF_OPEN;
     return CIRCUIT_BREAKER_STATES.CLOSED;
   }
 
   public manualReset(scopeKey?: string): void {
-    const scopeKeys = this._getTrackedScopeKeys(scopeKey);
+    const scopeKeys = this._scopeManager.getTrackedScopeKeys(scopeKey);
 
     scopeKeys.forEach((key) => {
-      const previousState = this._scopeStateCache.get(key)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
-      this._scopeStateCache.set(key, this._createInitialScopeState());
+      const previousState = this._scopeManager.scopeStateCache.get(key)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
+      this._scopeManager.scopeStateCache.set(key, this._scopeManager.createInitialState());
       this._metricBaselines.delete(key);
 
       if (previousState !== CIRCUIT_BREAKER_STATES.CLOSED) {
@@ -589,13 +365,13 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     });
 
     if (scopeKey) {
-      this._deleteDistributedScope(scopeKey);
-      this._log('debug', `Circuit reset: entering CLOSED state for ${scopeKey}.`);
+      this._scopeManager.deleteDistributedScope(scopeKey);
+      this._context?.getLogger().debug(`CircuitBreakerPlugin: Circuit reset for ${scopeKey}`);
       return;
     }
 
-    this._clearDistributedState(scopeKeys);
-    this._log('debug', 'Circuit reset: entering CLOSED state.');
+    this._scopeManager.clearDistributedState(scopeKeys);
+    this._context?.getLogger().debug('CircuitBreakerPlugin: Circuit reset: entering CLOSED state');
   }
 
   /**
@@ -606,46 +382,47 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     this.manualReset(scopeKey);
   }
 
+  /**
+   * @internal Exposed for test inspection only; not part of the public API.
+   */
+  _trackResponseTime(response: AxiosResponse): void {
+    if (!response.config.url || !this._options.adaptiveTimeout) {
+      return;
+    }
+    const scopeDetails = this._scopeManager.getScopeDetails(response.config);
+    this._adaptiveTimeoutTracker.trackResponseTime(
+      response,
+      scopeDetails.scopeKey,
+      scopeDetails.normalizedUrl,
+      scopeDetails.host,
+    );
+  }
+
   public resetMetrics(): void {
     const resetAt = Date.now();
-
     this._metricBaselines.clear();
-    this._getTrackedScopeKeys().forEach((scopeKey) => {
-      const state = this._scopeStateCache.get(scopeKey) ?? this._createInitialScopeState();
-      this._metricBaselines.set(scopeKey, {
+    this._scopeManager.getTrackedScopeKeys().forEach((key) => {
+      const state = this._scopeManager.scopeStateCache.get(key) ?? this._scopeManager.createInitialState();
+      this._metricBaselines.set(key, {
         failureCount: state.failureCount,
         successCount: state.successCount,
         halfOpenCount: state.halfOpenCount,
         resetAt,
       });
     });
-
-    this._responseMetrics = {};
-    this._log('debug', 'Circuit metrics reset.');
+    this._adaptiveTimeoutTracker.reset();
+    this._context?.getLogger().debug('CircuitBreakerPlugin: Circuit metrics reset.');
   }
 
-  public getAdaptiveTimeoutMetrics(): CircuitBreakerAdaptiveTimeoutMetrics[] {
+  public getAdaptiveTimeoutMetrics() {
     if (!this._options.adaptiveTimeout) {
       return [];
     }
-
-    return Object.values(this._responseMetrics).map((metrics) => ({
-      scopeKey: metrics.scopeKey,
-      url: metrics.normalizedUrl,
-      host: metrics.host,
-      timeoutMs: Math.round(metrics.currentPercentileMs * this._options.adaptiveTimeoutMultiplier),
-      p95ResponseTimeMs: metrics.currentPercentileMs,
-      samplesCount: metrics.times.length,
-    }));
+    return this._adaptiveTimeoutTracker.getAdaptiveTimeoutMetrics();
   }
 
-  /**
-   * Returns metrics about the circuit breaker's operation.
-   * Includes current failure count, state, and time until next attempt.
-   */
   public getMetrics(): CircuitBreakerMetrics {
     const scopeMetrics = this._getScopeMetrics();
-
     return {
       state: this.getState(),
       failureCount: scopeMetrics.reduce((sum, scope) => sum + scope.failureCount, 0),
@@ -658,6 +435,10 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // State machine transitions
+  // ---------------------------------------------------------------------------
+
   private async _tripScope(scopeKey: string, scopeState: CircuitBreakerScopeState): Promise<void> {
     if (scopeState.state !== CIRCUIT_BREAKER_STATES.OPEN) {
       const previousState = scopeState.state;
@@ -665,7 +446,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       scopeState.nextAttempt = Date.now() + this._options.openTimeout;
       scopeState.successCount = 0;
       scopeState.halfOpenCount = 0;
-      await this._writeScopeState(scopeKey, scopeState);
+      await this._scopeManager.writeState(scopeKey, scopeState);
       this._emitStateChange(
         scopeKey,
         previousState,
@@ -673,21 +454,21 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
         previousState === CIRCUIT_BREAKER_STATES.HALF_OPEN ? 'half-open-failure' : 'failure-threshold',
         Math.max(0, scopeState.nextAttempt - Date.now()),
       );
-      this._log(
-        'error',
-        `Circuit tripped: entering OPEN state for ${scopeKey} until ${new Date(scopeState.nextAttempt).toISOString()}`,
-      );
+      this._context
+        ?.getLogger()
+        .error(
+          `CircuitBreakerPlugin: Circuit tripped: entering OPEN state for ${scopeKey} until ${new Date(scopeState.nextAttempt).toISOString()}`,
+        );
     }
   }
 
   private async _resetScope(scopeKey: string): Promise<void> {
-    const previousState = this._scopeStateCache.get(scopeKey)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
-    const initialState = this._createInitialScopeState();
-    await this._writeScopeState(scopeKey, initialState);
+    const previousState = this._scopeManager.scopeStateCache.get(scopeKey)?.state ?? CIRCUIT_BREAKER_STATES.CLOSED;
+    await this._scopeManager.writeState(scopeKey, this._scopeManager.createInitialState());
     if (previousState !== CIRCUIT_BREAKER_STATES.CLOSED) {
       this._emitStateChange(scopeKey, previousState, CIRCUIT_BREAKER_STATES.CLOSED, 'success-threshold-reached');
     }
-    this._log('debug', `Circuit reset: entering CLOSED state for ${scopeKey}.`);
+    this._context?.getLogger().debug(`CircuitBreakerPlugin: Circuit reset: entering CLOSED state for ${scopeKey}.`);
   }
 
   private async _transitionToHalfOpen(
@@ -698,9 +479,9 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     scopeState.state = CIRCUIT_BREAKER_STATES.HALF_OPEN;
     scopeState.halfOpenCount = 0;
     scopeState.successCount = 0;
-    await this._writeScopeState(scopeKey, scopeState);
+    await this._scopeManager.writeState(scopeKey, scopeState);
     this._emitStateChange(scopeKey, previousState, CIRCUIT_BREAKER_STATES.HALF_OPEN, 'open-timeout-elapsed');
-    this._log('debug', `Circuit transitioning to HALF_OPEN state for ${scopeKey}.`);
+    this._context?.getLogger().debug(`CircuitBreakerPlugin: Transitioning to HALF_OPEN for ${scopeKey}.`);
     return scopeState;
   }
 
@@ -716,10 +497,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       | 'manual-reset',
     nextAttemptIn?: number,
   ): void {
-    if (from === to) {
-      return;
-    }
-
+    if (from === to) return;
     this._context?.triggerAndEmit?.('onCircuitStateChanged', {
       scopeKey,
       from,
@@ -729,9 +507,60 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Failure tracking helpers
+  // ---------------------------------------------------------------------------
+
   private _rememberFailure(scopeState: CircuitBreakerScopeState, error: AxiosError): void {
     scopeState.lastFailureStatus = error.response?.status;
     scopeState.lastFailureCode = error.code;
+  }
+
+  private _addFailureToSlidingWindow(scopeState: CircuitBreakerScopeState, error: AxiosError): void {
+    scopeState.recentFailures.push({
+      timestamp: Date.now(),
+      url: error.config?.url || 'unknown',
+      status: error.response?.status,
+      errorCode: error.code,
+    });
+    scopeState.failureCount++;
+    this._cleanupOldFailures(scopeState);
+  }
+
+  private _cleanupOldFailures(scopeState: CircuitBreakerScopeState): void {
+    if (!this._options.useSlidingWindow) return;
+    const windowStart = Date.now() - this._options.slidingWindowSize;
+    scopeState.recentFailures = scopeState.recentFailures.filter((f) => f.timestamp >= windowStart);
+  }
+
+  private _getFailureCountInWindow(scopeState: CircuitBreakerScopeState): number {
+    if (!this._options.useSlidingWindow) return scopeState.failureCount;
+    this._cleanupOldFailures(scopeState);
+    return scopeState.recentFailures.length;
+  }
+
+  private _shouldCountError(error: AxiosError): boolean {
+    if (!this._options.shouldCountError) return true;
+    try {
+      return this._options.shouldCountError(error);
+    } catch (callbackError) {
+      this._context
+        ?.getLogger()
+        .warn('CircuitBreakerPlugin: shouldCountError callback threw; counting error by default', {
+          error: callbackError instanceof Error ? callbackError.message : callbackError,
+        });
+      return true;
+    }
+  }
+
+  private _isUrlExcluded(config: AxiosRequestConfig): boolean {
+    if (!config.url || !this._options.excludeUrls || this._options.excludeUrls.length === 0) {
+      return false;
+    }
+    return this._options.excludeUrls.some((pattern) => {
+      if (pattern instanceof RegExp) return pattern.test(config.url || '');
+      return config.url === pattern;
+    });
   }
 
   private _createCircuitStateError(
@@ -739,9 +568,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     scopeState: CircuitBreakerScopeState,
     message: string,
   ): AxiosError {
-    const errorConfig: AxiosRequestConfig = {
-      ...config,
-    };
+    const errorConfig: AxiosRequestConfig = { ...config };
     assignRequestMetadata(errorConfig, { requestRetries: 0 });
 
     const response =
@@ -758,333 +585,14 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     return new CircuitBreakerStateError(message, scopeState.state, errorConfig, scopeState.lastFailureCode, response);
   }
 
-  /**
-   * Adds a failure to the sliding window for time-based failure tracking.
-   */
-  private _addFailureToSlidingWindow(scopeState: CircuitBreakerScopeState, error: AxiosError): void {
-    const failure: CircuitBreakerFailureRecord = {
-      timestamp: Date.now(),
-      url: error.config?.url || 'unknown',
-      status: error.response?.status,
-      errorCode: error.code,
-    };
-
-    scopeState.recentFailures.push(failure);
-    scopeState.failureCount++;
-    this._cleanupOldFailures(scopeState);
-    this._log('debug', `Added failure to sliding window. Current count: ${scopeState.recentFailures.length}`);
-  }
-
-  /**
-   * Removes failures that are outside the sliding window timeframe.
-   */
-  private _cleanupOldFailures(scopeState: CircuitBreakerScopeState): void {
-    if (!this._options.useSlidingWindow) {
-      return;
-    }
-
-    const windowStart = Date.now() - this._options.slidingWindowSize;
-    scopeState.recentFailures = scopeState.recentFailures.filter((failure) => failure.timestamp >= windowStart);
-  }
-
-  /**
-   * Gets the number of failures in the current sliding window.
-   */
-  private _getFailureCountInWindow(scopeState: CircuitBreakerScopeState): number {
-    if (!this._options.useSlidingWindow) {
-      return scopeState.failureCount;
-    }
-
-    this._cleanupOldFailures(scopeState);
-    return scopeState.recentFailures.length;
-  }
-
-  /**
-   * Tracks response time for adaptive timeout calculation.
-   * @internal Exposed for test inspection only; not part of the public API.
-   */
-  _trackResponseTime(response: AxiosResponse): void {
-    if (!response.config.url || !this._options.adaptiveTimeout) {
-      return;
-    }
-
-    const scopeDetails = this._getScopeDetails(response.config);
-    let responseTime = 0;
-
-    if (response.headers && response.headers['x-response-time']) {
-      responseTime = parseInt(response.headers['x-response-time'], 10);
-    } else if (getRequestMetadata(response.config)?.timestamp) {
-      responseTime = Date.now() - (getRequestMetadata(response.config)?.timestamp || 0);
-    }
-
-    if (responseTime <= 0) {
-      responseTime = 100;
-    }
-
-    if (!this._responseMetrics[scopeDetails.scopeKey]) {
-      const keys = Object.keys(this._responseMetrics);
-      if (keys.length >= this._options.maxTrackedScopes) {
-        // Evict the oldest (first-inserted) scope to keep the map bounded.
-        delete this._responseMetrics[keys[0]];
-      }
-      this._responseMetrics[scopeDetails.scopeKey] = {
-        times: [],
-        sampleSize: this._options.adaptiveTimeoutSampleSize,
-        lastCalculated: 0,
-        currentPercentileMs: 0,
-        scopeKey: scopeDetails.scopeKey,
-        normalizedUrl: scopeDetails.normalizedUrl,
-        host: scopeDetails.host,
-      };
-    }
-
-    const metrics = this._responseMetrics[scopeDetails.scopeKey];
-    metrics.times.push(responseTime);
-
-    if (metrics.times.length > metrics.sampleSize) {
-      metrics.times.shift();
-    }
-
-    this._updateTimeoutPercentile(scopeDetails.scopeKey);
-  }
-
-  /**
-   * Updates the timeout percentile calculation for a specific scope.
-   * Activates once the configured sample size has been collected.
-   */
-  private _updateTimeoutPercentile(scopeKey: string): void {
-    const metrics = this._responseMetrics[scopeKey];
-    if (!metrics || metrics.times.length === 0) {
-      return;
-    }
-
-    if (metrics.times.length < metrics.sampleSize) {
-      metrics.currentPercentileMs = 0;
-      return;
-    }
-
-    const sortedTimes = [...metrics.times].sort((a, b) => a - b);
-    const percentile = this._options.adaptiveTimeoutPercentile;
-    const index = Math.max(0, Math.min(Math.ceil(sortedTimes.length * percentile) - 1, sortedTimes.length - 1));
-    metrics.currentPercentileMs = sortedTimes[index];
-    metrics.lastCalculated = Date.now();
-
-    this._log(
-      'debug',
-      `Updated adaptive timeout for ${scopeKey}: ${metrics.currentPercentileMs}ms at ${percentile * 100}th percentile`,
-    );
-  }
-
-  private _isAdaptiveTimeoutActive(metrics: ResponseTimeMetrics): boolean {
-    return metrics.times.length >= metrics.sampleSize && metrics.currentPercentileMs > 0;
-  }
-
-  /**
-   * Normalizes a URL for grouping similar endpoints.
-   * e.g., /users/123 and /users/456 become /users/:id
-   * Strips query strings and replaces numeric/UUID path segments with :id.
-   */
-  private _normalizeUrl(url: string): string {
-    let normalized = url.split('?')[0].split('#')[0];
-
-    normalized = normalized.replace(
-      /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+)(\/|$)/gi,
-      '/:id$2',
-    );
-
-    return normalized;
-  }
-
-  /**
-   * Checks if a URL is excluded from circuit breaking.
-   */
-  private _isUrlExcluded(config: AxiosRequestConfig): boolean {
-    if (!config.url || !this._options.excludeUrls || this._options.excludeUrls.length === 0) {
-      return false;
-    }
-
-    return this._options.excludeUrls.some((pattern) => {
-      if (pattern instanceof RegExp) {
-        return pattern.test(config.url || '');
-      }
-      return config.url === pattern;
-    });
-  }
-
-  /**
-   * Helper method for logging with the appropriate log level.
-   */
-  private _log(level: 'debug' | 'error' | 'warn', message: string, data?: unknown): void {
-    if (this._context && typeof this._context.getLogger === 'function') {
-      const logger = this._context.getLogger();
-      const formattedMsg = `${this.name}: ${message}`;
-
-      switch (level) {
-        case 'debug':
-          logger.debug(formattedMsg, data as object | undefined);
-          break;
-        case 'error':
-          logger.error(formattedMsg, data);
-          break;
-        case 'warn':
-          logger.warn(formattedMsg, data);
-          break;
-      }
-    }
-  }
-
-  private _createInitialScopeState(): CircuitBreakerScopeState {
-    return {
-      state: CIRCUIT_BREAKER_STATES.CLOSED,
-      failureCount: 0,
-      successCount: 0,
-      halfOpenCount: 0,
-      nextAttempt: Date.now(),
-      recentFailures: [],
-      lastFailureStatus: undefined,
-      lastFailureCode: undefined,
-    };
-  }
-
-  /**
-   * Serializes async read-modify-write operations for a single scope key.
-   * Each call chains onto the previous promise for that key, preventing concurrent
-   * interleaving that would cause lost updates (especially with external state adapters).
-   */
-  private _withScopeLock<T>(scopeKey: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this._scopeLocks.get(scopeKey) ?? Promise.resolve();
-    const next = prev.then(fn, fn) as Promise<T>;
-    // Store a void-typed chain so the lock map stays GC-friendly.
-    this._scopeLocks.set(
-      scopeKey,
-      next.then(
-        () => {},
-        () => {},
-      ),
-    );
-    return next;
-  }
-
-  private async _readScopeState(scopeKey: string): Promise<CircuitBreakerScopeState> {
-    let storedState: CircuitBreakerScopeState | undefined;
-    try {
-      storedState = await this._options.stateAdapter.get(scopeKey);
-    } catch (error) {
-      this._handleAdapterError('get', scopeKey, error);
-    }
-    const cachedState = this._scopeStateCache.get(scopeKey);
-    // Clone once: isolate from the adapter's internal storage.
-    const scopeState = storedState
-      ? cloneScopeState(storedState)
-      : cachedState
-        ? cloneScopeState(cachedState)
-        : this._createInitialScopeState();
-    // Cache the same reference; _writeScopeState will replace it with a fresh clone.
-    this._scopeStateCache.set(scopeKey, scopeState);
-    return scopeState;
-  }
-
-  private async _writeScopeState(scopeKey: string, scopeState: CircuitBreakerScopeState): Promise<void> {
-    // Clone once: isolate cache and adapter from the caller's mutable reference.
-    const clonedState = cloneScopeState(scopeState);
-    this._scopeStateCache.set(scopeKey, clonedState);
-    try {
-      await this._options.stateAdapter.set(scopeKey, clonedState);
-    } catch (error) {
-      this._handleAdapterError('set', scopeKey, error);
-    }
-  }
-
-  private _getScopeDetails(config: AxiosRequestConfig): ScopeDetails {
-    const normalizedUrl = this._normalizeUrl(this._extractPathFromConfig(config));
-    const host = this._extractHostFromConfig(config);
-
-    const scopeKey = this._resolveScopeKey(config, normalizedUrl, host);
-
-    if (!this._knownScopes.has(scopeKey)) {
-      // Evict the oldest entry when the cap is reached to keep both tracking
-      // maps bounded. Uses insertion-order iteration of Map as a cheap FIFO.
-      if (this._knownScopes.size >= this._options.maxTrackedScopes) {
-        const oldestKey = this._knownScopes.keys().next().value as string;
-        this._knownScopes.delete(oldestKey);
-        this._scopeStateCache.delete(oldestKey);
-      }
-      this._knownScopes.set(scopeKey, { scopeKey, normalizedUrl, host });
-    }
-
-    return this._knownScopes.get(scopeKey)!;
-  }
-
-  private _shouldCountError(error: AxiosError): boolean {
-    if (!this._options.shouldCountError) {
-      return true;
-    }
-
-    try {
-      return this._options.shouldCountError(error);
-    } catch (callbackError) {
-      this._log('warn', 'shouldCountError callback threw; counting error by default', {
-        error: callbackError instanceof Error ? callbackError.message : callbackError,
-      });
-      return true;
-    }
-  }
-
-  private _resolveScopeKey(config: AxiosRequestConfig, normalizedUrl: string, host?: string): string {
-    const defaultScopeKey = host ? `${host}${normalizedUrl}` : normalizedUrl || 'unknown';
-
-    if (typeof this._options.scope === 'function') {
-      try {
-        const customScopeKey = this._options.scope(config);
-        if (typeof customScopeKey === 'string' && customScopeKey.length > 0) {
-          return customScopeKey;
-        }
-
-        this._log('warn', 'Custom scope callback returned an empty scope key; using default scope', {
-          url: config.url,
-        });
-        return defaultScopeKey;
-      } catch (error) {
-        this._log('warn', 'Custom scope callback threw; using default scope', {
-          error: error instanceof Error ? error.message : error,
-          url: config.url,
-        });
-        return defaultScopeKey;
-      }
-    }
-
-    switch (this._options.scope) {
-      case 'host':
-        return host || normalizedUrl || 'unknown';
-      case 'url':
-        return normalizedUrl || host || 'unknown';
-      case 'host+url':
-      default:
-        return defaultScopeKey;
-    }
-  }
-
-  private _handleAdapterError(operation: 'get' | 'set' | 'delete' | 'clear', scopeKey: string, error: unknown): void {
-    this._log('warn', `State adapter ${operation} failed; continuing with local circuit state`, {
-      scopeKey,
-      error: error instanceof Error ? error.message : error,
-    });
-  }
-
-  private _getTrackedScopeKeys(scopeKey?: string): string[] {
-    if (scopeKey) {
-      return [scopeKey];
-    }
-
-    return Array.from(new Set([...this._knownScopes.keys(), ...this._scopeStateCache.keys()]));
-  }
+  // ---------------------------------------------------------------------------
+  // Metrics
+  // ---------------------------------------------------------------------------
 
   private _getScopeMetrics(): CircuitBreakerScopeMetrics[] {
     const now = Date.now();
-
-    return Array.from(this._knownScopes.values()).map((scope) => {
-      const state = this._scopeStateCache.get(scope.scopeKey) ?? this._createInitialScopeState();
-
+    return Array.from(this._scopeManager.getKnownScopes()).map((scope) => {
+      const state = this._scopeManager.scopeStateCache.get(scope.scopeKey) ?? this._scopeManager.createInitialState();
       return {
         scopeKey: scope.scopeKey,
         url: scope.normalizedUrl,
@@ -1112,82 +620,51 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     if (!this._options.useSlidingWindow) {
       return this._getVisibleCounter(scopeKey, 'failureCount', scopeState.failureCount);
     }
-
     this._cleanupOldFailures(scopeState);
     const resetAt = this._metricBaselines.get(scopeKey)?.resetAt ?? 0;
-    return scopeState.recentFailures.filter((failure) => failure.timestamp >= resetAt).length;
+    return scopeState.recentFailures.filter((f) => f.timestamp >= resetAt).length;
   }
 
-  private _deleteDistributedScope(scopeKey: string): void {
-    try {
-      const result = this._options.stateAdapter.delete(scopeKey);
-      if (isPromiseLike(result)) {
-        void result.catch((error) => {
-          this._handleAdapterError('delete', scopeKey, error);
-          this._restoreDistributedClosedState([scopeKey]);
-        });
+  private _validateOptions(): void {
+    if (!Number.isInteger(this._options.failureThreshold) || this._options.failureThreshold < 1) {
+      throw new RetryerConfigError(
+        'failureThreshold must be a positive integer',
+        'failureThreshold',
+        this._options.failureThreshold,
+      );
+    }
+    if (!Number.isInteger(this._options.openTimeout) || this._options.openTimeout < 0) {
+      throw new RetryerConfigError(
+        'openTimeout must be a non-negative integer',
+        'openTimeout',
+        this._options.openTimeout,
+      );
+    }
+    if (!Number.isInteger(this._options.halfOpenMax) || this._options.halfOpenMax < 1) {
+      throw new RetryerConfigError('halfOpenMax must be a positive integer', 'halfOpenMax', this._options.halfOpenMax);
+    }
+    if (
+      this._options.successThreshold !== undefined &&
+      (!Number.isInteger(this._options.successThreshold) || this._options.successThreshold < 1)
+    ) {
+      throw new RetryerConfigError(
+        'successThreshold must be a positive integer',
+        'successThreshold',
+        this._options.successThreshold,
+      );
+    }
+    if (this._options.successThreshold > this._options.halfOpenMax) {
+      this._options.successThreshold = this._options.halfOpenMax;
+    }
+    if (this._options.excludeUrls.length > 0) {
+      const redosErrors = validateExcludeUrls(this._options.excludeUrls);
+      if (redosErrors.length > 0) {
+        throw new RetryerConfigError(
+          redosErrors.map((e) => e.reason).join('\n'),
+          'excludeUrls',
+          redosErrors.map((e) => e.pattern),
+        );
       }
-    } catch (error) {
-      this._handleAdapterError('delete', scopeKey, error);
-      this._restoreDistributedClosedState([scopeKey]);
-    }
-  }
-
-  private _clearDistributedState(scopeKeys: readonly string[]): void {
-    try {
-      const result = this._options.stateAdapter.clear();
-      if (isPromiseLike(result)) {
-        void result.catch((error) => {
-          this._handleAdapterError('clear', '*', error);
-          this._restoreDistributedClosedState(scopeKeys);
-        });
-      }
-    } catch (error) {
-      this._handleAdapterError('clear', '*', error);
-      this._restoreDistributedClosedState(scopeKeys);
-    }
-  }
-
-  private _restoreDistributedClosedState(scopeKeys: readonly string[]): void {
-    scopeKeys.forEach((scopeKey) => {
-      const result = this._options.stateAdapter.set(scopeKey, this._createInitialScopeState());
-      if (isPromiseLike(result)) {
-        void result.catch((error) => {
-          this._handleAdapterError('set', scopeKey, error);
-        });
-      }
-    });
-  }
-
-  private _extractPathFromConfig(config: AxiosRequestConfig): string {
-    const resolvedUrl = this._resolveUrl(config);
-    if (resolvedUrl) {
-      return `${resolvedUrl.pathname}${resolvedUrl.search}${resolvedUrl.hash}` || '/';
-    }
-
-    return config.url || '/';
-  }
-
-  private _extractHostFromConfig(config: AxiosRequestConfig): string | undefined {
-    return this._resolveUrl(config)?.host;
-  }
-
-  private _resolveUrl(config: AxiosRequestConfig): URL | null {
-    if (!config.url) {
-      return null;
-    }
-
-    const baseURL = config.baseURL ?? this._context?.axiosInstance.defaults.baseURL;
-    const isAbsolute = /^[a-z][a-z\d+\-.]*:\/\//i.test(config.url);
-
-    if (!isAbsolute && !baseURL) {
-      return null;
-    }
-
-    try {
-      return new URL(config.url, baseURL);
-    } catch (_error) {
-      return null;
     }
   }
 }
