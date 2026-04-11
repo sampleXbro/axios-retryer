@@ -1,10 +1,8 @@
 import 'axios';
 
 export { CachingPlugin } from './CachingPlugin';
-export { InvalidCacheKeyError } from './InvalidCacheKeyError';
-export {
-  InMemoryCacheStorage,
-} from './CachingPlugin';
+export { InvalidCacheKeyError } from './errors';
+export { InMemoryCacheStorage } from './CachingPlugin';
 export type {
   CacheInvalidationMatcher,
   CacheKeyBuilder,
@@ -34,7 +32,7 @@ declare module 'axios' {
  *
  * @param options Configuration options for the CachingPlugin
  * @returns A configured CachingPlugin instance
- * 
+ *
  * @example
  * ```typescript
  * import { AXIOS_RETRYER_HTTP_METHODS } from 'axios-retryer';
@@ -46,7 +44,7 @@ declare module 'axios' {
  *   maxItems: 100,            // Store at most 100 responses
  *   compareHeaders: false     // Don't include headers in cache key
  * });
- * 
+ *
  * manager.use(cachePlugin);
  * ```
  */

@@ -2,457 +2,48 @@
 
 import type { AxiosError, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
-import type { AxiosRetryerHttpMethod, RetryPlugin } from '../../types';
+import type { AxiosRetryerHttpMethod, PluginContext, RetryPlugin } from '../../types';
 import { AXIOS_RETRYER_HTTP_METHODS } from '../../types';
-import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
-import type { PluginContext } from '../../types';
-import { cloneValue } from '../../utils/clone';
 import { ensureRequestMetadata, getRequestMetadata } from '../../utils/requestMetadata';
-import { InvalidCacheKeyError } from './InvalidCacheKeyError';
-
-type MaybePromise<T> = T | Promise<T>;
-
-/**
- * Represents a cached item containing the AxiosResponse and the timestamp it was cached.
- */
-export interface CachedItem {
-  response: AxiosResponse<unknown>;
-  timestamp: number;
-  ttr?: number; // Custom TTR for this cache entry
-  lastAccessedAt?: number;
-}
-
-export interface CacheStorageEntry {
-  readonly key: string;
-  readonly value: CachedItem;
-}
-
-export interface CacheStorage {
-  get(key: string): MaybePromise<CachedItem | undefined>;
-  set(key: string, value: CachedItem): MaybePromise<void>;
-  delete(key: string): MaybePromise<void>;
-  clear(): MaybePromise<void>;
-  /**
-   * Returns the adapter's full cache index.
-   * Cleanup and non-exact invalidation operate on this index.
-   */
-  entries(): MaybePromise<readonly CacheStorageEntry[]>;
-}
-
-export class InMemoryCacheStorage implements CacheStorage {
-  private readonly storage = new Map<string, CachedItem>();
-
-  public get(key: string): CachedItem | undefined {
-    return this.storage.get(key);
-  }
-
-  public set(key: string, value: CachedItem): void {
-    this.storage.set(key, value);
-  }
-
-  public delete(key: string): void {
-    this.storage.delete(key);
-  }
-
-  public clear(): void {
-    this.storage.clear();
-  }
-
-  public entries(): readonly CacheStorageEntry[] {
-    return Array.from(this.storage, ([key, value]) => ({ key, value }));
-  }
-}
-
-interface InflightCacheEntry {
-  promise: Promise<AxiosResponse<unknown>>;
-  resolve: (response: AxiosResponse<unknown>) => void;
-  reject: (error: unknown) => void;
-}
-
-function createInflightCacheEntry(): InflightCacheEntry {
-  let resolve!: (response: AxiosResponse<unknown>) => void;
-  let reject!: (error: unknown) => void;
-
-  const promise = new Promise<AxiosResponse<unknown>>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  // Leaders may never await this promise directly. Attach a noop rejection handler
-  // so leader-only failures do not surface as unhandled rejections.
-  promise.catch(() => {});
-
-  return { promise, resolve, reject };
-}
-
-function isPromiseLike<T>(value: unknown): value is Promise<T> {
-  return !!value && typeof (value as Promise<T>).then === 'function';
-}
-
-function fingerprintValue(value: string): string {
-  let hash = 2166136261;
-
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return `fp_${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
-
-function compareStringTuples(
-  [leftKey, leftValue]: readonly [string, string],
-  [rightKey, rightValue]: readonly [string, string],
-): number {
-  return leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue);
-}
-
-function normalizeUrl(url: string): string {
-  const hashIndex = url.indexOf('#');
-  const withoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
-  const queryIndex = withoutHash.indexOf('?');
-
-  if (queryIndex === -1) {
-    return withoutHash;
-  }
-
-  const pathname = withoutHash.slice(0, queryIndex);
-  const query = withoutHash.slice(queryIndex + 1);
-  if (!query) {
-    return pathname;
-  }
-
-  const entries = Array.from(new URLSearchParams(query).entries()).sort(compareStringTuples);
-  if (entries.length === 0) {
-    return pathname;
-  }
-
-  const normalizedQuery = entries
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join('&');
-
-  return `${pathname}?${normalizedQuery}`;
-}
-
-function normalizeValue(value: unknown, lowercaseKeys = false): unknown {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return value;
-  }
-
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  if (typeof URLSearchParams !== 'undefined' && value instanceof URLSearchParams) {
-    return Array.from(value.entries()).sort(compareStringTuples);
-  }
-
-  if (value instanceof Map) {
-    return Array.from(value.entries())
-      .map(([key, entryValue]) => [String(key), normalizeValue(entryValue, lowercaseKeys)] as const)
-      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
-  }
-
-  if (value instanceof Set) {
-    return Array.from(value.values()).map((entryValue) => normalizeValue(entryValue, lowercaseKeys));
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entryValue) => normalizeValue(entryValue, lowercaseKeys));
-  }
-
-  if (typeof value === 'object') {
-    const objectValue =
-      typeof (value as { toJSON?: () => unknown }).toJSON === 'function'
-        ? (value as { toJSON: () => unknown }).toJSON()
-        : value;
-
-    if (objectValue !== value) {
-      return normalizeValue(objectValue, lowercaseKeys);
-    }
-
-    const normalizedObject: Record<string, unknown> = {};
-    Object.entries(objectValue as Record<string, unknown>)
-      .map(
-        ([key, entryValue]) =>
-          [lowercaseKeys ? key.toLowerCase() : key, normalizeValue(entryValue, lowercaseKeys)] as const,
-      )
-      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-      .forEach(([key, entryValue]) => {
-        normalizedObject[key] = entryValue;
-      });
-
-    return normalizedObject;
-  }
-
-  return String(value);
-}
-
-function stableStringify(value: unknown, lowercaseKeys = false): string {
-  if (value === undefined || value === null) {
-    return '';
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-      try {
-        return JSON.stringify(normalizeValue(JSON.parse(trimmed), lowercaseKeys));
-      } catch (_error) {
-        // Fall through and treat invalid JSON-like strings as plain strings.
-      }
-    }
-
-    return value;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  return JSON.stringify(normalizeValue(value, lowercaseKeys));
-}
-
-/**
- * Options for the CachingPlugin.
- */
-/**
- * Header names that indicate authenticated or personalized traffic.
- * Requests carrying any of these headers are excluded from caching by default
- * to prevent cross-principal cache collisions.
- */
-const AUTH_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-auth-token', 'x-api-key']);
-
-function requestHasAuthHeaders(config: AxiosRequestConfig): boolean {
-  if (!config.headers) {
-    return false;
-  }
-
-  for (const key of Object.keys(config.headers)) {
-    if (AUTH_HEADERS.has(key.toLowerCase())) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-export interface CachingPluginOptions {
-  /**
-   * Response header names that are stripped before a response is written to the cache.
-   * This prevents sensitive per-user or session-establishing headers (e.g. `Set-Cookie`)
-   * from being replayed to different callers who receive a cached response.
-   *
-   * Matching is case-insensitive.
-   *
-   * @default ['set-cookie']
-   */
-  sensitiveResponseHeaders?: readonly string[];
-
-  /**
-   * If true, include the entire headers object in the cache key.
-   * @default false
-   */
-  compareHeaders?: boolean;
-
-  /**
-   * Duration (in milliseconds) a cached entry is considered fresh.
-   * If 0, the cache never expires.
-   * @default 0
-   */
-  timeToRevalidate?: number;
-
-  /**
-   * HTTP methods to cache. By default, only GET requests are cached.
-   * @default [AXIOS_RETRYER_HTTP_METHODS.GET]
-   */
-  cacheMethods?: readonly AxiosRetryerHttpMethod[];
-
-  /**
-   * Interval in milliseconds to run cache cleanup.
-   * If 0, periodic cleanup is disabled.
-   * @default 0
-   */
-  cleanupInterval?: number;
-
-  /**
-   * Maximum age in milliseconds for cached items.
-   * Items older than this will be removed during cleanup.
-   * If 0, items don't expire based on age.
-   * @default 0
-   */
-  maxAge?: number;
-
-  /**
-   * Maximum number of items to keep in cache.
-   * If exceeded, oldest items will be removed first.
-   * If 0, no limit is applied.
-   * @default 1000
-   */
-  maxItems?: number;
-
-  /**
-   * If true, only requests that are retried will be cached.
-   * Requests that are not retried will not be cached even if they are cacheable.
-   * @default false
-   */
-  cacheOnlyRetriedRequests?: boolean;
-
-  /**
-   * Indexed storage backend used for cache entries.
-   * Custom adapters must implement `entries()` so cleanup and invalidation can
-   * operate on the adapter's source of truth after restart or across processes.
-   * Defaults to the built-in in-memory storage.
-   */
-  storage?: CacheStorage;
-
-  /**
-   * If true, concurrent identical cacheable requests share the same in-flight response.
-   * @default true
-   */
-  dedupeConcurrentRequests?: boolean;
-
-  /**
-   * Allows custom cache key composition from canonical request parts.
-   * The default builder uses normalized method, URL, params, body, and optional headers.
-   */
-  cacheKeyBuilder?: CacheKeyBuilder;
-
-  /**
-   * When true, requests carrying authentication headers (Authorization, Cookie,
-   * Proxy-Authorization, X-Auth-Token, X-API-Key) are excluded from caching.
-   * This prevents cross-principal cache collisions on shared retryer instances.
-   *
-   * Set to `false` only for legitimate shared-cache use cases where all
-   * principals should receive the same cached response.
-   *
-   * @default true
-   */
-  skipWhenAuthPresent?: boolean;
-
-  /**
-   * Header names whose values are folded into the cache key, binding each
-   * cache entry to the identity or context carried by those headers.
-   *
-   * Use this instead of (or together with) `skipWhenAuthPresent: false`
-   * when you need per-principal caching rather than skipping the cache entirely.
-   *
-   * Header name matching is case-insensitive.
-   *
-   * @default []
-   *
-   * @example
-   * ```ts
-   * // Cache responses per-user based on their Authorization header:
-   * new CachingPlugin({ skipWhenAuthPresent: false, varyHeaders: ['Authorization'] });
-   * ```
-   */
-  varyHeaders?: readonly string[];
-
-  /**
-   * Maximum byte size of a response body (measured via `JSON.stringify` length) that
-   * will be written to the cache. Responses whose serialized body exceeds this limit
-   * are served normally but not stored.
-   *
-   * Use this to prevent a single large response from consuming excessive memory.
-   * Set to `0` to disable the check (no limit).
-   *
-   * @default 0
-   */
-  maxEntrySize?: number;
-}
-
-export interface CachingRequestOptions {
-  cache?: boolean;
-  ttr?: number;
-}
-
-export interface CacheKeyBuilderContext {
-  readonly config: AxiosRequestConfig;
-  readonly method: string;
-  readonly normalizedUrl: string;
-  readonly normalizedParams: string;
-  readonly normalizedData: string;
-  readonly normalizedHeaders: string;
-}
-
-export type CacheKeyBuilder = (context: CacheKeyBuilderContext) => string;
-
-export interface CachingPluginEvents {
-  onCacheHit?: (payload: { keyFingerprint: string; config: AxiosRequestConfig; ageMs: number }) => void;
-  onCacheMiss?: (payload: { keyFingerprint: string; config: AxiosRequestConfig; reason: 'empty' | 'stale' }) => void;
-  onCacheInvalidated?: (payload: { count: number; matcher: 'all' | 'custom' }) => void;
-}
-
-export type CacheInvalidationMatcher =
-  | string
-  | RegExp
-  | {
-      exact: string;
-    }
-  | {
-      prefix: string;
-    };
-
-function buildDefaultCacheKey(context: CacheKeyBuilderContext): string {
-  return [
-    context.method,
-    context.normalizedUrl,
-    context.normalizedParams,
-    context.normalizedData,
-    context.normalizedHeaders,
-  ].join('|');
-}
-
-function getCacheEntryAccessTimestamp(cachedItem: CachedItem): number {
-  return cachedItem.lastAccessedAt ?? cachedItem.timestamp;
-}
-
-function sortCacheEntriesByAccess(entries: readonly CacheStorageEntry[]): CacheStorageEntry[] {
-  return [...entries].sort(
-    (left, right) =>
-      getCacheEntryAccessTimestamp(left.value) - getCacheEntryAccessTimestamp(right.value) ||
-      left.key.localeCompare(right.key),
-  );
-}
-
-function createCachedResponseSnapshot(
-  response: AxiosResponse<unknown>,
-  sensitiveHeaders: readonly string[],
-): AxiosResponse<unknown> {
-  const headers = cloneValue(response.headers) as Record<string, unknown>;
-  if (sensitiveHeaders.length > 0) {
-    const blocked = new Set(sensitiveHeaders.map((h) => h.toLowerCase()));
-    for (const key of Object.keys(headers)) {
-      if (blocked.has(key.toLowerCase())) {
-        delete headers[key];
-      }
-    }
-  }
-  return {
-    config: {} as AxiosRequestConfig,
-    data: cloneValue(response.data),
-    headers,
-    status: response.status,
-    statusText: response.statusText,
-  } as AxiosResponse<unknown>;
-}
-
-function cloneAxiosResponse(
-  response: Pick<AxiosResponse<unknown>, 'data' | 'headers' | 'status' | 'statusText'>,
-  config: AxiosRequestConfig,
-): AxiosResponse<unknown> {
-  return {
-    config: config as AxiosRequestConfig,
-    data: cloneValue(response.data),
-    headers: cloneValue(response.headers),
-    status: response.status,
-    statusText: response.statusText,
-  } as AxiosResponse<unknown>;
-}
+import { InvalidCacheKeyError } from './errors';
+import { resolveCachingPluginOptions, validateCachingPluginOptions } from './configs';
+import {
+  requestHasAuthHeaders,
+  getErrorMeta,
+  isPromiseLike,
+  sortCacheEntriesByAccess,
+  createInflightCacheEntry,
+  type InflightCacheEntry,
+  buildCacheKeyContext,
+  describeInvalidationMatcher,
+  fingerprintValue,
+  matchesInvalidationMatcher,
+  cloneAxiosResponse,
+  createCachedResponseSnapshot,
+} from './utils';
+import type {
+  CacheInvalidationMatcher,
+  CacheKeyBuilderContext,
+  CacheStorage,
+  CacheStorageEntry,
+  CachedItem,
+  CachingPluginEvents,
+  CachingPluginOptions,
+  CachingRequestOptions,
+} from './types';
+
+export { InMemoryCacheStorage } from './storage';
+export type {
+  CacheInvalidationMatcher,
+  CacheKeyBuilder,
+  CacheKeyBuilderContext,
+  CacheStorage,
+  CacheStorageEntry,
+  CachedItem,
+  CachingPluginEvents,
+  CachingPluginOptions,
+  CachingRequestOptions,
+} from './types';
 
 export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   public name = 'CachingPlugin';
@@ -477,52 +68,10 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   private readonly storage: CacheStorage;
 
   constructor(options?: CachingPluginOptions) {
-    this.options = {
-      sensitiveResponseHeaders: ['set-cookie'],
-      compareHeaders: false,
-      timeToRevalidate: 0,
-      cacheMethods: [AXIOS_RETRYER_HTTP_METHODS.GET],
-      cleanupInterval: 0,
-      maxAge: 0,
-      maxItems: 1000,
-      maxEntrySize: 0,
-      cacheOnlyRetriedRequests: false,
-      storage: options?.storage ?? new InMemoryCacheStorage(),
-      dedupeConcurrentRequests: true,
-      cacheKeyBuilder: options?.cacheKeyBuilder ?? buildDefaultCacheKey,
-      skipWhenAuthPresent: true,
-      varyHeaders: [],
-      ...options,
-    };
+    this.options = resolveCachingPluginOptions(options);
     this.storage = this.options.storage;
 
-    if (!Number.isInteger(this.options.cleanupInterval) || this.options.cleanupInterval < 0) {
-      throw new RetryerConfigError(
-        'cleanupInterval must be a non-negative integer',
-        'cleanupInterval',
-        this.options.cleanupInterval,
-      );
-    }
-    if (!Number.isInteger(this.options.maxAge) || this.options.maxAge < 0) {
-      throw new RetryerConfigError('maxAge must be a non-negative integer', 'maxAge', this.options.maxAge);
-    }
-    if (!Number.isInteger(this.options.maxItems) || this.options.maxItems < 0) {
-      throw new RetryerConfigError('maxItems must be a non-negative integer', 'maxItems', this.options.maxItems);
-    }
-    if (!Number.isInteger(this.options.maxEntrySize) || this.options.maxEntrySize < 0) {
-      throw new RetryerConfigError(
-        'maxEntrySize must be a non-negative integer',
-        'maxEntrySize',
-        this.options.maxEntrySize,
-      );
-    }
-    if (!Number.isInteger(this.options.timeToRevalidate) || this.options.timeToRevalidate < 0) {
-      throw new RetryerConfigError(
-        'timeToRevalidate must be a non-negative integer',
-        'timeToRevalidate',
-        this.options.timeToRevalidate,
-      );
-    }
+    validateCachingPluginOptions(this.options);
   }
 
   public initialize(context: PluginContext<CachingPluginEvents>): void {
@@ -548,9 +97,11 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     if (this.interceptorIdReq !== null) {
       this.context.axiosInstance.interceptors.request.eject(this.interceptorIdReq);
     }
+
     if (this.interceptorIdRes !== null) {
       this.context.axiosInstance.interceptors.response.eject(this.interceptorIdRes);
     }
+
     this.stopPeriodicCleanup();
     this.inflightLeaders.clear();
     this.inflightFollowers.clear();
@@ -561,38 +112,6 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     return fingerprintValue(cacheKey);
   }
 
-  private describeInvalidationMatcher(matcher: CacheInvalidationMatcher): {
-    type: 'exact' | 'prefix' | 'regexp';
-    fingerprint: string;
-  } {
-    if (matcher instanceof RegExp) {
-      return {
-        type: 'regexp',
-        fingerprint: fingerprintValue(String(matcher)),
-      };
-    }
-
-    if (typeof matcher === 'string') {
-      return {
-        type: 'exact',
-        fingerprint: fingerprintValue(matcher),
-      };
-    }
-
-    return {
-      type: 'exact' in matcher ? 'exact' : 'prefix',
-      fingerprint: fingerprintValue('exact' in matcher ? matcher.exact : matcher.prefix),
-    };
-  }
-
-  private getErrorMeta(error: unknown): Record<string, unknown> {
-    if (error instanceof Error) {
-      return { errorName: error.name };
-    }
-
-    return {};
-  }
-
   /**
    * Returns a stable tracking ID for this config object.
    * Prefers the RetryManager-assigned requestId (stable across config spreads in upstream
@@ -601,13 +120,18 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
    */
   private getOrAssignTrackingId(config: AxiosRequestConfig): string {
     const requestId = getRequestMetadata(config)?.requestId;
-    if (requestId) return requestId;
+
+    if (requestId) {
+      return requestId;
+    }
 
     let fallbackId = this.trackingIdFallback.get(config);
+
     if (!fallbackId) {
       fallbackId = `ct_${Math.random().toString(36).slice(2)}`;
       this.trackingIdFallback.set(config, fallbackId);
     }
+
     return fallbackId;
   }
 
@@ -651,7 +175,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       } catch (error) {
         this.context.getLogger()?.warn('[CachingPlugin] Failed to read cache entry', {
           cacheKeyFingerprint,
-          ...this.getErrorMeta(error),
+          ...getErrorMeta(error),
         });
         return config;
       }
@@ -704,6 +228,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
 
     const inflightEntry = this.inflightRequests.get(cacheKey);
+
     if (inflightEntry) {
       this.inflightFollowers.set(this.getOrAssignTrackingId(config), cacheKey);
       this.context.getLogger()?.debug('[CachingPlugin] Piggybacking on in-flight request', {
@@ -729,7 +254,10 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     const followerKey = responseId ? this.inflightFollowers.get(responseId) : undefined;
 
     if (followerKey) {
-      if (responseId) this.inflightFollowers.delete(responseId);
+      if (responseId) {
+        this.inflightFollowers.delete(responseId);
+      }
+
       return response;
     }
 
@@ -754,6 +282,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       const method = (
         response.config?.method || AXIOS_RETRYER_HTTP_METHODS.GET
       ).toUpperCase() as AxiosRetryerHttpMethod;
+
       if (!this.options.cacheMethods.includes(method)) {
         this.resolveInflightRequest(response.config, response);
         return response;
@@ -773,6 +302,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       if (this.options.maxEntrySize > 0) {
         try {
           const estimatedSize = JSON.stringify(response.data)?.length ?? 0;
+
           if (estimatedSize > this.options.maxEntrySize) {
             this.context.getLogger()?.debug('[CachingPlugin] Skipping oversized response', {
               cacheKeyFingerprint,
@@ -804,7 +334,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       } catch (error) {
         this.context.getLogger()?.warn('[CachingPlugin] Failed to cache response', {
           cacheKeyFingerprint,
-          ...this.getErrorMeta(error),
+          ...getErrorMeta(error),
         });
       } finally {
         this.resolveInflightRequest(response.config, response);
@@ -843,7 +373,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
 
     this.cleanupTimer = setInterval(() => {
       void this.runCacheCleanup().catch((error: unknown) => {
-        this.context.getLogger()?.warn('[CachingPlugin] Failed to run cache cleanup', this.getErrorMeta(error));
+        this.context.getLogger()?.warn('[CachingPlugin] Failed to run cache cleanup', getErrorMeta(error));
       });
     }, this.options.cleanupInterval);
   }
@@ -896,6 +426,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     this.context.triggerAndEmit('onCacheInvalidated', { count, matcher: 'all' });
 
     const clearResult = this.storage.clear();
+
     if (isPromiseLike(clearResult)) {
       return clearResult.then(() => undefined);
     }
@@ -911,6 +442,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
    */
   public invalidateCache(matcher: CacheInvalidationMatcher): number | Promise<number> {
     const indexedEntries = this.storage.entries();
+
     if (isPromiseLike(indexedEntries)) {
       return Promise.resolve(indexedEntries).then((entries) => this.invalidateCacheEntries(matcher, entries));
     }
@@ -970,6 +502,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     this.cache.delete(cacheKey);
 
     const deleteResult = this.storage.delete(cacheKey);
+
     if (isPromiseLike(deleteResult)) {
       return deleteResult.then(() => undefined);
     }
@@ -1003,11 +536,13 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     // re-aligns it. Falling back to storage on a cold cache is still correct.
     if (this.cache.size > 0) {
       if (this.cache.has(cacheKey)) {
-        return; // Updating an existing entry — no capacity change.
+        return;
       }
+
       if (this.cache.size < this.options.maxItems) {
-        return; // Capacity available — no eviction needed.
+        return;
       }
+
       const excess = this.cache.size - this.options.maxItems + 1;
       const evictionCandidates = sortCacheEntriesByAccess(Array.from(this.cache, ([key, value]) => ({ key, value })));
       await Promise.all(evictionCandidates.slice(0, excess).map(({ key }) => this.deleteCacheEntry(key)));
@@ -1024,6 +559,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
 
     const excess = indexedEntries.length - this.options.maxItems + 1;
+
     if (excess <= 0) {
       return;
     }
@@ -1049,7 +585,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     } catch (error) {
       this.context.getLogger()?.warn('[CachingPlugin] Failed to persist cache access metadata', {
         cacheKeyFingerprint,
-        ...this.getErrorMeta(error),
+        ...getErrorMeta(error),
       });
     }
   }
@@ -1061,7 +597,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     this.syncLocalCache(indexedEntries);
 
     const keysToRemove = indexedEntries
-      .filter(({ key }) => this.matchesInvalidationMatcher(key, matcher))
+      .filter(({ key }) => matchesInvalidationMatcher(key, matcher))
       .map(({ key }) => key);
 
     if (keysToRemove.length === 0) {
@@ -1072,7 +608,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     const finalize = (): number => {
       this.context.getLogger()?.debug('[CachingPlugin] Invalidated cache entries', {
         count: keysToRemove.length,
-        matcher: this.describeInvalidationMatcher(matcher),
+        matcher: describeInvalidationMatcher(matcher),
       });
       this.context.triggerAndEmit('onCacheInvalidated', {
         count: keysToRemove.length,
@@ -1090,50 +626,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   }
 
   private buildCacheKeyContext(config: AxiosRequestConfig): CacheKeyBuilderContext {
-    let normalizedHeaders: string;
-
-    if (this.options.compareHeaders && config.headers) {
-      normalizedHeaders = stableStringify(config.headers, true);
-    } else if (this.options.varyHeaders.length > 0 && config.headers) {
-      const varySet = new Set(this.options.varyHeaders.map((h) => h.toLowerCase()));
-      const varyEntries: [string, string][] = [];
-
-      for (const key of Object.keys(config.headers)) {
-        if (varySet.has(key.toLowerCase())) {
-          varyEntries.push([key.toLowerCase(), String(config.headers[key])]);
-        }
-      }
-
-      varyEntries.sort(compareStringTuples);
-      normalizedHeaders = varyEntries.length > 0 ? JSON.stringify(varyEntries) : '';
-    } else {
-      normalizedHeaders = '';
-    }
-
-    return {
-      config,
-      method: (config.method || AXIOS_RETRYER_HTTP_METHODS.GET).toUpperCase(),
-      normalizedUrl: normalizeUrl(config.url ?? ''),
-      normalizedParams: stableStringify(config.params),
-      normalizedData: stableStringify(config.data),
-      normalizedHeaders,
-    };
-  }
-
-  private matchesInvalidationMatcher(key: string, matcher: CacheInvalidationMatcher): boolean {
-    if (matcher instanceof RegExp) {
-      return matcher.test(key);
-    }
-
-    if (typeof matcher === 'string') {
-      return key === matcher;
-    }
-
-    if ('exact' in matcher) {
-      return key === matcher.exact;
-    }
-
-    return key.startsWith(matcher.prefix);
+    return buildCacheKeyContext(config, this.options);
   }
 
   private resolveInflightRequest(config: AxiosRequestConfig | undefined, response: AxiosResponse): void {
@@ -1143,11 +636,13 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
 
     const trackingId = this.getOrAssignTrackingId(config);
     const leaderKey = this.inflightLeaders.get(trackingId);
+
     if (!leaderKey) {
       return;
     }
 
     const inflightEntry = this.inflightRequests.get(leaderKey);
+
     if (inflightEntry) {
       inflightEntry.resolve(response);
       this.inflightRequests.delete(leaderKey);
@@ -1159,11 +654,13 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   private rejectInflightRequest(config: AxiosRequestConfig, error: unknown): void {
     const trackingId = this.getOrAssignTrackingId(config);
     const leaderKey = this.inflightLeaders.get(trackingId);
+
     if (!leaderKey) {
       return;
     }
 
     const inflightEntry = this.inflightRequests.get(leaderKey);
+
     if (inflightEntry) {
       inflightEntry.reject(error);
       this.inflightRequests.delete(leaderKey);

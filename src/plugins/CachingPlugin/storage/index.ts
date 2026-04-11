@@ -1,0 +1,1 @@
+export { InMemoryCacheStorage } from './InMemoryCacheStorage';
