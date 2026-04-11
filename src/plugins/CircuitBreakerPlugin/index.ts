@@ -1,9 +1,6 @@
 export { CircuitBreakerPlugin } from './CircuitBreakerPlugin';
-export { CircuitBreakerStateError } from './CircuitBreakerStateError';
-export {
-  CIRCUIT_BREAKER_SCOPES,
-  CIRCUIT_BREAKER_STATES,
-} from './CircuitBreakerPlugin';
+export { CircuitBreakerStateError } from './errors';
+export { CIRCUIT_BREAKER_SCOPES, CIRCUIT_BREAKER_STATES } from './types';
 export type {
   CircuitBreakerAdaptiveTimeoutMetrics,
   CircuitBreakerFailureRecord,
@@ -16,7 +13,7 @@ export type {
   CircuitBreakerState,
   CircuitBreakerStateAdapter,
 } from './CircuitBreakerPlugin';
-export { InMemoryCircuitBreakerStateAdapter } from './CircuitBreakerPlugin';
+export { InMemoryCircuitBreakerStateAdapter } from './managers';
 
 import { CircuitBreakerPlugin, type CircuitBreakerOptions } from './CircuitBreakerPlugin';
 
@@ -29,7 +26,7 @@ import { CircuitBreakerPlugin, type CircuitBreakerOptions } from './CircuitBreak
  *
  * @param options Configuration options for the CircuitBreakerPlugin
  * @returns A configured CircuitBreakerPlugin instance
- * 
+ *
  * @example
  * ```typescript
  * const circuitBreaker = createCircuitBreaker({
@@ -39,7 +36,7 @@ import { CircuitBreakerPlugin, type CircuitBreakerOptions } from './CircuitBreak
  *   useSlidingWindow: true,  // Use sliding window for failure analysis
  *   slidingWindowSize: 60000 // 60-second sliding window
  * });
- * 
+ *
  * manager.use(circuitBreaker);
  * ```
  */

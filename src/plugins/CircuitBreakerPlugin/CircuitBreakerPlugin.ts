@@ -1,25 +1,20 @@
 import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 
-import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
 import type { PluginContext, RetryPlugin } from '../../types';
 import { assignRequestMetadata, ensureRequestMetadata } from '../../utils/requestMetadata';
-import { validateExcludeUrls } from '../../utils/validateExcludeUrls';
-import { AdaptiveTimeoutTracker, type ResponseTimeMetrics } from './AdaptiveTimeoutTracker';
-import { CircuitBreakerScopeManager, InMemoryCircuitBreakerStateAdapter } from './CircuitBreakerScopeManager';
-import { CircuitBreakerStateError } from './CircuitBreakerStateError';
+import { resolveCircuitBreakerOptions, type ResolvedCircuitBreakerOptions } from './configs';
+import { CircuitBreakerStateError } from './errors';
+import { AdaptiveTimeoutTracker, CircuitBreakerScopeManager, type ResponseTimeMetrics } from './managers';
 import {
   CIRCUIT_BREAKER_STATES,
-  CIRCUIT_BREAKER_SCOPES,
   type CircuitBreakerMetrics,
   type CircuitBreakerOptions,
   type CircuitBreakerPluginEvents,
-  type CircuitBreakerScope,
   type CircuitBreakerScopeMetrics,
   type CircuitBreakerScopeState,
   type CircuitBreakerState,
-  type CircuitBreakerStateAdapter,
   type ScopeMetricsBaseline,
-} from './CircuitBreakerTypes';
+} from './types';
 
 export type {
   CircuitBreakerAdaptiveTimeoutMetrics,
@@ -32,9 +27,9 @@ export type {
   CircuitBreakerScopeState,
   CircuitBreakerState,
   CircuitBreakerStateAdapter,
-} from './CircuitBreakerTypes';
-export { CIRCUIT_BREAKER_STATES, CIRCUIT_BREAKER_SCOPES } from './CircuitBreakerTypes';
-export { InMemoryCircuitBreakerStateAdapter } from './CircuitBreakerScopeManager';
+} from './types';
+export { CIRCUIT_BREAKER_STATES, CIRCUIT_BREAKER_SCOPES } from './types';
+export { InMemoryCircuitBreakerStateAdapter } from './managers';
 
 /**
  * Enhanced CircuitBreakerPlugin with sliding window failure counting,
@@ -50,11 +45,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   public readonly version = '2.0.0';
   public readonly _events?: Readonly<CircuitBreakerPluginEvents>;
 
-  private readonly _options: Required<Omit<CircuitBreakerOptions, 'shouldCountError' | 'scope' | 'stateAdapter'>> & {
-    shouldCountError?: CircuitBreakerOptions['shouldCountError'];
-    scope: CircuitBreakerScope | ((config: AxiosRequestConfig) => string);
-    stateAdapter: CircuitBreakerStateAdapter;
-  };
+  private readonly _options: ResolvedCircuitBreakerOptions;
   private _requestInterceptorId?: number;
   private _responseInterceptorId?: number;
   private _context!: PluginContext<CircuitBreakerPluginEvents>;
@@ -63,29 +54,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   private readonly _metricBaselines = new Map<string, ScopeMetricsBaseline>();
 
   constructor(options: Partial<CircuitBreakerOptions> = {}) {
-    const defaults: Required<Omit<CircuitBreakerOptions, 'shouldCountError' | 'scope' | 'stateAdapter'>> = {
-      failureThreshold: 5,
-      openTimeout: 30000,
-      halfOpenMax: 1,
-      successThreshold: 1,
-      useSlidingWindow: false,
-      slidingWindowSize: 60000,
-      adaptiveTimeout: false,
-      adaptiveTimeoutPercentile: 0.95,
-      adaptiveTimeoutSampleSize: 100,
-      adaptiveTimeoutMultiplier: 1.5,
-      maxTrackedScopes: 500,
-      excludeUrls: [],
-    };
-
-    this._options = {
-      ...defaults,
-      ...options,
-      scope: options.scope ?? CIRCUIT_BREAKER_SCOPES.HOST_AND_URL,
-      stateAdapter: options.stateAdapter ?? new InMemoryCircuitBreakerStateAdapter(),
-    };
-
-    this._validateOptions();
+    this._options = resolveCircuitBreakerOptions(options);
 
     this._adaptiveTimeoutTracker = new AdaptiveTimeoutTracker({
       percentile: this._options.adaptiveTimeoutPercentile,
@@ -414,7 +383,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     this._context?.getLogger().debug('CircuitBreakerPlugin: Circuit metrics reset.');
   }
 
-  public getAdaptiveTimeoutMetrics() {
+  public getAdaptiveTimeoutMetrics(): CircuitBreakerMetrics['adaptiveTimeouts'] {
     if (!this._options.adaptiveTimeout) {
       return [];
     }
@@ -623,48 +592,5 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     this._cleanupOldFailures(scopeState);
     const resetAt = this._metricBaselines.get(scopeKey)?.resetAt ?? 0;
     return scopeState.recentFailures.filter((f) => f.timestamp >= resetAt).length;
-  }
-
-  private _validateOptions(): void {
-    if (!Number.isInteger(this._options.failureThreshold) || this._options.failureThreshold < 1) {
-      throw new RetryerConfigError(
-        'failureThreshold must be a positive integer',
-        'failureThreshold',
-        this._options.failureThreshold,
-      );
-    }
-    if (!Number.isInteger(this._options.openTimeout) || this._options.openTimeout < 0) {
-      throw new RetryerConfigError(
-        'openTimeout must be a non-negative integer',
-        'openTimeout',
-        this._options.openTimeout,
-      );
-    }
-    if (!Number.isInteger(this._options.halfOpenMax) || this._options.halfOpenMax < 1) {
-      throw new RetryerConfigError('halfOpenMax must be a positive integer', 'halfOpenMax', this._options.halfOpenMax);
-    }
-    if (
-      this._options.successThreshold !== undefined &&
-      (!Number.isInteger(this._options.successThreshold) || this._options.successThreshold < 1)
-    ) {
-      throw new RetryerConfigError(
-        'successThreshold must be a positive integer',
-        'successThreshold',
-        this._options.successThreshold,
-      );
-    }
-    if (this._options.successThreshold > this._options.halfOpenMax) {
-      this._options.successThreshold = this._options.halfOpenMax;
-    }
-    if (this._options.excludeUrls.length > 0) {
-      const redosErrors = validateExcludeUrls(this._options.excludeUrls);
-      if (redosErrors.length > 0) {
-        throw new RetryerConfigError(
-          redosErrors.map((e) => e.reason).join('\n'),
-          'excludeUrls',
-          redosErrors.map((e) => e.pattern),
-        );
-      }
-    }
   }
 }
