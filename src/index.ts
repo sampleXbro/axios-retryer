@@ -71,7 +71,7 @@ type NoInferType<T> = [T][T extends unknown ? 0 : never];
  * retryer.axiosInstance.get('/api/data').then(response => console.log(response.data));
  * ```
  */
-export function createRetryer<TPluginEvents extends object = {}>(
+export function createRetryer<TPluginEvents extends object = Record<string, never>>(
   options?: RetryManagerOptions<NoInferType<TPluginEvents>>,
 ): RetryManager<TPluginEvents> {
   return new RetryManager<TPluginEvents>(options);
