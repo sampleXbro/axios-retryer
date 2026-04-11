@@ -1,7 +1,8 @@
 export { DebugSanitizationPlugin } from './DebugSanitizationPlugin';
-export type { DebugSanitizationPluginOptions } from './DebugSanitizationPlugin';
+export type { DebugSanitizationPluginOptions, SanitizeOptions } from './types';
 
-import { DebugSanitizationPlugin, type DebugSanitizationPluginOptions } from './DebugSanitizationPlugin';
+import { DebugSanitizationPlugin } from './DebugSanitizationPlugin';
+import type { DebugSanitizationPluginOptions } from './types';
 
 /**
  * Creates a DebugSanitizationPlugin instance.

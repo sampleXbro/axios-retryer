@@ -4,26 +4,11 @@ import type { AxiosError, AxiosRequestConfig } from 'axios';
 
 import type { PluginContext, RetryPlugin } from '../../types';
 import { getRequestMetadata } from '../../utils/requestMetadata';
-import { sanitizeData, sanitizeHeaders, sanitizeUrl, type SanitizeOptions } from './sanitize';
+import { resolveSanitizeOptions } from './configs';
+import type { DebugSanitizationPluginOptions, SanitizeOptions } from './types';
+import { sanitizeData, sanitizeHeaders, sanitizeUrl } from './utils';
 
-/**
- * Options for the DebugSanitizationPlugin.
- */
-export interface DebugSanitizationPluginOptions {
-  /**
-   * Options for sanitizing sensitive information in logs.
-   * Controls how tokens, passwords, and other sensitive data are redacted.
-   *
-   * @example
-   * ```typescript
-   * sanitizeOptions: {
-   *   sensitiveHeaders: ['my-custom-token-header'],
-   *   redactionChar: '#'
-   * }
-   * ```
-   */
-  sanitizeOptions?: SanitizeOptions;
-}
+export type { DebugSanitizationPluginOptions } from './types';
 
 /**
  * Plugin that adds sanitized debug logging for requests and errors.
@@ -51,28 +36,23 @@ export class DebugSanitizationPlugin implements RetryPlugin {
   private readonly sanitizeOptions: SanitizeOptions;
 
   constructor(options: DebugSanitizationPluginOptions = {}) {
-    this.sanitizeOptions = options.sanitizeOptions ?? {};
+    this.sanitizeOptions = resolveSanitizeOptions(options);
   }
 
   public initialize(context: PluginContext): void {
     this.context = context;
 
-    this.interceptorIdReq = context.axiosInstance.interceptors.request.use(
-      (config) => {
-        this.logSanitizedRequest(config);
-        return config;
-      },
-    );
+    this.interceptorIdReq = context.axiosInstance.interceptors.request.use((config) => {
+      this.logSanitizedRequest(config);
+      return config;
+    });
 
-    this.interceptorIdRes = context.axiosInstance.interceptors.response.use(
-      undefined,
-      (error: AxiosError) => {
-        if (error.config) {
-          this.logSanitizedError(error.config, error);
-        }
-        return Promise.reject(error);
-      },
-    );
+    this.interceptorIdRes = context.axiosInstance.interceptors.response.use(undefined, (error: AxiosError) => {
+      if (error.config) {
+        this.logSanitizedError(error.config, error);
+      }
+      return Promise.reject(error);
+    });
   }
 
   public onBeforeDestroyed(context: PluginContext): void {
@@ -106,14 +86,16 @@ export class DebugSanitizationPlugin implements RetryPlugin {
       code: error.code,
       message: error.message,
       headers: sanitizeHeaders(config.headers, this.sanitizeOptions),
-      data: this.sanitizeOptions.sanitizeRequestData !== false
-        ? sanitizeData(config.data, this.sanitizeOptions)
-        : undefined,
+      data:
+        this.sanitizeOptions.sanitizeRequestData !== false
+          ? sanitizeData(config.data, this.sanitizeOptions)
+          : undefined,
       response: error.response
         ? {
-            data: this.sanitizeOptions.sanitizeResponseData !== false
-              ? sanitizeData(error.response.data as Record<string, unknown>, this.sanitizeOptions)
-              : undefined,
+            data:
+              this.sanitizeOptions.sanitizeResponseData !== false
+                ? sanitizeData(error.response.data as Record<string, unknown>, this.sanitizeOptions)
+                : undefined,
             headers: sanitizeHeaders(error.response.headers, this.sanitizeOptions),
           }
         : undefined,
