@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - **Core:** Refined `EventBus`, `RetryScheduler`, and `ErrorInterceptor` behavior and `RetryManager` glue.
 - **CachingPlugin:** Reorganized into `configs/`, `errors/`, `storage/`, `types/`, and `utils/` with a smaller orchestrator; `InvalidCacheKeyError` lives under `errors/`.
 - **CircuitBreakerPlugin:** Extracted adaptive timeout tracking, per-scope state, shared types, and option resolution/validation; centralized `excludeUrls` validation in `src/utils/validateExcludeUrls.ts`. Follow-up layout pass adds `configs/`, `errors/`, `managers/`, and `types/` with legacy top-level filenames kept as thin re-exports where needed.
-- **DebugSanitizationPlugin, ManualRetryPlugin, MetricsPlugin, TokenRefreshPlugin:** Same modular pattern (`configs/`, `types/`, `utils/` and/or `errors/`, `managers/` for `MetricsCollector`) for smaller orchestrator classes and clearer boundaries.
+- **DebugSanitizationPlugin, ManualRetryPlugin, MetricsPlugin, TokenRefreshPlugin:** Same modular pattern (`configs/`, `types/`, `utils/` and/or `errors/`, `managers/` for `MetricsCollector`) for smaller orchestrator classes and clearer boundaries. The `sanitize.ts` barrel re-exports `SanitizeOptions` (and related plugin option types) so existing type-only imports from that path keep working.
 
 ### 🐛 Fixes
 
