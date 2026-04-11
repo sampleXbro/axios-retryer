@@ -6,15 +6,34 @@ type HookListeners<TPluginEvents extends object> = {
 
 const DEFAULT_MAX_LISTENERS_PER_EVENT = 50;
 
+export interface EventBusOptions {
+  maxListenersPerEvent?: number;
+  /**
+   * When `true`, exceeding the listener limit throws an error instead of
+   * logging a warning and dropping the registration.
+   * @default false
+   */
+  strictListenerLimit?: boolean;
+}
+
 export class EventBus<TPluginEvents extends object = Record<never, never>> {
   private listeners: HookListeners<TPluginEvents> = {};
   private readonly maxListenersPerEvent: number;
+  private readonly strictListenerLimit: boolean;
 
   constructor(
     private readonly logger: Logger,
-    maxListenersPerEvent: number = DEFAULT_MAX_LISTENERS_PER_EVENT,
+    options: EventBusOptions | number = {},
   ) {
-    this.maxListenersPerEvent = maxListenersPerEvent;
+    // Accept plain number for backwards compatibility with internal callers that
+    // pass only `maxListenersPerEvent` (e.g. tests: `new EventBus(logger, 3)`).
+    if (typeof options === 'number') {
+      this.maxListenersPerEvent = options;
+      this.strictListenerLimit = false;
+    } else {
+      this.maxListenersPerEvent = options.maxListenersPerEvent ?? DEFAULT_MAX_LISTENERS_PER_EVENT;
+      this.strictListenerLimit = options.strictListenerLimit ?? false;
+    }
   }
 
   public emit<K extends keyof RetryManagerEvents<TPluginEvents>>(
@@ -48,11 +67,13 @@ export class EventBus<TPluginEvents extends object = Record<never, never>> {
   ): void {
     const listeners = (this.listeners[event] ?? []) as RetryEventListener<RetryManagerEvents<TPluginEvents>, K>[];
     if (listeners.length >= this.maxListenersPerEvent) {
-      this.logger.warn(
+      const message =
         `EventBus: listener limit (${this.maxListenersPerEvent}) reached for event "${String(event)}". ` +
-          'This may indicate a listener leak. Call off() to remove unused listeners.',
-        { event, count: listeners.length },
-      );
+        'This may indicate a listener leak. Call off() to remove unused listeners.';
+      if (this.strictListenerLimit) {
+        throw new Error(message);
+      }
+      this.logger.warn(message, { event, count: listeners.length });
       return;
     }
     listeners.push(listener);

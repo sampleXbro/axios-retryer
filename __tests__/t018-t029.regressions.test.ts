@@ -353,14 +353,12 @@ describe('T-023: CircuitBreakerPlugin single clone per direction', () => {
       nextAttempt: Date.now(),
       recentFailures: [],
     };
-    // @ts-expect-error accessing private method
     await plugin._writeScopeState(scopeKey, state);
 
     // Mutate the caller's state after writing.
     state.failureCount = 999;
 
-    // Cache should still have the pre-mutation value.
-    // @ts-expect-error accessing private field
+    // Cache should still have the pre-mutation value (_scopeStateCache is now a public getter).
     expect(plugin._scopeStateCache.get(scopeKey)?.failureCount).toBe(1);
 
     // Adapter should also have the pre-mutation value.

@@ -128,7 +128,9 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
 
     this._axiosInstance = options.axiosInstance || this.createAxiosInstance();
     this.pluginRegistry = new PluginRegistry(this.logger);
-    this.eventBus = new EventBus<TPluginEvents>(this.logger);
+    this.eventBus = new EventBus<TPluginEvents>(this.logger, {
+      strictListenerLimit: options.strictListenerLimit ?? false,
+    });
     this.retryScheduler = new RetryScheduler(this.logger, this.retryStrategy);
     this.requestLifecycle = new RequestLifecycleManager({
       logger: this.logger,
