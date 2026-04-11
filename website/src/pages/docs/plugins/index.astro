@@ -22,6 +22,14 @@ const _shikiChainPlugins =
   </div>
 </div>
 
+<div class="callout callout-info">
+  <div class="callout-icon">🧱</div>
+  <div class="callout-content">
+    <div class="callout-title">Building your own plugin?</div>
+    <p>Follow the single recommended repo pattern for plugin authoring: orchestrator class, focused folders, explicit events, and isolated state boundaries. See <a href={withBase('/docs/plugins/creating-plugins')}>Creating Plugins</a>.</p>
+  </div>
+</div>
+
 <h2>Registering multiple plugins</h2>
 <p>
   <code>use()</code> returns the same manager instance and widens the TypeScript event map.

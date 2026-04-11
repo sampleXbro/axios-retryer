@@ -1,0 +1,198 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+import CodeBlock from '../../../components/CodeBlock.astro';
+import { withBase } from '../../../utils/baseUrl';
+
+const _folderStructure = `src/plugins/YourPlugin/
+  YourPlugin.ts
+  index.ts
+  types/
+    index.ts
+  configs/
+    index.ts
+  errors/
+    YourPluginError.ts
+    index.ts
+  utils/
+    *.ts
+    index.ts
+  managers/
+    *.ts
+  storage/
+    *.ts
+  interceptors/
+    RequestInterceptor.ts
+    ResponseInterceptor.ts
+    ErrorInterceptor.ts`;
+
+const _minimalPlugin = `import type { PluginContext, RetryPlugin } from 'axios-retryer';
+
+export interface YourPluginEvents {
+  onSomethingHappened?: (payload: { requestId: string }) => void;
+}
+
+export interface YourPluginOptions {
+  enabled?: boolean;
+}
+
+export class YourPlugin implements RetryPlugin<YourPluginEvents> {
+  public name = 'YourPlugin';
+  public version = '1.0.0';
+  public readonly _events?: Readonly<YourPluginEvents>;
+
+  private context!: PluginContext<YourPluginEvents>;
+
+  constructor(private readonly options: Required<YourPluginOptions>) {}
+
+  public initialize(context: PluginContext<YourPluginEvents>): void {
+    this.context = context;
+  }
+
+  public onBeforeDestroyed(): void {
+    // Clean up listeners, timers, interceptors, and state here.
+  }
+}`;
+
+const _pluginContract = `export interface RetryPlugin<TPluginEvents extends object = {}> {
+  name: string;
+  version: string;
+  readonly _events?: Readonly<TPluginEvents>;
+  initialize: (context: PluginContext<TPluginEvents>) => void;
+  onBeforeDestroyed?: (context: PluginContext<TPluginEvents>) => void;
+}`;
+
+const _pluginContext = `export interface PluginContext<TPluginEvents extends object = {}> {
+  readonly axiosInstance: AxiosInstance;
+  getLogger(): Logger;
+  on(...): void;
+  off(...): boolean;
+  emit(...): void;
+  triggerAndEmit(...): void;
+  cancelRequest(requestId: string): void;
+  cancelAllRequests(): void;
+  cancelQueuedRequests(): void;
+  registerQueueGate(name: string, canProcess: (request: AxiosRequestConfig) => boolean): void;
+  unregisterQueueGate(name: string): boolean;
+  refreshQueue(): void;
+  registerMetricsRecorder(recorder: MetricsRecorder | null): void;
+  getTimerStats(): { activeTimers: number; activeRetryTimers: number };
+  releaseRequestTracking(config: AxiosRequestConfig): void;
+}`;
+
+const _indexShape = `export { YourPlugin } from './YourPlugin';
+export { YourPluginError } from './errors';
+export type { YourPluginEvents, YourPluginOptions } from './types';
+
+import { YourPlugin, type YourPluginOptions } from './YourPlugin';
+
+export function createYourPlugin(options?: YourPluginOptions): YourPlugin {
+  return new YourPlugin(options);
+}`;
+---
+<DocsLayout
+  title="Creating Plugins"
+  section="Plugins"
+  description="How to create axios-retryer plugins using one recommended architecture: orchestrator class, focused folders, explicit event boundaries, and predictable public exports."
+>
+
+<h1 class="page-title">Creating Plugins</h1>
+<p class="page-lead">
+  axios-retryer should grow through plugins, not through one-off flags in the core.
+  Use a single plugin architecture across the repo so every plugin stays predictable to read, test, and extend.
+</p>
+
+<div class="callout callout-tip">
+  <div class="callout-icon">💡</div>
+  <div class="callout-content">
+    <div class="callout-title">Recommended pattern</div>
+    <p>
+      Keep the top-level plugin class as an orchestrator. Put public contracts in <code>types/</code>,
+      defaults and validation in <code>configs/</code>, errors in <code>errors/</code>,
+      pure helpers in <code>utils/</code>, and stateful collaborators in <code>managers/</code>,
+      <code>storage/</code>, or <code>interceptors/</code> only when needed.
+    </p>
+  </div>
+</div>
+
+<h2>When to create a plugin</h2>
+<ul>
+  <li>Create a plugin when the feature is optional, cross-cutting, or can be expressed through events and request lifecycle hooks.</li>
+  <li>Do not add niche feature flags to <code>RetryManagerOptions</code> when the behavior belongs in a plugin.</li>
+  <li>Keep the core focused on orchestration and shared infrastructure.</li>
+</ul>
+
+<h2>Single recommended folder structure</h2>
+<p>Use this as the default shape for new plugins. Omit folders you do not need, but do not invent a new structure for each plugin.</p>
+<CodeBlock code={_folderStructure} lang="text" />
+
+<h2>Responsibility split</h2>
+<ul>
+  <li><code>YourPlugin.ts</code>: lifecycle wiring, interceptor registration, event emission, public methods, teardown.</li>
+  <li><code>index.ts</code>: public exports and the optional <code>createYourPlugin(...)</code> factory only.</li>
+  <li><code>types/</code>: options, events, adapter contracts, state records, request metadata types.</li>
+  <li><code>configs/</code>: defaults, normalization, and validation.</li>
+  <li><code>errors/</code>: plugin-specific error classes.</li>
+  <li><code>utils/</code>: pure helpers with explicit return types and no shared mutable state.</li>
+  <li><code>managers/</code> or <code>storage/</code>: stateful subsystems with narrow interfaces.</li>
+  <li><code>interceptors/</code>: request/response/error phase boundaries when lifecycle logic becomes substantial.</li>
+</ul>
+
+<h2>Minimal plugin skeleton</h2>
+<CodeBlock code={_minimalPlugin} lang="typescript" />
+
+<h2>Current plugin contract</h2>
+<p>
+  New plugins should target the current <code>RetryPlugin&lt;TPluginEvents&gt;</code> interface from
+  <code>src/types/plugins.ts</code>. The <code>_events</code> marker is important because it preserves
+  event inference when users call <code>manager.use(plugin)</code>.
+</p>
+<CodeBlock code={_pluginContract} lang="typescript" />
+
+<h2>Current <code>PluginContext</code> contract</h2>
+<p>
+  <code>initialize(context)</code> receives the full plugin-facing manager bridge. Design plugin behavior
+  around this existing surface before adding new APIs.
+</p>
+<CodeBlock code={_pluginContext} lang="typescript" />
+<ul>
+  <li>Use <code>axiosInstance</code> to register Axios interceptors owned by the plugin.</li>
+  <li>Use <code>on</code>, <code>off</code>, <code>emit</code>, and <code>triggerAndEmit</code> for event-driven behavior.</li>
+  <li>Use queue APIs such as <code>registerQueueGate</code> and <code>refreshQueue</code> for gating or coordination.</li>
+  <li>Use <code>registerMetricsRecorder</code> only when the plugin is responsible for manager-visible metrics.</li>
+  <li>Use <code>releaseRequestTracking</code> only for advanced request lifecycle ownership, such as refresh/replay flows.</li>
+</ul>
+
+<h2>Public entrypoint shape</h2>
+<p>
+  The package entrypoint should stay small and predictable. Export the class, public errors,
+  public types, and optional factory function from <code>index.ts</code>.
+</p>
+<CodeBlock code={_indexShape} lang="typescript" />
+
+<h2>Best practices</h2>
+<ul>
+  <li>Emit plugin behavior at the outer boundary with <code>context.triggerAndEmit(...)</code> instead of coupling the core to plugin internals.</li>
+  <li>Keep side effects near boundaries and keep helper logic deterministic.</li>
+  <li>Use explicit return types and never use <code>any</code>.</li>
+  <li>If a file grows beyond roughly 200 lines, extract a focused collaborator.</li>
+  <li>Split request, response, and error handling when a plugin starts mixing lifecycle phases.</li>
+  <li>Write focused tests for config validation, side effects, and plugin-specific state transitions.</li>
+</ul>
+
+<h2>Suggested workflow</h2>
+<ol>
+  <li>Read the plugin contract in <code>src/types/plugins.ts</code>.</li>
+  <li>Map the feature to the existing <code>PluginContext</code> methods before adding implementation details.</li>
+  <li>Inspect an existing plugin before inventing a new shape.</li>
+  <li>Define public events and options first.</li>
+  <li>Implement defaults and validation in <code>configs/</code>.</li>
+  <li>Keep the plugin class focused on orchestration.</li>
+  <li>Extract pure logic and stateful boundaries as soon as they stop being trivial.</li>
+  <li>Document the plugin on this website when its public behavior is user-facing.</li>
+</ol>
+
+<div style="display:flex; gap:.75rem; margin-top:2.5rem; flex-wrap:wrap;">
+  <a href={withBase('/docs/plugins')} style="background:var(--accent);color:#000;padding:.6rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;">Plugins Overview</a>
+  <a href={withBase('/docs/api-reference')} style="border:1px solid var(--border);color:var(--text-muted);padding:.6rem 1.2rem;border-radius:8px;font-weight:500;text-decoration:none;">API Reference</a>
+</div>
+</DocsLayout>
