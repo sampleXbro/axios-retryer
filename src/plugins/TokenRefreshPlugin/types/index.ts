@@ -1,4 +1,4 @@
-import type { AxiosInstance } from 'axios';
+import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 export interface TokenRefreshResult {
   /**
@@ -10,6 +10,12 @@ export interface TokenRefreshResult {
 }
 
 export type TokenRefreshHandler = (axiosInst: AxiosInstance) => Promise<TokenRefreshResult>;
+
+export interface TokenRefreshPluginEvents {
+  onTokenRefreshed?: (newToken: string) => void;
+  onTokenRefreshFailed?: () => void;
+  onBeforeTokenRefresh?: () => void;
+}
 
 export interface TokenRefreshPluginOptions {
   /** If true, allow multiple refresh attempts up to maxRefreshAttempts on failure. */
@@ -36,3 +42,24 @@ export interface TokenRefreshPluginOptions {
    */
   customErrorDetector?: (response: unknown) => boolean;
 }
+
+export type RefreshQueueEntry =
+  | {
+      kind: 'hold-request';
+      config: AxiosRequestConfig;
+      resolveConfig: (config: AxiosRequestConfig) => void;
+      reject: (error: Error) => void;
+    }
+  | {
+      kind: 'retry-after-error';
+      request: AxiosRequestConfig;
+      sourceError: AxiosError;
+      resolveResponse: (response: AxiosResponse) => void;
+      reject: (error: Error) => void;
+    }
+  | {
+      kind: 'retry-after-body-auth-error';
+      response: AxiosResponse;
+      resolveResponse: (response: AxiosResponse) => void;
+      reject: (error: Error) => void;
+    };

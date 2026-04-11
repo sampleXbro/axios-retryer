@@ -1,9 +1,11 @@
 export { TokenRefreshPlugin } from './TokenRefreshPlugin';
-export type { TokenRefreshPluginEvents } from './TokenRefreshPlugin';
-export { MissingTokenRefreshHandlerError } from './MissingTokenRefreshHandlerError';
-export { TokenRefreshAbortError } from './TokenRefreshAbortError';
-export { TokenRefreshFailedError } from './TokenRefreshFailedError';
-export { TokenRefreshTimeoutError } from './TokenRefreshTimeoutError';
+export type { TokenRefreshPluginEvents } from './types';
+export {
+  MissingTokenRefreshHandlerError,
+  TokenRefreshAbortError,
+  TokenRefreshFailedError,
+  TokenRefreshTimeoutError,
+} from './errors';
 export type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
 
 import { TokenRefreshPlugin } from './TokenRefreshPlugin';

@@ -1,38 +1,34 @@
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import axios, { AxiosError } from 'axios';
+import { AxiosError } from 'axios';
 
 import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
 import { TimerManager } from '../../core/TimerManager';
 import type { Logger, PluginContext, RetryPlugin } from '../../types';
-
-/**
- * Events added by TokenRefreshPlugin.
- */
-export interface TokenRefreshPluginEvents {
-  /**
-   * Called immediately after a new token is successfully obtained from the refresh flow.
-   * @param newToken - The newly acquired token string.
-   */
-  onTokenRefreshed?: (newToken: string) => void;
-  /**
-   * Called when all token refresh attempts have failed.
-   */
-  onTokenRefreshFailed?: () => void;
-  /**
-   * Called right before the token refresh process begins.
-   */
-  onBeforeTokenRefresh?: () => void;
-}
 import {
   createRetryableRefreshError,
   shouldRetryRefreshError,
   shouldStopRefreshRetries,
   TokenRefreshAbortError,
   toTokenRefreshError,
-} from './TokenRefreshAbortError';
-import { TokenRefreshFailedError } from './TokenRefreshFailedError';
-import { MissingTokenRefreshHandlerError } from './MissingTokenRefreshHandlerError';
-import type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
+} from './errors';
+import { MissingTokenRefreshHandlerError, TokenRefreshFailedError } from './errors';
+import { resolveTokenRefreshPluginOptions, type ResolvedTokenRefreshPluginOptions } from './configs';
+import type {
+  RefreshQueueEntry,
+  TokenRefreshHandler,
+  TokenRefreshPluginEvents,
+  TokenRefreshPluginOptions,
+  TokenRefreshResult,
+} from './types';
+import {
+  createRefreshAxios,
+  extractTokenFromAuthHeader,
+  getHeader,
+  hasHeader,
+  safeStringEqual,
+  sanitizeHeaderValue,
+  setHeader,
+} from './utils';
 import {
   assignRequestMetadata,
   ensureRequestMetadata,
@@ -40,142 +36,7 @@ import {
   setRequestMetadataValue,
 } from '../../utils/requestMetadata';
 
-const PLUGIN_DEFAULTS: Required<Omit<TokenRefreshPluginOptions, 'customErrorDetector'>> = {
-  maxRefreshAttempts: 3,
-  authHeaderName: 'Authorization',
-  refreshStatusCodes: [401],
-  refreshTimeout: 15000,
-  retryOnRefreshFail: true,
-  tokenPrefix: 'Bearer ',
-  maxRefreshBackoffMs: 30_000,
-};
-
-function hasHeader(config: AxiosRequestConfig, headerName: string): boolean {
-  const headers = config.headers;
-  if (!headers) {
-    return false;
-  }
-
-  if (typeof (headers as { has?: (name: string) => boolean }).has === 'function') {
-    if ((headers as { has: (name: string) => boolean }).has(headerName)) {
-      return true;
-    }
-  }
-
-  if (typeof (headers as { get?: (name: string) => unknown }).get === 'function') {
-    const value = (headers as { get: (name: string) => unknown }).get(headerName);
-    if (value !== undefined && value !== null && value !== false) {
-      return true;
-    }
-  }
-
-  const target = headerName.toLowerCase();
-  const direct = (headers as Record<string, unknown>)[headerName];
-  if (direct !== undefined && direct !== null && direct !== false) {
-    return true;
-  }
-
-  const directLower = (headers as Record<string, unknown>)[target];
-  if (directLower !== undefined && directLower !== null && directLower !== false) {
-    return true;
-  }
-
-  return Object.entries(headers as Record<string, unknown>).some(
-    ([key, value]) => key.toLowerCase() === target && value !== undefined && value !== null && value !== false,
-  );
-}
-
-function getHeader(config: AxiosRequestConfig, headerName: string): string | null {
-  const headers = config.headers;
-  if (!headers) return null;
-
-  if (typeof (headers as { get?: (name: string) => unknown }).get === 'function') {
-    const value = (headers as { get: (name: string) => unknown }).get(headerName);
-    if (typeof value === 'string') return value;
-  }
-
-  const target = headerName.toLowerCase();
-  const direct = (headers as Record<string, unknown>)[headerName] ?? (headers as Record<string, unknown>)[target];
-  if (typeof direct === 'string') return direct;
-
-  const entry = Object.entries(headers as Record<string, unknown>).find(([k]) => k.toLowerCase() === target);
-  return typeof entry?.[1] === 'string' ? entry[1] : null;
-}
-
-function setHeader(config: AxiosRequestConfig, headerName: string, value: string): void {
-  if (!config.headers) {
-    config.headers = {};
-  }
-
-  if (typeof (config.headers as { set?: (name: string, value: string) => void }).set === 'function') {
-    (config.headers as { set: (name: string, value: string) => void }).set(headerName, value);
-    return;
-  }
-
-  config.headers[headerName] = value;
-}
-
-function sanitizeHeaderValue(value: string): string {
-  return value.replace(/[\r\n\0\u2028\u2029]/g, '');
-}
-
-/**
- * Constant-time string equality check to prevent timing-oracle attacks on token comparisons.
- * Returns false immediately when lengths differ (unavoidable length leak), then compares
- * all characters via XOR without short-circuiting.
- */
-function safeStringEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-function extractTokenFromAuthHeader(authHeaderValue: string, tokenPrefix: string): string {
-  if (authHeaderValue.startsWith(tokenPrefix)) {
-    return authHeaderValue.slice(tokenPrefix.length);
-  }
-  return authHeaderValue;
-}
-
-type RefreshQueueEntry =
-  | {
-      kind: 'hold-request';
-      config: AxiosRequestConfig;
-      resolveConfig: (c: AxiosRequestConfig) => void;
-      reject: (e: Error) => void;
-    }
-  | {
-      kind: 'retry-after-error';
-      request: AxiosRequestConfig;
-      sourceError: AxiosError;
-      resolveResponse: (r: AxiosResponse) => void;
-      reject: (e: Error) => void;
-    }
-  | {
-      kind: 'retry-after-body-auth-error';
-      response: AxiosResponse;
-      resolveResponse: (r: AxiosResponse) => void;
-      reject: (e: Error) => void;
-    };
-
-function createRefreshAxios(context: { axiosInstance: AxiosInstance }, refreshTimeout: number): AxiosInstance {
-  const defaults = context.axiosInstance.defaults;
-
-  return axios.create({
-    adapter: defaults.adapter,
-    baseURL: defaults.baseURL,
-    timeout: refreshTimeout,
-    withCredentials: defaults.withCredentials,
-    httpAgent: defaults.httpAgent,
-    httpsAgent: defaults.httpsAgent,
-    proxy: defaults.proxy,
-    socketPath: defaults.socketPath,
-    maxRedirects: defaults.maxRedirects,
-  });
-}
+export type { TokenRefreshPluginEvents } from './types';
 
 /**
  * A RetryPlugin that manages token refresh on certain status codes (e.g., 401).
@@ -203,14 +64,12 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   private failedAuthHeaderValue: string | null = null;
 
   private readonly refreshToken: TokenRefreshHandler;
-  private readonly options: Required<Omit<TokenRefreshPluginOptions, 'customErrorDetector'>> & {
-    customErrorDetector?: TokenRefreshPluginOptions['customErrorDetector'];
-  };
+  private readonly options: ResolvedTokenRefreshPluginOptions;
   private logger: Logger | null = null;
 
   constructor(refreshToken: TokenRefreshHandler, options?: TokenRefreshPluginOptions) {
     this.refreshToken = refreshToken;
-    this.options = { ...PLUGIN_DEFAULTS, ...options };
+    this.options = resolveTokenRefreshPluginOptions(options);
 
     if (!Number.isInteger(this.options.maxRefreshAttempts) || this.options.maxRefreshAttempts < 1) {
       throw new RetryerConfigError(
