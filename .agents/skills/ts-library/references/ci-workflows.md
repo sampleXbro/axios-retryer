@@ -169,7 +169,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24  # Required: npm 11.5.1+
+          node-version: 24 # Required: npm 11.5.1+
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install
