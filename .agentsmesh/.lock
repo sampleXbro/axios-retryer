@@ -1,13 +1,13 @@
 # Auto-generated. DO NOT EDIT MANUALLY.
 # Tracks the state of all config files for team conflict resolution.
 
-generated_at: 2026-04-11T10:44:41.818Z
+generated_at: 2026-04-12T14:00:34.981Z
 generated_by: serhii
-lib_version: 0.2.10
+lib_version: 0.3.1
 checksums:
   rules/_root.md: sha256:c07e37dd093adb617263bf47f67c8d258c3c4ae9d6757e5ad4b06e8828990e22
   skills/plugin-architecture/SKILL.md: sha256:6b18d5ad42ca80aae976ebe3849b7a76858d784012de5e2227c665962d8ad02a
-  skills/plugin-architecture/references/folder-structure.md: sha256:026eb510115037ef1e168158b730cb3bd8cd3ebd50c0463f9037851e114b3e79
+  skills/plugin-architecture/references/folder-structure.md: sha256:7a0cb5806c43df33df178a255d895fb5db592bb80c46b24d3244982f683dbfc6
 extends: {}
 packs:
   onmax-nuxt-skills-skills: sha256:79fdc31ee1c1a35717f82ec23944814a406eb86d9e471123b6ff1785e2f1ecd3
