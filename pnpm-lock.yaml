@@ -33,8 +33,8 @@ importers:
         specifier: 22.13.9
         version: 22.13.9
       agentsmesh:
-        specifier: ^0.2.10
-        version: 0.2.10
+        specifier: ^0.3.1
+        version: 0.3.1
       axios:
         specifier: ^1.8.3
         version: 1.15.0
@@ -1166,8 +1166,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  agentsmesh@0.2.10:
-    resolution: {integrity: sha512-9bxRhdN4dn8mQ7u66qZEjRNVmTGFhuHSAglg91TM1JJQee+IMPJoclYdDSw9sCzM6mAKGQGIDiDOwfDdIYs6+Q==}
+  agentsmesh@0.3.1:
+    resolution: {integrity: sha512-qP0lEM0lF5Hu0WG8WkfAof0ckjxXZzwHq2HoiXQ30tGYW3N34kG4tMuzAn2fg0vlX7Qq2xU1Xkey0Hf01Uiimg==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -4551,7 +4551,7 @@ snapshots:
 
   acorn@8.16.0: {}
 
-  agentsmesh@0.2.10:
+  agentsmesh@0.3.1:
     dependencies:
       chokidar: 5.0.0
       diff: 8.0.4

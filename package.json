@@ -62,7 +62,7 @@
     "@rollup/plugin-terser": "^0.4.4",
     "@types/jest": "^29.5.14",
     "@types/node": "22.13.9",
-    "agentsmesh": "^0.2.10",
+    "agentsmesh": "^0.3.1",
     "axios": "^1.8.3",
     "axios-mock-adapter": "^2.1.0",
     "eslint": "10.2.0",

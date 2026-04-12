@@ -22,8 +22,13 @@ All notable changes to this project will be documented in this file.
 - **Website:** New “Creating plugins” page (`docs/plugins/creating-plugins`) and plugins index / docs layout updates.
 - **Agents:** Added `plugin-architecture` skill and synced `ts-library` skill content via AgentsMesh (including generated `AGENTS.md`).
 
+### 🔧 Tooling
+
+- **Repository tooling:** Updated the local AgentsMesh dependency to `^0.3.1` and removed checked-in `NODE_AUTH_TOKEN` wiring from `.npmrc` so npm publish credentials come from the environment instead of repository config.
+
 ### 🧪 Testing & benchmarks
 
+- **Patch coverage:** Added `__tests__/codecov-patch-coverage.test.ts` to exercise core and plugin edge branches that commonly change together (`ErrorInterceptor`, `RequestQueue`, `ManualRetryPlugin`, `CircuitBreakerPlugin`, and `TokenRefreshPlugin`).
 - **`validateExcludeUrls`:** Dedicated unit tests (`__tests__/validateExcludeUrls.test.ts`).
 - **Benchmarks:** New `benchmark/public-api.js`, `pnpm benchmark:public-api`, inclusion in `benchmark:existing`, updates to `benchmark/run-all-benchmarks.js`, and refreshed `benchmark/latest-benchmark-report.json`.
 
