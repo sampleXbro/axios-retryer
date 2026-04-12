@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Next version - Unreleased
 
+- No unreleased changes yet.
+
+## 2.2.0 - 12.04.2026
+
 ### 📦 Structure & maintainability
 
 - **Public types:** Split the monolithic `src/types/index.ts` barrel into `common`, `events`, `metrics`, `options`, and `plugins` modules (package types entry continues to re-export the same public surface).
