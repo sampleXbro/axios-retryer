@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 - No unreleased changes yet.
 
+## 2.2.1 - 13.04.2026
+
+### 📚 Documentation & website
+
+- **Marketing homepage:** Responsive layout (mobile nav, fluid spacing, scrollable comparison table, tighter grids on narrow viewports).
+- **Code samples:** Shiki code blocks no longer force page-wide horizontal scroll (`CodeBlock.astro`, global `pre.astro-code` rules); docs main column and home “Quick start” grid use `min-width: 0` so wide snippets scroll inside the block.
+
+### 🔧 Tooling
+
+- **MCP:** Canonical Playwright MCP entry in `.agentsmesh/mcp.json` (AgentsMesh `generate` → `.cursor/mcp.json`, `.mcp.json`, Codex config, etc.); `.gitignore` updated so `.cursor/mcp.json` can be tracked while other `.cursor/*` stays ignored.
+
 ## 2.2.0 - 12.04.2026
 
 ### 📦 Structure & maintainability

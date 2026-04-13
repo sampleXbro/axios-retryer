@@ -32,22 +32,28 @@ const shikiLang = LANG_ALIASES[lang] ?? lang;
 </div>
 
 <style>
+  /* min-width: 0 lets flex/grid children shrink; avoid width:max-content on inner code (page-wide horizontal scroll). */
   .code-block-shiki {
     margin: 1.25rem 0;
+    max-width: 100%;
+    min-width: 0;
   }
   .code-block-shiki :global(pre.astro-code) {
     margin: 0 !important;
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.25rem 1.5rem !important;
+    max-width: 100%;
     overflow-x: auto;
     font-size: 0.875rem;
     line-height: 1.6;
   }
   .code-block-shiki :global(pre.astro-code code) {
     display: block;
-    width: max-content;
-    min-width: 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     background: transparent !important;
     border: none !important;
     padding: 0 !important;

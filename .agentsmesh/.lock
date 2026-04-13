@@ -1,10 +1,11 @@
 # Auto-generated. DO NOT EDIT MANUALLY.
 # Tracks the state of all config files for team conflict resolution.
 
-generated_at: 2026-04-12T14:00:34.981Z
+generated_at: 2026-04-13T06:46:21.619Z
 generated_by: serhii
 lib_version: 0.3.1
 checksums:
+  mcp.json: sha256:1b99c30b50c3cff4bd9955c021d23bda8a40d518418183af43b3d78c02bd5c24
   rules/_root.md: sha256:c07e37dd093adb617263bf47f67c8d258c3c4ae9d6757e5ad4b06e8828990e22
   skills/plugin-architecture/SKILL.md: sha256:6b18d5ad42ca80aae976ebe3849b7a76858d784012de5e2227c665962d8ad02a
   skills/plugin-architecture/references/folder-structure.md: sha256:7a0cb5806c43df33df178a255d895fb5db592bb80c46b24d3244982f683dbfc6

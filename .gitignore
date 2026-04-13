@@ -62,7 +62,9 @@ internal-docs/
 
 # Local assistant settings
 .claude
-.cursor
+# Ignore Cursor workspace files but keep generated MCP (see .agentsmesh/mcp.json + agentsmesh generate)
+.cursor/*
+!.cursor/mcp.json
 .junie
 .windsurf
 

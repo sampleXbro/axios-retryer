@@ -82,11 +82,18 @@ pre:not(.astro-code) code {
 }
 
 /* Astro Code (Shiki): token colors are on spans; reset wrapper code only */
+pre.astro-code {
+  max-width: 100%;
+  box-sizing: border-box;
+}
 pre.astro-code code {
   background: none !important;
   border: none !important;
   padding: 0 !important;
   font-size: inherit !important;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 table {
