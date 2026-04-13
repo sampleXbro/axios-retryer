@@ -60,14 +60,6 @@ internal-docs/
 # Allow website docs pages (tracked Astro source)
 !website/src/pages/docs/
 
-# Local assistant settings
-.claude
-# Ignore Cursor workspace files but keep generated MCP (see .agentsmesh/mcp.json + agentsmesh generate)
-.cursor/*
-!.cursor/mcp.json
-.junie
-.windsurf
-
 # TGZ files
 *.tgz
 
