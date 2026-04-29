@@ -7,4 +7,5 @@ export {
   toTokenRefreshError,
 } from './TokenRefreshAbortError';
 export { TokenRefreshFailedError } from './TokenRefreshFailedError';
+export { TokenRefreshQueueOverflowError } from './TokenRefreshQueueOverflowError';
 export { TokenRefreshTimeoutError } from './TokenRefreshTimeoutError';

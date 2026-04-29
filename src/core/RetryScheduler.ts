@@ -1,6 +1,7 @@
 import type { AxiosRequestConfig, AxiosResponseHeaders, RawAxiosResponseHeaders } from 'axios';
 
 import type { Logger, RetryStrategy } from '../types';
+import type { EmitCoreEvent } from '../types/events';
 import { getRequestMetadata } from '../utils/requestMetadata';
 import { TimerManager } from './TimerManager';
 
@@ -71,6 +72,7 @@ export class RetryScheduler {
   constructor(
     private readonly logger: Logger,
     private readonly retryStrategy: RetryStrategy,
+    private readonly emitEvent?: EmitCoreEvent,
   ) {}
 
   public getRetryDelay(config: AxiosRequestConfig, attempt: number, maxRetries: number): number {
@@ -111,7 +113,7 @@ export class RetryScheduler {
     });
   }
 
-  public cancelRetryTimer(requestId: string): boolean {
+  public cancelRetryTimer(requestId: string, source: 'user' | 'system' = 'user'): boolean {
     const cancelRetryTimer = this.activeRetryTimers.get(requestId);
     if (!cancelRetryTimer) {
       return false;
@@ -119,14 +121,16 @@ export class RetryScheduler {
 
     cancelRetryTimer();
     this.activeRetryTimers.delete(requestId);
-    this.logger.debug('Cancelled retry timer', { requestId });
+    this.logger.debug('Cancelled retry timer', { requestId, source });
+    this.emitEvent?.('onRetryTimerCancelled', { requestId, source });
     return true;
   }
 
   public cancelAllRetryTimers(): void {
     this.activeRetryTimers.forEach((cancelFn, requestId) => {
       cancelFn();
-      this.logger.debug('Cancelled retry timer', { requestId });
+      this.logger.debug('Cancelled retry timer', { requestId, source: 'system' });
+      this.emitEvent?.('onRetryTimerCancelled', { requestId, source: 'system' });
     });
     this.activeRetryTimers.clear();
   }

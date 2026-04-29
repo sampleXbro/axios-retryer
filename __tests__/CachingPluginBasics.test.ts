@@ -182,7 +182,7 @@ describe('CachingPlugin Core Functionality', () => {
     expect(keys).toContain('newest');
   });
 
-  test('startPeriodicCleanup and stopPeriodicCleanup', () => {
+  test('cleanup runner start/stop', () => {
     jest.useFakeTimers();
     const setIntervalSpy = jest.spyOn(global, 'setInterval');
     const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
@@ -192,21 +192,15 @@ describe('CachingPlugin Core Functionality', () => {
       cleanupInterval: 1000,
     });
 
-    // Call startPeriodicCleanup directly
-    const startPeriodicCleanup = cachingPlugin['startPeriodicCleanup'].bind(cachingPlugin);
-    startPeriodicCleanup();
+    // The CleanupRunner wraps setInterval/clearInterval; reach in to exercise it directly.
+    const runner = cachingPlugin['cleanup'] as { start: () => void; stop: () => void };
+    runner.start();
 
-    // Should have started interval
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
-    expect(cachingPlugin['cleanupTimer']).not.toBeNull();
 
-    // Call stopPeriodicCleanup
-    const stopPeriodicCleanup = cachingPlugin['stopPeriodicCleanup'].bind(cachingPlugin);
-    stopPeriodicCleanup();
+    runner.stop();
 
-    // Should have cleared interval
     expect(clearIntervalSpy).toHaveBeenCalled();
-    expect(cachingPlugin['cleanupTimer']).toBeNull();
 
     setIntervalSpy.mockRestore();
     clearIntervalSpy.mockRestore();

@@ -5,6 +5,7 @@ import { assignRequestMetadata, ensureRequestMetadata } from '../../utils/reques
 import { resolveCircuitBreakerOptions, type ResolvedCircuitBreakerOptions } from './configs';
 import { CircuitBreakerStateError } from './errors';
 import { AdaptiveTimeoutTracker, CircuitBreakerScopeManager, type ResponseTimeMetrics } from './managers';
+import { FailureWindow } from './managers/FailureWindow';
 import {
   CIRCUIT_BREAKER_STATES,
   type CircuitBreakerMetrics,
@@ -51,6 +52,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   private _context!: PluginContext<CircuitBreakerPluginEvents>;
   private readonly _adaptiveTimeoutTracker: AdaptiveTimeoutTracker;
   private readonly _scopeManager: CircuitBreakerScopeManager;
+  private readonly _failureWindow: FailureWindow;
   private readonly _metricBaselines = new Map<string, ScopeMetricsBaseline>();
 
   constructor(options: Partial<CircuitBreakerOptions> = {}) {
@@ -68,6 +70,11 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
       scope: this._options.scope,
       stateAdapter: this._options.stateAdapter,
       maxTrackedScopes: this._options.maxTrackedScopes,
+    });
+
+    this._failureWindow = new FailureWindow({
+      useSlidingWindow: this._options.useSlidingWindow,
+      slidingWindowSize: this._options.slidingWindowSize,
     });
   }
 
@@ -258,11 +265,11 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
 
         await this._scopeManager.withLock(scopeDetails.scopeKey, async () => {
           const scopeState = await this._scopeManager.readState(scopeDetails.scopeKey);
-          this._rememberFailure(scopeState, error);
+          this._failureWindow.rememberLast(scopeState, error);
 
           if (this._options.useSlidingWindow) {
-            this._addFailureToSlidingWindow(scopeState, error);
-            const currentCount = this._getFailureCountInWindow(scopeState);
+            this._failureWindow.add(scopeState, error);
+            const currentCount = this._failureWindow.count(scopeState);
 
             if (currentCount >= this._options.failureThreshold) {
               logger.debug(
@@ -480,34 +487,6 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
   // Failure tracking helpers
   // ---------------------------------------------------------------------------
 
-  private _rememberFailure(scopeState: CircuitBreakerScopeState, error: AxiosError): void {
-    scopeState.lastFailureStatus = error.response?.status;
-    scopeState.lastFailureCode = error.code;
-  }
-
-  private _addFailureToSlidingWindow(scopeState: CircuitBreakerScopeState, error: AxiosError): void {
-    scopeState.recentFailures.push({
-      timestamp: Date.now(),
-      url: error.config?.url || 'unknown',
-      status: error.response?.status,
-      errorCode: error.code,
-    });
-    scopeState.failureCount++;
-    this._cleanupOldFailures(scopeState);
-  }
-
-  private _cleanupOldFailures(scopeState: CircuitBreakerScopeState): void {
-    if (!this._options.useSlidingWindow) return;
-    const windowStart = Date.now() - this._options.slidingWindowSize;
-    scopeState.recentFailures = scopeState.recentFailures.filter((f) => f.timestamp >= windowStart);
-  }
-
-  private _getFailureCountInWindow(scopeState: CircuitBreakerScopeState): number {
-    if (!this._options.useSlidingWindow) return scopeState.failureCount;
-    this._cleanupOldFailures(scopeState);
-    return scopeState.recentFailures.length;
-  }
-
   private _shouldCountError(error: AxiosError): boolean {
     if (!this._options.shouldCountError) return true;
     try {
@@ -589,8 +568,7 @@ export class CircuitBreakerPlugin implements RetryPlugin<CircuitBreakerPluginEve
     if (!this._options.useSlidingWindow) {
       return this._getVisibleCounter(scopeKey, 'failureCount', scopeState.failureCount);
     }
-    this._cleanupOldFailures(scopeState);
     const resetAt = this._metricBaselines.get(scopeKey)?.resetAt ?? 0;
-    return scopeState.recentFailures.filter((f) => f.timestamp >= resetAt).length;
+    return this._failureWindow.countSince(scopeState, resetAt);
   }
 }

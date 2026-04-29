@@ -119,11 +119,13 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
         options.backoffType,
         undefined,
         this.logger,
+        options.maxBackoffDelayMs,
       );
     this.requestQueue = new RequestQueue({
       maxConcurrent: options.maxConcurrentRequests ?? DEFAULT_CONFIG.MAX_CONCURRENT_REQUESTS,
       queueDelay: options.queueDelay,
       maxQueueSize: options.maxQueueSize ?? DEFAULT_CONFIG.MAX_QUEUE_SIZE,
+      logger: this.logger,
     });
 
     this._axiosInstance = options.axiosInstance || this.createAxiosInstance();
@@ -131,7 +133,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
     this.eventBus = new EventBus<TPluginEvents>(this.logger, {
       strictListenerLimit: options.strictListenerLimit ?? false,
     });
-    this.retryScheduler = new RetryScheduler(this.logger, this.retryStrategy);
+    this.retryScheduler = new RetryScheduler(this.logger, this.retryStrategy, this.triggerAndEmitInternal);
     this.requestLifecycle = new RequestLifecycleManager({
       logger: this.logger,
       requestQueue: this.requestQueue,
@@ -147,8 +149,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
       cancelPendingOnDependencyFailure: this.cancelPendingOnDependencyFailure,
       requestQueue: this.requestQueue,
       requestLifecycle: this.requestLifecycle,
-      emitEvent: (event, ...args) =>
-        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
+      emitEvent: this.triggerAndEmitInternal,
     });
 
     this.requestInterceptorHandler = new RequestInterceptorHandler({
@@ -158,8 +159,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
       requestQueue: this.requestQueue,
       throwErrorOnCancelRequest: this.throwErrorOnCancelRequest,
       createSilentCancelConfig: (c, id) => this.createSilentCancelConfig(c, id),
-      emitEvent: (event, ...args) =>
-        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
+      emitEvent: this.triggerAndEmitInternal,
     });
 
     this.responseInterceptorHandler = new ResponseInterceptorHandler({
@@ -167,8 +167,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
       requestLifecycle: this.requestLifecycle,
       dependencyGatekeeper: this.dependencyGatekeeper,
       requestQueue: this.requestQueue,
-      emitEvent: (event, ...args) =>
-        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
+      emitEvent: this.triggerAndEmitInternal,
       handleRetryProcessFinish: this.handleRetryProcessFinish,
     });
 
@@ -180,8 +179,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
       requestQueue: this.requestQueue,
       retryScheduler: this.retryScheduler,
       retryStrategy: this.retryStrategy,
-      emitEvent: (event, ...args) =>
-        (this.triggerAndEmitInternal as (event: string, ...args: unknown[]) => void)(event, ...args),
+      emitEvent: this.triggerAndEmitInternal,
       markRetryProcessStart: () => {
         if (!this.inRetryProgress) {
           this.logger.debug('Starting retry process');
@@ -220,6 +218,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
     this.assertPositiveIntegerOption(options.maxConcurrentRequests, 'maxConcurrentRequests');
     this.assertPositiveIntegerOption(options.maxQueueSize, 'maxQueueSize');
     this.assertNonNegativeIntegerOption(options.queueDelay, 'queueDelay');
+    this.assertPositiveIntegerOption(options.maxBackoffDelayMs, 'maxBackoffDelayMs');
   }
 
   private assertPositiveIntegerOption(value: number | undefined, optionName: string): void {
@@ -409,7 +408,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
     const wasActive = this.requestLifecycle.getActiveRequests().has(requestId);
     this.requestLifecycle.cancelRequest(requestId);
     if (wasActive) {
-      this.requestQueue.markComplete();
+      this.requestQueue.markComplete(requestId);
     }
   };
 
@@ -491,7 +490,7 @@ export class RetryManager<TPluginEvents extends object = Record<never, never>> {
       releaseRequestTracking: (config: AxiosRequestConfig) => {
         const release = this.requestLifecycle.release(config);
         if (release.released) {
-          this.requestQueue.markComplete();
+          this.requestQueue.markComplete(release.requestId);
         }
       },
     };

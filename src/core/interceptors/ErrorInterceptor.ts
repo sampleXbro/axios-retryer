@@ -1,17 +1,14 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 import type { Logger, RetryMode, RetryStrategy } from '../../types';
-import { RETRY_MODES, AXIOS_RETRYER_REQUEST_PRIORITIES } from '../../types';
+import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../../types';
+import type { EmitCoreEvent } from '../../types/events';
 import { RequestAbortedError } from '../errors/RequestAbortedError';
 import type { DependencyGatekeeper } from '../DependencyGatekeeper';
 import type { RequestLifecycleManager } from '../RequestLifecycleManager';
 import type { RequestQueue } from '../requestQueue';
-import {
-  extractRetryAfterHeader,
-  normalizeRetryAfterValue,
-  parseRetryAfterMs,
-  type RetryScheduler,
-} from '../RetryScheduler';
+import { type RetryScheduler } from '../RetryScheduler';
+import { decideRetry } from './RetryDecisionEngine';
 import {
   assignRequestMetadata,
   ensureRequestMetadata,
@@ -27,7 +24,7 @@ export interface ErrorInterceptorOptions {
   requestQueue: RequestQueue;
   retryScheduler: RetryScheduler;
   retryStrategy: RetryStrategy;
-  emitEvent: (event: string, ...args: unknown[]) => void;
+  emitEvent: EmitCoreEvent;
   markRetryProcessStart: () => void;
   handleRetryProcessFinish: () => void;
   retries: number;
@@ -56,7 +53,7 @@ export class ErrorInterceptorHandler {
       cancelledInQueue = true;
     }
 
-    this.options.requestQueue.markComplete();
+    this.options.requestQueue.markComplete(getRequestMetadata(config)?.requestId);
 
     this.options.logger.error('Request failed', this.buildErrorMeta(config, error));
 
@@ -71,33 +68,30 @@ export class ErrorInterceptorHandler {
     });
 
     const effectiveMetadata = getRequestMetadata(config)!;
-    const maxRetries =
-      effectiveMetadata.requestRetries !== undefined ? effectiveMetadata.requestRetries : this.options.retries;
-    const requestMode = effectiveMetadata.requestMode || this.options.mode;
-    const attempt = (effectiveMetadata.retryAttempt || 0) + 1;
-    const isNonRetryableInternalError = this.isNonRetryableInternalError(error);
+    const decision = decideRetry({
+      error,
+      metadata: effectiveMetadata,
+      defaultMaxRetries: this.options.retries,
+      defaultMode: this.options.mode,
+      strategy: this.options.retryStrategy,
+      cancelledInQueue,
+    });
 
-    if (
-      requestMode === RETRY_MODES.AUTOMATIC &&
-      !isNonRetryableInternalError &&
-      this.options.retryStrategy.shouldRetry(error, attempt, maxRetries)
-    ) {
-      const retryAfterHeader = this.getRetryAfterHeader(error.response?.headers);
-      const retryAfterMs = parseRetryAfterMs(retryAfterHeader);
-      if (retryAfterMs > 0) {
-        setRequestMetadataValue(config, 'retryAfterMs', retryAfterMs);
+    if (decision.kind === 'retry') {
+      if (decision.retryAfterMs > 0) {
+        setRequestMetadataValue(config, 'retryAfterMs', decision.retryAfterMs);
       }
 
       this.options.logger.debug('Auto-retrying request', {
         requestId: effectiveMetadata.requestId,
-        attempt,
-        maxRetries,
+        attempt: decision.attempt,
+        maxRetries: decision.maxRetries,
         ...(getRequestMetadata(config)?.retryAfterMs ? { retryAfterMs: getRequestMetadata(config)?.retryAfterMs } : {}),
       });
-      return this.scheduleRetry(config, attempt, maxRetries, cancelledInQueue);
+      return this.scheduleRetry(config, decision.attempt, decision.maxRetries, cancelledInQueue);
     }
 
-    return this.handleNoRetriesAction(error, this.options.retryStrategy.getIsRetryable(error));
+    return this.handleNoRetriesAction(error, decision.retryable);
   };
 
   private async scheduleRetry(
@@ -204,15 +198,17 @@ export class ErrorInterceptorHandler {
   }
 
   private buildErrorMeta(config: AxiosRequestConfig, error: AxiosError): Record<string, unknown> {
+    const meta = getRequestMetadata(config);
     return {
-      requestId: getRequestMetadata(config)?.requestId,
+      requestId: meta?.requestId,
+      correlationId: meta?.correlationId,
       url: this.getLogUrl(config.url),
       method: config.method?.toUpperCase(),
       status: error.response?.status,
       statusText: error.response?.statusText,
       code: error.code,
       message: error.message,
-      retrying: getRequestMetadata(config)?.isRetrying,
+      retrying: meta?.isRetrying,
     };
   }
 
@@ -224,34 +220,5 @@ export class ErrorInterceptorHandler {
     if (queryIndex < 0) return url.slice(0, hashIndex);
     if (hashIndex < 0) return url.slice(0, queryIndex);
     return url.slice(0, Math.min(queryIndex, hashIndex));
-  }
-
-  /**
-   * @internal Kept for backward-compatible test access.
-   * Delegates to {@link extractRetryAfterHeader} in RetryScheduler.
-   */
-  private getRetryAfterHeader(headers: unknown): string | undefined {
-    const headerValue = extractRetryAfterHeader(headers as Parameters<typeof extractRetryAfterHeader>[0]);
-    // normalizeRetryAfterHeader is invoked here to satisfy the noUnusedLocals check;
-    // both methods are also accessed directly via test casts for unit coverage.
-    return headerValue !== undefined ? this.normalizeRetryAfterHeader(headerValue) : undefined;
-  }
-
-  /**
-   * @internal Kept for backward-compatible test access.
-   * Delegates to {@link normalizeRetryAfterValue} in RetryScheduler.
-   */
-  private normalizeRetryAfterHeader(value: unknown): string | undefined {
-    return normalizeRetryAfterValue(value);
-  }
-
-  private isNonRetryableInternalError(error: AxiosError): boolean {
-    return (
-      error.code === 'REQUEST_CANCELED' ||
-      error.code === 'EREQUEST_ABORTED' ||
-      error.code === 'QUEUE_DESTROYED' ||
-      error.code === 'QUEUE_CLEARED' ||
-      error.code === 'QUEUE_FULL'
-    );
   }
 }

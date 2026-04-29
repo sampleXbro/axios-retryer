@@ -43,10 +43,14 @@ export class RequestLifecycleManager {
     const metadata = getRequestMetadata(config);
     const requestId = metadata?.requestId ?? this.generateRequestId();
     const priority = metadata?.priority ?? AXIOS_RETRYER_REQUEST_PRIORITIES.MEDIUM;
+    // Prefer caller-supplied correlationId (e.g. propagated from upstream tracing).
+    // Otherwise fall back to an X-Correlation-Id request header, then to requestId.
+    const correlationId = metadata?.correlationId ?? readCorrelationHeader(config) ?? requestId;
     const callerSignal = config.signal;
 
     assignRequestMetadata(config, {
       requestId,
+      correlationId,
       timestamp: Date.now(),
       priority,
     });
@@ -212,4 +216,31 @@ export class RequestLifecycleManager {
   private releaseAbortSignalLink(controller: TrackedRequestController): void {
     controller.__disposeSignalLink?.();
   }
+}
+
+const CORRELATION_HEADER_NAMES = ['x-correlation-id', 'x-request-id'];
+
+function readCorrelationHeader(config: AxiosRequestConfig): string | undefined {
+  const headers = config.headers;
+  if (!headers) return undefined;
+
+  // AxiosHeaders is a class — its keys aren't enumerable via Object.entries.
+  const axiosHeaders = headers as { get?: (name: string) => unknown };
+  if (typeof axiosHeaders.get === 'function') {
+    for (const name of CORRELATION_HEADER_NAMES) {
+      const value = axiosHeaders.get(name);
+      if (typeof value === 'string' && value.length > 0) return value;
+      if (typeof value === 'number') return String(value);
+    }
+    return undefined;
+  }
+
+  // Fallback for plain-object header maps.
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (CORRELATION_HEADER_NAMES.includes(key.toLowerCase())) {
+      if (typeof value === 'string' && value.length > 0) return value;
+      if (typeof value === 'number') return String(value);
+    }
+  }
+  return undefined;
 }

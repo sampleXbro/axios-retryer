@@ -12,6 +12,7 @@ export const DEFAULT_TOKEN_REFRESH_PLUGIN_OPTIONS: Required<Omit<TokenRefreshPlu
   retryOnRefreshFail: true,
   tokenPrefix: 'Bearer ',
   maxRefreshBackoffMs: 30_000,
+  maxQueuedRequests: 500,
 };
 
 export function resolveTokenRefreshPluginOptions(

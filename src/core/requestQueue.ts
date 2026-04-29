@@ -8,155 +8,14 @@ import { QueueFullError } from './errors/QueueFullError';
 import { QueuedRequestCanceledError } from './errors/QueuedRequestCanceledError';
 import { RetryerConfigError } from './errors/RetryerConfigError';
 import { AXIOS_RETRYER_REQUEST_PRIORITIES } from '../types';
+import type { Logger } from '../types';
 import { ensureRequestMetadata, getRequestMetadata } from '../utils/requestMetadata';
+import { PriorityHeap, type HeapItem } from './utils/PriorityHeap';
 
-interface EnqueuedItem {
+interface EnqueuedItem extends HeapItem {
   config: AxiosRequestConfig;
   resolve: (cfg: AxiosRequestConfig) => void;
   reject: (err: unknown) => void;
-  insertionOrder?: number;
-}
-
-/**
- * A binary heap-based priority queue for better performance with large numbers of requests.
- * Provides O(log n) insertions and extractions instead of O(n) array splice operations.
- */
-class PriorityHeap {
-  private heap: EnqueuedItem[] = [];
-  private readonly compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number;
-  private insertionCounter = 0; // To ensure stable ordering
-  private sortedCache: EnqueuedItem[] | null = null;
-
-  constructor(compareFn: (a: EnqueuedItem, b: EnqueuedItem) => number) {
-    this.compareFn = compareFn;
-  }
-
-  get length(): number {
-    return this.heap.length;
-  }
-
-  /**
-   * Add an item to the heap in O(log n) time
-   */
-  push(item: EnqueuedItem): void {
-    // Add insertion order to ensure stability
-    item.insertionOrder = this.insertionCounter++;
-    this.heap.push(item);
-    this.heapifyUp(this.heap.length - 1);
-    this.sortedCache = null;
-  }
-
-  /**
-   * Remove and return the highest priority item in O(log n) time
-   */
-  shift(): EnqueuedItem | undefined {
-    if (this.heap.length === 0) return undefined;
-    if (this.heap.length === 1) {
-      this.sortedCache = null;
-      return this.heap.pop();
-    }
-
-    const root = this.heap[0];
-    this.heap[0] = this.heap.pop()!;
-    this.heapifyDown(0);
-    this.sortedCache = null;
-    return root;
-  }
-
-  /**
-   * Peek at the highest priority item without removing it
-   */
-  peek(): EnqueuedItem | undefined {
-    return this.heap[0];
-  }
-
-  /**
-   * Remove a specific item by request ID in O(n) time
-   * This is still O(n) but only called during cancellations
-   */
-  removeByRequestId(requestId: string): EnqueuedItem | undefined {
-    const index = this.heap.findIndex((item) => getRequestMetadata(item.config)?.requestId === requestId);
-    if (index === -1) return undefined;
-
-    const item = this.heap[index];
-    this.sortedCache = null;
-
-    // Replace with last element and restore heap property
-    if (index === this.heap.length - 1) {
-      return this.heap.pop();
-    }
-
-    this.heap[index] = this.heap.pop()!;
-
-    // Restore heap property - might need to go up or down
-    this.heapifyUp(index);
-    this.heapifyDown(index);
-
-    return item;
-  }
-
-  /**
-   * Clear all items
-   */
-  clear(): EnqueuedItem[] {
-    const items = [...this.heap];
-    this.heap.length = 0;
-    this.insertionCounter = 0;
-    this.sortedCache = null;
-    return items;
-  }
-
-  /**
-   * Get a cached, sorted snapshot of all items for debugging/testing.
-   */
-  getAll(): EnqueuedItem[] {
-    if (!this.sortedCache) {
-      this.sortedCache = [...this.heap].sort(this.compareFn);
-    }
-
-    return [...this.sortedCache];
-  }
-
-  private heapifyUp(index: number): void {
-    while (index > 0) {
-      const parentIndex = Math.floor((index - 1) / 2);
-
-      // If parent has higher or equal priority, we're done
-      if (this.compareFn(this.heap[parentIndex], this.heap[index]) <= 0) {
-        break;
-      }
-
-      // Swap with parent
-      [this.heap[parentIndex], this.heap[index]] = [this.heap[index], this.heap[parentIndex]];
-      index = parentIndex;
-    }
-  }
-
-  private heapifyDown(index: number): void {
-    while (true) {
-      const leftChild = 2 * index + 1;
-      const rightChild = 2 * index + 2;
-      let smallest = index;
-
-      // Find the highest priority among node and its children
-      if (leftChild < this.heap.length && this.compareFn(this.heap[leftChild], this.heap[smallest]) < 0) {
-        smallest = leftChild;
-      }
-
-      if (rightChild < this.heap.length && this.compareFn(this.heap[rightChild], this.heap[smallest]) < 0) {
-        smallest = rightChild;
-      }
-
-      // If current node has highest priority, we're done
-      if (smallest === index) {
-        break;
-      }
-
-      // Swap with highest priority child
-      [this.heap[index], this.heap[smallest]] = [this.heap[smallest], this.heap[index]];
-      index = smallest;
-    }
-  }
 }
 
 export interface RequestQueueOptions {
@@ -168,6 +27,8 @@ export interface RequestQueueOptions {
    * Applied before any plugin-registered processing gates.
    */
   canProcess?: (request: AxiosRequestConfig) => boolean;
+  /** Optional logger; if provided, queue-gate exceptions are reported here. */
+  logger?: Logger;
 }
 
 /**
@@ -182,14 +43,16 @@ export class RequestQueue {
   private readonly maxQueueSize?: number;
   private readonly baseCanProcess: (request: AxiosRequestConfig) => boolean;
   private readonly processingGates = new Map<string, (request: AxiosRequestConfig) => boolean>();
-  private readonly waiting: PriorityHeap;
+  private readonly waiting: PriorityHeap<EnqueuedItem>;
+  private readonly logger: Logger | null;
+  private readonly inFlightRequestIds = new Set<string>();
   private inProgressCount = 0;
   private isDestroyed = false;
   private dequeueTimer: ReturnType<typeof setTimeout> | null = null;
   private microtaskScheduled = false;
 
   constructor(options: RequestQueueOptions = {}) {
-    const { maxConcurrent = 5, queueDelay = 100, maxQueueSize, canProcess } = options;
+    const { maxConcurrent = 5, queueDelay = 100, maxQueueSize, canProcess, logger } = options;
     if (maxConcurrent < 1) {
       throw new RetryerConfigError(
         `maxConcurrent must be >= 1. Received: ${maxConcurrent}`,
@@ -211,7 +74,11 @@ export class RequestQueue {
     this.queueDelay = queueDelay;
     this.maxQueueSize = maxQueueSize;
     this.baseCanProcess = canProcess ?? (() => true);
-    this.waiting = new PriorityHeap(this.comparePriority.bind(this));
+    this.logger = logger ?? null;
+    this.waiting = new PriorityHeap<EnqueuedItem>(
+      this.comparePriority.bind(this),
+      (item) => getRequestMetadata(item.config)?.requestId,
+    );
   }
 
   /**
@@ -242,8 +109,17 @@ export class RequestQueue {
   /**
    * Call this after a request finishes, freeing a concurrency slot
    * so the next item can proceed.
+   *
+   * When `requestId` is provided, the release is idempotent: calling
+   * `markComplete` more than once for the same id (e.g. from both response
+   * and error paths during a race) only decrements the in-flight counter once.
    */
-  public markComplete(): void {
+  public markComplete(requestId?: string): void {
+    if (requestId !== undefined) {
+      if (!this.inFlightRequestIds.delete(requestId)) {
+        return;
+      }
+    }
     this.inProgressCount = Math.max(0, this.inProgressCount - 1);
     this.tryDequeue();
   }
@@ -335,6 +211,7 @@ export class RequestQueue {
     this.isDestroyed = true;
     this.rejectWaitingRequests((item) => new QueueDestroyedError(item.config));
     this.inProgressCount = 0;
+    this.inFlightRequestIds.clear();
   }
 
   /**
@@ -394,6 +271,10 @@ export class RequestQueue {
 
       const item = this.waiting.shift()!;
       this.inProgressCount++;
+      const dispatchedId = getRequestMetadata(item.config)?.requestId;
+      if (dispatchedId) {
+        this.inFlightRequestIds.add(dispatchedId);
+      }
       item.resolve(item.config);
       this.cleanupRequest(item);
     }
@@ -455,7 +336,11 @@ export class RequestQueue {
   private evaluateGate(gate: (request: AxiosRequestConfig) => boolean, config: AxiosRequestConfig): boolean {
     try {
       return gate(config);
-    } catch {
+    } catch (error) {
+      this.logger?.error('Queue gate threw; treating as not-ready', {
+        requestId: getRequestMetadata(config)?.requestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }

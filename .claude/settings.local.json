@@ -6,5 +6,9 @@
       "Bash(git stash:*)",
       "Bash(npm run:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "playwright"
+  ],
+  "enableAllProjectMcpServers": true
 }

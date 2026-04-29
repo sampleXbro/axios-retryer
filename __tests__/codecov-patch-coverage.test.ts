@@ -8,6 +8,7 @@ import MockAdapter from 'axios-mock-adapter';
 
 import { RetryerConfigError } from '../src/core/errors/RetryerConfigError';
 import { ErrorInterceptorHandler } from '../src/core/interceptors/ErrorInterceptor';
+import { extractRetryAfterHeader, normalizeRetryAfterValue } from '../src/core/RetryScheduler';
 import { RequestQueue } from '../src/core/requestQueue';
 import { RetryManager } from '../src';
 import { RETRY_MODES } from '../src/types';
@@ -17,8 +18,6 @@ import { CIRCUIT_BREAKER_STATES, CircuitBreakerPlugin } from '../src/plugins/Cir
 import { TokenRefreshPlugin, type TokenRefreshPluginOptions } from '../src/plugins/TokenRefreshPlugin';
 
 type ErrorInterceptorPrivates = {
-  getRetryAfterHeader(headers: unknown): string | undefined;
-  normalizeRetryAfterHeader(value: unknown): string | undefined;
   getLogUrl(url?: string): string | undefined;
 };
 
@@ -58,20 +57,18 @@ function createErrorInterceptorPrivates(): ErrorInterceptorPrivates {
 describe('Codecov patch coverage helpers', () => {
   describe('ErrorInterceptorHandler — Retry-After and log URL branches', () => {
     it('parses Retry-After from plain object headers (no .get)', () => {
-      const priv = createErrorInterceptorPrivates();
-      expect(priv.getRetryAfterHeader(undefined)).toBeUndefined();
-      expect(priv.getRetryAfterHeader({})).toBeUndefined();
-      expect(priv.getRetryAfterHeader({ 'Retry-After': ['2'] })).toBe('2');
-      expect(priv.getRetryAfterHeader({ 'retry-after': [] })).toBeUndefined();
-      expect(priv.getRetryAfterHeader({ 'retry-after': 30 })).toBe('30');
+      expect(extractRetryAfterHeader(undefined)).toBeUndefined();
+      expect(extractRetryAfterHeader({})).toBeUndefined();
+      expect(extractRetryAfterHeader({ 'Retry-After': ['2'] } as never)).toBe('2');
+      expect(extractRetryAfterHeader({ 'retry-after': [] } as never)).toBeUndefined();
+      expect(extractRetryAfterHeader({ 'retry-after': 30 } as never)).toBe('30');
     });
 
     it('normalizes Retry-After header value shapes', () => {
-      const priv = createErrorInterceptorPrivates();
-      expect(priv.normalizeRetryAfterHeader(['5'])).toBe('5');
-      expect(priv.normalizeRetryAfterHeader([])).toBeUndefined();
-      expect(priv.normalizeRetryAfterHeader(120)).toBe('120');
-      expect(priv.normalizeRetryAfterHeader({})).toBeUndefined();
+      expect(normalizeRetryAfterValue(['5'])).toBe('5');
+      expect(normalizeRetryAfterValue([])).toBeUndefined();
+      expect(normalizeRetryAfterValue(120)).toBe('120');
+      expect(normalizeRetryAfterValue({})).toBeUndefined();
     });
 
     it('strips query and hash from log URLs', () => {
@@ -147,6 +144,33 @@ describe('Codecov patch coverage helpers', () => {
       manual.clearStoredRequests();
       expect(manual.getStoredRequests().length).toBe(0);
       mock.restore();
+      manager.destroy();
+    });
+
+    it('neutralizeDefaultAuthHeaders sets sensitive header to undefined (not deleted) so axios omits the default', () => {
+      const axiosInstance = axios.create();
+      axiosInstance.defaults.headers.common.Authorization = 'Bearer DEFAULT';
+      const manual = new ManualRetryPlugin({ maxRequestsToStore: 10 });
+      const manager = new RetryManager({
+        axiosInstance,
+        mode: 'manual',
+        retries: 0,
+        debug: false,
+        throwErrorOnFailedRetries: false,
+      });
+      manager.use(manual);
+
+      const cfg: AxiosRequestConfig = { url: '/r', headers: {} };
+      (manual as unknown as { neutralizeDefaultAuthHeaders(c: AxiosRequestConfig): void }).neutralizeDefaultAuthHeaders(
+        cfg,
+      );
+      expect(cfg.headers).toBeDefined();
+      // The sensitive header must be present as a key with value `undefined` so that
+      // axios does not re-apply the matching default at send time. A plain `delete`
+      // would NOT achieve this. The header is stored under its lowercase canonical name.
+      expect('authorization' in (cfg.headers as Record<string, unknown>)).toBe(true);
+      expect((cfg.headers as Record<string, unknown>).authorization).toBeUndefined();
+
       manager.destroy();
     });
 

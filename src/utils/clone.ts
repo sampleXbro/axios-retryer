@@ -1,5 +1,14 @@
 type PropertyBag = Record<PropertyKey, unknown>;
 
+/**
+ * Type guard for objects that expose a `toJSON()` serializer (e.g. Date, custom
+ * domain objects). Verifies BOTH that the property exists and that its value is
+ * a callable — `{ toJSON: 123 }` would slip past a naive cast.
+ */
+function hasToJson(value: unknown): value is { toJSON: () => unknown } {
+  return typeof value === 'object' && value !== null && typeof (value as { toJSON?: unknown }).toJSON === 'function';
+}
+
 function cloneArrayBufferView(value: ArrayBufferView): ArrayBufferView {
   const bufferConstructor =
     typeof globalThis !== 'undefined'
@@ -87,11 +96,10 @@ function cloneFallback<T>(value: T, seen = new WeakMap<object, unknown>()): T {
     return clonedSet as T;
   }
 
-  const jsonValue = value as unknown as { toJSON?: () => unknown };
   let jsonSerializable: unknown = value;
-  if (typeof jsonValue.toJSON === 'function') {
+  if (hasToJson(value)) {
     try {
-      jsonSerializable = jsonValue.toJSON();
+      jsonSerializable = value.toJSON();
     } catch {
       // toJSON threw — fall through to plain-object cloning below
     }

@@ -12,8 +12,6 @@ import {
   getErrorMeta,
   isPromiseLike,
   sortCacheEntriesByAccess,
-  createInflightCacheEntry,
-  type InflightCacheEntry,
   buildCacheKeyContext,
   describeInvalidationMatcher,
   fingerprintValue,
@@ -31,6 +29,8 @@ import type {
   CachingPluginOptions,
   CachingRequestOptions,
 } from './types';
+import { CleanupRunner } from './managers/CleanupRunner';
+import { InflightDedupe } from './managers/InflightDedupe';
 
 export { InMemoryCacheStorage } from './storage';
 export type {
@@ -53,17 +53,12 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   private context!: PluginContext<CachingPluginEvents>;
   private interceptorIdReq: number | null = null;
   private interceptorIdRes: number | null = null;
-  private cleanupTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly CACHE_CLEANUP_TIMEOUT_MS = 30_000;
+  private static readonly CACHE_CLEANUP_DISABLE_AFTER = 5;
 
   private readonly cache = new Map<string, CachedItem>();
-  private readonly inflightRequests = new Map<string, InflightCacheEntry>();
-  // Keyed by a stable tracking ID rather than object identity (survives config object spreads
-  // in upstream interceptors). The RetryManager's requestId is used when available; otherwise
-  // a fallback ID is generated and stored in a WeakMap local to this plugin instance.
-  private readonly inflightLeaders = new Map<string, string>();
-  private readonly inflightFollowers = new Map<string, string>();
-  private readonly servedFromCache = new Set<string>();
-  private readonly trackingIdFallback = new WeakMap<AxiosRequestConfig, string>();
+  private readonly inflight: InflightDedupe;
+  private readonly cleanup: CleanupRunner;
   private readonly options: Required<CachingPluginOptions>;
   private readonly storage: CacheStorage;
 
@@ -72,6 +67,18 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     this.storage = this.options.storage;
 
     validateCachingPluginOptions(this.options);
+
+    const getLogger = (): ReturnType<PluginContext<CachingPluginEvents>['getLogger']> | null =>
+      this.context?.getLogger() ?? null;
+
+    this.inflight = new InflightDedupe({ getLogger });
+    this.cleanup = new CleanupRunner({
+      intervalMs: this.options.cleanupInterval,
+      timeoutMs: CachingPlugin.CACHE_CLEANUP_TIMEOUT_MS,
+      disableAfterFailures: CachingPlugin.CACHE_CLEANUP_DISABLE_AFTER,
+      runCleanup: () => this.runCacheCleanup(),
+      getLogger,
+    });
   }
 
   public initialize(context: PluginContext<CachingPluginEvents>): void {
@@ -89,7 +96,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     );
 
     if (this.options.cleanupInterval > 0) {
-      this.startPeriodicCleanup();
+      this.cleanup.start();
     }
   }
 
@@ -102,37 +109,12 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       this.context.axiosInstance.interceptors.response.eject(this.interceptorIdRes);
     }
 
-    this.stopPeriodicCleanup();
-    this.inflightLeaders.clear();
-    this.inflightFollowers.clear();
-    this.servedFromCache.clear();
+    this.cleanup.stop();
+    this.inflight.clearAll();
   }
 
   private getCacheKeyFingerprint(cacheKey: string): string {
     return fingerprintValue(cacheKey);
-  }
-
-  /**
-   * Returns a stable tracking ID for this config object.
-   * Prefers the RetryManager-assigned requestId (stable across config spreads in upstream
-   * interceptors). Falls back to a WeakMap-based local ID for environments where the
-   * RetryManager interceptors are not active (e.g. isolated unit tests).
-   */
-  private getOrAssignTrackingId(config: AxiosRequestConfig): string {
-    const requestId = getRequestMetadata(config)?.requestId;
-
-    if (requestId) {
-      return requestId;
-    }
-
-    let fallbackId = this.trackingIdFallback.get(config);
-
-    if (!fallbackId) {
-      fallbackId = `ct_${Math.random().toString(36).slice(2)}`;
-      this.trackingIdFallback.set(config, fallbackId);
-    }
-
-    return fallbackId;
   }
 
   /**
@@ -198,7 +180,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
           config,
           ageMs,
         });
-        this.servedFromCache.add(this.getOrAssignTrackingId(config));
+        this.inflight.markServedFromCache(config);
         return {
           ...config,
           adapter: () => Promise.resolve(cloneAxiosResponse(touchedItem.response, config)) as never,
@@ -227,10 +209,10 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       return config;
     }
 
-    const inflightEntry = this.inflightRequests.get(cacheKey);
+    const inflightEntry = this.inflight.peekInflight(cacheKey);
 
     if (inflightEntry) {
-      this.inflightFollowers.set(this.getOrAssignTrackingId(config), cacheKey);
+      this.inflight.registerFollower(config, cacheKey);
       this.context.getLogger()?.debug('[CachingPlugin] Piggybacking on in-flight request', {
         cacheKeyFingerprint,
       });
@@ -240,8 +222,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       };
     }
 
-    this.inflightRequests.set(cacheKey, createInflightCacheEntry());
-    this.inflightLeaders.set(this.getOrAssignTrackingId(config), cacheKey);
+    this.inflight.registerLeader(config, cacheKey);
     return config;
   }
 
@@ -250,31 +231,24 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
    */
   private async handleResponseSuccess(response: AxiosResponse): Promise<AxiosResponse> {
     const metadata = response.config ? getRequestMetadata(response.config) : undefined;
-    const responseId = response.config ? this.getOrAssignTrackingId(response.config) : undefined;
-    const followerKey = responseId ? this.inflightFollowers.get(responseId) : undefined;
 
-    if (followerKey) {
-      if (responseId) {
-        this.inflightFollowers.delete(responseId);
-      }
-
+    if (this.inflight.consumeFollower(response.config)) {
       return response;
     }
 
-    if (responseId && this.servedFromCache.has(responseId)) {
-      this.servedFromCache.delete(responseId);
+    if (this.inflight.consumeServedFromCache(response.config)) {
       return response;
     }
 
     const cachingOptions = this.getRequestCachingOptions(response.config);
 
     if (cachingOptions?.cache === false) {
-      this.resolveInflightRequest(response.config, response);
+      this.inflight.resolve(response.config, response);
       return response;
     }
 
     if (this.options.skipWhenAuthPresent && requestHasAuthHeaders(response.config)) {
-      this.resolveInflightRequest(response.config, response);
+      this.inflight.resolve(response.config, response);
       return response;
     }
 
@@ -284,12 +258,12 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
       ).toUpperCase() as AxiosRetryerHttpMethod;
 
       if (!this.options.cacheMethods.includes(method)) {
-        this.resolveInflightRequest(response.config, response);
+        this.inflight.resolve(response.config, response);
         return response;
       }
 
       if (this.options.cacheOnlyRetriedRequests && response.config && !metadata?.isRetrying) {
-        this.resolveInflightRequest(response.config, response);
+        this.inflight.resolve(response.config, response);
         return response;
       }
     }
@@ -309,12 +283,12 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
               estimatedSize,
               maxEntrySize: this.options.maxEntrySize,
             });
-            this.resolveInflightRequest(response.config, response);
+            this.inflight.resolve(response.config, response);
             return response;
           }
         } catch {
           // JSON.stringify may throw for circular structures; skip caching defensively.
-          this.resolveInflightRequest(response.config, response);
+          this.inflight.resolve(response.config, response);
           return response;
         }
       }
@@ -337,10 +311,10 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
           ...getErrorMeta(error),
         });
       } finally {
-        this.resolveInflightRequest(response.config, response);
+        this.inflight.resolve(response.config, response);
       }
     } else {
-      this.resolveInflightRequest(response.config, response);
+      this.inflight.resolve(response.config, response);
     }
 
     return response;
@@ -348,8 +322,8 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
 
   private handleResponseError(error: AxiosError): Promise<never> {
     if (error.config) {
-      this.rejectInflightRequest(error.config, error);
-      this.inflightFollowers.delete(this.getOrAssignTrackingId(error.config));
+      this.inflight.reject(error.config, error);
+      this.inflight.clearFollower(error.config);
     }
 
     return Promise.reject(error);
@@ -364,25 +338,6 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
     }
 
     return this.options.cacheKeyBuilder(this.buildCacheKeyContext(config));
-  }
-
-  private startPeriodicCleanup(): void {
-    if (this.cleanupTimer) {
-      return;
-    }
-
-    this.cleanupTimer = setInterval(() => {
-      void this.runCacheCleanup().catch((error: unknown) => {
-        this.context.getLogger()?.warn('[CachingPlugin] Failed to run cache cleanup', getErrorMeta(error));
-      });
-    }, this.options.cleanupInterval);
-  }
-
-  private stopPeriodicCleanup(): void {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-      this.cleanupTimer = null;
-    }
   }
 
   private async runCacheCleanup(): Promise<void> {
@@ -421,7 +376,7 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
   public clearCache(): void | Promise<void> {
     const count = this.cache.size;
     this.cache.clear();
-    this.inflightRequests.clear();
+    this.inflight.clearInflightOnly();
     this.context.getLogger()?.debug('[CachingPlugin] Cache cleared.');
     this.context.triggerAndEmit('onCacheInvalidated', { count, matcher: 'all' });
 
@@ -627,45 +582,5 @@ export class CachingPlugin implements RetryPlugin<CachingPluginEvents> {
 
   private buildCacheKeyContext(config: AxiosRequestConfig): CacheKeyBuilderContext {
     return buildCacheKeyContext(config, this.options);
-  }
-
-  private resolveInflightRequest(config: AxiosRequestConfig | undefined, response: AxiosResponse): void {
-    if (!config) {
-      return;
-    }
-
-    const trackingId = this.getOrAssignTrackingId(config);
-    const leaderKey = this.inflightLeaders.get(trackingId);
-
-    if (!leaderKey) {
-      return;
-    }
-
-    const inflightEntry = this.inflightRequests.get(leaderKey);
-
-    if (inflightEntry) {
-      inflightEntry.resolve(response);
-      this.inflightRequests.delete(leaderKey);
-    }
-
-    this.inflightLeaders.delete(trackingId);
-  }
-
-  private rejectInflightRequest(config: AxiosRequestConfig, error: unknown): void {
-    const trackingId = this.getOrAssignTrackingId(config);
-    const leaderKey = this.inflightLeaders.get(trackingId);
-
-    if (!leaderKey) {
-      return;
-    }
-
-    const inflightEntry = this.inflightRequests.get(leaderKey);
-
-    if (inflightEntry) {
-      inflightEntry.reject(error);
-      this.inflightRequests.delete(leaderKey);
-    }
-
-    this.inflightLeaders.delete(trackingId);
   }
 }

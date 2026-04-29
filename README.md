@@ -94,6 +94,13 @@ Import only what your application needs. Each plugin is independently tree-shake
 
 ---
 
+## Behavior notes
+
+- **`Retry-After` header support.** When a response carries a `Retry-After` header (numeric seconds or HTTP-date), it overrides the computed backoff delay for that retry. The honored value is capped at **5 minutes** to prevent runaway waits.
+- **Backoff cap.** All backoff strategies (`static`, `linear`, `exponential`) are capped at **60 seconds** by default. Override via the `maxBackoffDelayMs` option on `RetryManagerOptions`.
+
+---
+
 ## How axios-retryer Compares
 
 | Feature                        | axios-retryer | axios-retry | retry-axios |
@@ -118,7 +125,7 @@ Benchmarks from the current release (standard profile, local suite):
 - **Healthy-path throughput (core scenario):** `2,150 req/sec`
 - **Peak burst throughput (stress scenario):** `4,285 req/sec`
 - **Cache hit rate:** `100%` (integration + hot-read scenarios)
-- **Test suite:** `94` suites · `1190` tests (`pnpm test:run`); use `pnpm test:quick` for a faster local run (~75 suites, skips integration, performance, and package-contract)
+- **Test suite:** `117` suites · `1414` tests (`pnpm test:run`); use `pnpm test:quick` for a faster local run (~75 suites, skips integration, performance, and package-contract)
 
 See [BENCHMARK_RESULTS.md](./BENCHMARK_RESULTS.md) for full methodology and raw numbers.
 

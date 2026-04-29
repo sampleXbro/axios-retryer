@@ -1,8 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": [],
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "lib": ["ESNext"],
     "declaration": true,
     "declarationDir": "dist/types",
     "declarationMap": false,
@@ -13,7 +13,7 @@
     "moduleResolution": "Node",
     "sourceMap": false,
     "noEmit": false,
-    "verbatimModuleSyntax": false
+    "verbatimModuleSyntax": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "__tests__"]

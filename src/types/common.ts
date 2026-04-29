@@ -60,6 +60,12 @@ export interface AxiosRetryerRequestMetadata {
   requestMode?: RetryMode;
   /** Custom request identifier for cancellation targeting. */
   requestId?: string;
+  /**
+   * Stable correlation identifier propagated through retries and into all log
+   * entries for this request. Useful for distributed tracing.
+   * If omitted, defaults to `requestId`.
+   */
+  correlationId?: string;
   /** Whether the request is currently in a retry cycle. Managed by the library. */
   readonly isRetrying?: boolean;
   /** Override request priority for queue ordering. */

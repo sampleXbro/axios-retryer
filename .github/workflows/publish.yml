@@ -47,8 +47,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
       - name: Test
         run: pnpm test
+
+      - name: Audit (informational)
+        run: pnpm audit --prod --audit-level=high || true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -103,6 +115,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
 
       - name: Test
         run: pnpm test

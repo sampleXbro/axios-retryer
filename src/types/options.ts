@@ -119,6 +119,22 @@ export interface RetryManagerOptions<TPluginEvents extends object = Record<never
   backoffType?: AxiosRetryerBackoffType;
 
   /**
+   * Maximum delay (in milliseconds) any backoff strategy may produce, before jitter.
+   * Caps `static`, `linear`, and `exponential` strategies to prevent runaway waits and
+   * to keep `setTimeout` arguments inside the safe integer range.
+   *
+   * The honored `Retry-After` header is also independently capped at 5 minutes;
+   * `maxBackoffDelayMs` does not affect Retry-After.
+   *
+   * @default 60000 (60 seconds)
+   *
+   * @example
+   * maxBackoffDelayMs: 30_000
+   * // Caps every backoff strategy at 30 seconds.
+   */
+  maxBackoffDelayMs?: number;
+
+  /**
    * The maximum number of requests that can be processed concurrently.
    *
    * @default 5

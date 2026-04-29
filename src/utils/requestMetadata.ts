@@ -16,9 +16,21 @@ export type InternalAxiosRetryerRequestMetadata = AxiosRetryerRequestMetadata & 
 
 // Allowlist of valid metadata keys — prevents prototype-pollution via key injection.
 const ALLOWED_METADATA_KEYS = new Set<string>([
-  'retryAttempt', 'requestRetries', 'requestMode', 'requestId', 'isRetrying',
-  'priority', 'timestamp', 'backoffType', 'retryableStatuses',
-  'isRetryRefreshRequest', 'manualReplayAttempt', 'retryAfterMs', 'silentlyCancelled', 'cachingOptions',
+  'retryAttempt',
+  'requestRetries',
+  'requestMode',
+  'requestId',
+  'correlationId',
+  'isRetrying',
+  'priority',
+  'timestamp',
+  'backoffType',
+  'retryableStatuses',
+  'isRetryRefreshRequest',
+  'manualReplayAttempt',
+  'retryAfterMs',
+  'silentlyCancelled',
+  'cachingOptions',
 ]);
 
 function isSafeMetadataKey(key: string): boolean {

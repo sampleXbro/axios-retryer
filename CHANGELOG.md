@@ -6,6 +6,47 @@ All notable changes to this project will be documented in this file.
 
 - No unreleased changes yet.
 
+## 2.3.1 - 28.04.2026
+
+Production-readiness pass focused on observability, configurability, and modularity. **No breaking changes.**
+
+### ✨ Features
+
+- **`maxBackoffDelayMs` option** (`RetryManagerOptions`): cap any backoff strategy (`static`, `linear`, `exponential`) at a custom delay before jitter. Default `60_000` preserves the historical behavior; pass any positive integer to override. Threaded through `DefaultRetryStrategy` and `getBackoffDelay`.
+
+### 🐛 Fixes
+
+- **`RequestQueue.markComplete(requestId?)` is now idempotent.** When a `requestId` is provided, the call is a no-op if the slot has already been released. Prevents a race where both the response and error paths try to release the same in-flight slot and over-decrement the concurrency counter. Internal callers (`RetryManager.cancelRequest`, response/error interceptors, `releaseRequestTracking`) updated to pass the id.
+
+### 📦 Structure & maintainability
+
+- **CachingPlugin:** extracted `CleanupRunner` (periodic cleanup loop with timeout + auto-disable) and `InflightDedupe` (tracking-id, leader/follower state, served-from-cache) into `managers/`. Orchestrator file: 713 → 586 lines.
+- **TokenRefreshPlugin:** extracted `RefreshExecutor` (per-attempt timeout + classified backoff retry loop) and `TeardownGuard` (sticky teardown error + listener fan-out) into `managers/`. Orchestrator file: 647 → 563 lines.
+- **CircuitBreakerPlugin:** extracted `FailureWindow` (sliding-window failure list + cleanup + count) into `managers/`. Orchestrator file: 603 → 574 lines.
+
+### 📦 Package shape
+
+- **Sourcemaps no longer published.** Rollup builds (`dist/*.js`, `dist/plugins/*.js`) now ship without `.map` companions, and the matching map paths were removed from `package.json` `files`. Stack traces from inside the library will reference the bundled output rather than original TypeScript. Consumers who rely on map-aware error reporting can pin to `2.3.x` or earlier; this is a non-API consumer-visible change.
+
+### 🔒 Tooling & quality gates
+
+- **CI gates:** `publish.yml` now runs `pnpm typecheck && pnpm lint && pnpm build` before tests in both the CI and publish jobs (CI used to run only `pnpm test`). An informational `pnpm audit --prod --audit-level=high` step is added to surface advisories without blocking the build.
+- **Coverage thresholds** ratcheted in `jest.config.cjs`: branches 75 → 90, functions 80 → 92, lines 85 → 95, statements 85 → 95. Aggregate coverage rose to **95.31% branches** / 95.10% functions / 99.02% statements (1486 tests across 120 suites). Branch target met by adding focused unit tests for `cloneFallback`, `FailureWindow`, `TeardownGuard`, `TokenRefreshPlugin/utils/headers`, `CircuitBreakerScopeManager` adapter-error paths, `InflightDedupe` undefined-config / missing-leader paths, `CleanupRunner` failure-disable, `AdaptiveTimeoutTracker` missing-url and scope-eviction paths, `CircuitBreakerScopeManager` scope variants and custom-scope throw-with-non-Error, `MetricsPlugin` metadata-absent fallbacks, `DebugSanitizationPlugin` sanitizers across array/null/primitive inputs, `TokenRefreshPlugin` failed-auth fast-fail and queue-overflow paths, `RequestLifecycleManager` plain-object correlation header fallback, and several other utility/orchestrator branches.
+- **Lint:** `no-console` is now `error` in `src/`; the built-in `RetryLogger` keeps a per-file override. Stale `eslint-disable` directives removed.
+- **`tsconfig.json`:** dropped `lib: ["DOM", "DOM.Iterable"]`. Library is Node-and-browser-agnostic; DOM types added type-checker noise without benefit. The build tsconfig was already DOM-free.
+- **Dependabot:** added `.github/dependabot.yml` with grouped weekly npm + GitHub Actions updates. Major axios bumps are intentionally ignored (peer-dep range).
+
+### 📚 Documentation
+
+- **README:** new "Behavior notes" section documents the 5-minute `Retry-After` cap and the 60-second default backoff cap with the `maxBackoffDelayMs` override.
+- **`scripts/update-readme-stats.cjs`:** new helper to refresh the test-suite stat line from a Jest run. Run `node scripts/update-readme-stats.cjs` (or `--check` in CI) before cutting a release.
+
+### 🧪 Testing
+
+- New `__tests__/p1-max-backoff-delay-ms.test.ts` covering option validation, strategy threading, and cap enforcement.
+- New `__tests__/p1-request-queue-mark-complete-idempotent.test.ts` covering the `markComplete(requestId)` race fix.
+- New `__tests__/p1-branch-coverage-fills.test.ts`, `__tests__/p2-branch-coverage-fills.test.ts`, and `__tests__/p3-branch-coverage-fills.test.ts` consolidate small branch-fill unit tests that push aggregate branch coverage above 95% without touching production code.
+
 ## 2.2.1 - 13.04.2026
 
 ### 📚 Documentation & website

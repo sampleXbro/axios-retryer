@@ -37,6 +37,12 @@ export interface TokenRefreshPluginOptions {
    */
   maxRefreshBackoffMs?: number;
   /**
+   * Maximum number of requests that may queue while a token refresh is in flight.
+   * Excess requests reject with TokenRefreshQueueOverflowError. Default: 500.
+   * Set to 0 or a negative number to disable the cap (not recommended).
+   */
+  maxQueuedRequests?: number;
+  /**
    * Optional function to detect auth errors in response bodies (for APIs that return 200 with error in body)
    * Return true if response contains an auth error that should trigger token refresh
    */

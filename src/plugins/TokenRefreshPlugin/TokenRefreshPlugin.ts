@@ -5,21 +5,21 @@ import { RetryerConfigError } from '../../core/errors/RetryerConfigError';
 import { TimerManager } from '../../core/TimerManager';
 import type { Logger, PluginContext, RetryPlugin } from '../../types';
 import {
-  createRetryableRefreshError,
   shouldRetryRefreshError,
   shouldStopRefreshRetries,
   TokenRefreshAbortError,
   toTokenRefreshError,
 } from './errors';
-import { MissingTokenRefreshHandlerError, TokenRefreshFailedError } from './errors';
+import { TokenRefreshFailedError, TokenRefreshQueueOverflowError } from './errors';
 import { resolveTokenRefreshPluginOptions, type ResolvedTokenRefreshPluginOptions } from './configs';
 import type {
   RefreshQueueEntry,
   TokenRefreshHandler,
   TokenRefreshPluginEvents,
   TokenRefreshPluginOptions,
-  TokenRefreshResult,
 } from './types';
+import { TeardownGuard } from './managers/TeardownGuard';
+import { RefreshExecutor } from './managers/RefreshExecutor';
 import {
   createRefreshAxios,
   extractTokenFromAuthHeader,
@@ -58,8 +58,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   private refreshAxios!: AxiosInstance;
   private isRefreshing = false;
   private refreshQueue: RefreshQueueEntry[] = [];
-  private teardownError: Error | null = null;
-  private readonly teardownListeners = new Set<(error: Error) => void>();
+  private readonly teardown = new TeardownGuard();
   private timerManager = new TimerManager();
   private failedAuthHeaderValue: string | null = null;
 
@@ -98,8 +97,7 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     this.context = context;
     this.isRefreshing = false;
     this.refreshQueue = [];
-    this.teardownError = null;
-    this.teardownListeners.clear();
+    this.teardown.reset();
     this.failedAuthHeaderValue = null;
     // Create a sandboxed axios instance for refresh calls.
     // Inherit transport defaults such as baseURL and adapter, but do not reuse
@@ -132,6 +130,10 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
 
       if (!metadata.isRetryRefreshRequest && hasHeader(config, authHeaderName)) {
         if (this.isRefreshing) {
+          if (this.isQueueOverflowing()) {
+            this.context.releaseRequestTracking(config);
+            return Promise.reject(this.bindRefreshErrorToRequest(this.buildQueueOverflowError(), config));
+          }
           // Refresh in progress — queue this request until the new token arrives.
           return new Promise((resolve, reject) => {
             this.refreshQueue.push({
@@ -186,39 +188,11 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   }
 
   private withTeardown<T>(promise: Promise<T>): Promise<T> {
-    if (this.teardownError) {
-      return Promise.reject(this.teardownError);
-    }
-
-    return new Promise<T>((resolve, reject) => {
-      let settled = false;
-      const safeResolve = (value: T | PromiseLike<T>): void => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      const safeReject = (reason: unknown): void => {
-        if (settled) return;
-        settled = true;
-        reject(reason);
-      };
-
-      const rejectOnTeardown = (error: Error): void => {
-        safeReject(error);
-      };
-
-      this.teardownListeners.add(rejectOnTeardown);
-
-      promise.then(safeResolve, safeReject).finally(() => {
-        this.teardownListeners.delete(rejectOnTeardown);
-      });
-    });
+    return this.teardown.wrap(promise);
   }
 
   private ensureActive(): void {
-    if (this.teardownError) {
-      throw this.teardownError;
-    }
+    this.teardown.ensureActive();
   }
 
   private bindRefreshErrorToRequest(error: Error, config: AxiosRequestConfig, response?: AxiosResponse): AxiosError {
@@ -236,6 +210,25 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
     return axiosError;
   }
 
+  /**
+   * Returns true when the queue is at or above `maxQueuedRequests`.
+   * A value <= 0 disables the cap.
+   */
+  private isQueueOverflowing(): boolean {
+    const cap = this.options.maxQueuedRequests;
+    if (!Number.isFinite(cap) || cap <= 0) return false;
+    return this.refreshQueue.length >= cap;
+  }
+
+  private buildQueueOverflowError(): TokenRefreshQueueOverflowError {
+    const error = new TokenRefreshQueueOverflowError(this.refreshQueue.length);
+    this.logger?.warn(`[${this.name}] Refresh queue overflow; rejecting incoming request`, {
+      queueSize: this.refreshQueue.length,
+      maxQueuedRequests: this.options.maxQueuedRequests,
+    });
+    return error;
+  }
+
   private rejectQueueEntryWithBoundError(logicalError: Error, entry: RefreshQueueEntry): void {
     if (entry.kind === 'hold-request') {
       this.context.releaseRequestTracking(entry.config);
@@ -248,20 +241,19 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
   }
 
   private dispose(error: Error): void {
-    if (this.teardownError) {
+    if (this.teardown.error) {
       return;
     }
 
     this.timerManager.destroy();
-    this.teardownError = error;
     this.isRefreshing = false;
-    this.refreshQueue.forEach((entry) => {
-      this.rejectQueueEntryWithBoundError(error, entry);
-    });
-    this.refreshQueue = [];
 
-    this.teardownListeners.forEach((listener) => listener(error));
-    this.teardownListeners.clear();
+    this.teardown.dispose(error, () => {
+      this.refreshQueue.forEach((entry) => {
+        this.rejectQueueEntryWithBoundError(error, entry);
+      });
+      this.refreshQueue = [];
+    });
   }
 
   /**
@@ -293,6 +285,9 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
       this.context.releaseRequestTracking(response.config);
 
       if (this.isRefreshing) {
+        if (this.isQueueOverflowing()) {
+          throw this.bindRefreshErrorToRequest(this.buildQueueOverflowError(), response.config, response);
+        }
         // Queue the request and wait for token refresh to complete
         return new Promise((resolve, reject) => {
           this.refreshQueue.push({
@@ -424,76 +419,27 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
 
   /**
    * Attempts token refresh up to maxRefreshAttempts times if retryOnRefreshFail is true.
-   * Each attempt is subject to a timeout defined in refreshTimeout.
-   * Throw a non-Axios error from the refresh handler to stop remaining refresh retries immediately,
-   * for example when no refresh token is available in storage.
+   * Each attempt is subject to a timeout defined in refreshTimeout. Throw a non-Axios
+   * error from the refresh handler to stop remaining refresh retries immediately, for
+   * example when no refresh token is available in storage.
    */
-  private async executeTokenRefresh(): Promise<string | null> {
-    this.ensureActive();
-    if (!this.refreshToken) {
-      throw new MissingTokenRefreshHandlerError();
-    }
-    const { maxRefreshAttempts, refreshTimeout, retryOnRefreshFail } = this.options;
-    let lastError: Error | undefined;
-
-    for (let attempt = 1; attempt <= maxRefreshAttempts; attempt++) {
-      this.ensureActive();
-      this.logger?.debug(`[${this.name}] Refresh attempt ${attempt}/${maxRefreshAttempts}`);
-      try {
-        const refreshPromise = new Promise<TokenRefreshResult>((resolve, reject) => {
-          const { cancel: cancelTimeout } = this.timerManager.createTimeout(
-            () => reject(createRetryableRefreshError('Token refresh timeout')),
-            refreshTimeout,
-          );
-          this.refreshToken(this.refreshAxios)
-            .then((res) => {
-              cancelTimeout();
-              resolve(res);
-            })
-            .catch((err) => {
-              cancelTimeout();
-              reject(err);
-            });
-        });
-        const { token } = await this.withTeardown(refreshPromise);
-        this.ensureActive();
-        if (token == null) {
-          this.logger?.debug(`[${this.name}] Refresh handler returned no token; skipping refresh`);
-          return null;
-        }
+  private executeTokenRefresh(): Promise<string | null> {
+    const executor = new RefreshExecutor({
+      pluginName: this.name,
+      refreshAxios: this.refreshAxios,
+      refreshToken: this.refreshToken,
+      timerManager: this.timerManager,
+      teardown: this.teardown,
+      maxRefreshAttempts: this.options.maxRefreshAttempts,
+      refreshTimeout: this.options.refreshTimeout,
+      retryOnRefreshFail: this.options.retryOnRefreshFail,
+      maxRefreshBackoffMs: this.options.maxRefreshBackoffMs,
+      getLogger: () => this.logger,
+      onRefreshSuccess: (token) => {
         this.context.triggerAndEmit('onTokenRefreshed', token);
-        this.logger?.debug(`[${this.name}] Token successfully refreshed`);
-        return token;
-      } catch (error) {
-        lastError = toTokenRefreshError(error);
-        if (shouldStopRefreshRetries(error)) {
-          this.logger?.debug(`[${this.name}] Refresh retries aborted by refresh handler`, {
-            attempt,
-            reason: lastError.message,
-          });
-          break;
-        }
-        if (!shouldRetryRefreshError(error)) {
-          this.logger?.debug(`[${this.name}] Refresh retries stopped after a terminal refresh error`, {
-            attempt,
-            reason: lastError.message,
-          });
-          break;
-        }
-        if (!retryOnRefreshFail) {
-          break;
-        }
-        if (attempt < maxRefreshAttempts) {
-          const backoffMs = Math.min(1000 * 2 ** (attempt - 1), this.options.maxRefreshBackoffMs); // 1s, 2s, 4s… capped
-          this.logger?.debug(`[${this.name}] Refresh attempt failed, retrying in ${backoffMs}ms...`);
-          const { promise: backoffPromise } = this.timerManager.createSleep(backoffMs);
-          await this.withTeardown(backoffPromise);
-          continue;
-        }
-        break;
-      }
-    }
-    throw lastError;
+      },
+    });
+    return executor.run();
   }
 
   /**
@@ -528,6 +474,11 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
    * If a 401 is encountered while a refresh is already in progress, queue the request.
    */
   private queueRefreshRequest(request: AxiosRequestConfig, sourceError: AxiosError): Promise<AxiosResponse> {
+    if (this.isQueueOverflowing()) {
+      return Promise.reject(
+        this.bindRefreshErrorToRequest(this.buildQueueOverflowError(), request, sourceError.response),
+      );
+    }
     return new Promise((resolve, reject) => {
       this.refreshQueue.push({
         kind: 'retry-after-error',
@@ -578,8 +529,8 @@ export class TokenRefreshPlugin implements RetryPlugin<TokenRefreshPluginEvents>
    *          for the initiating request so RetryManager receives `config`.
    */
   private handleRefreshFailure(error?: unknown): Error {
-    if (this.teardownError) {
-      error = this.teardownError;
+    if (this.teardown.error) {
+      error = this.teardown.error;
     }
 
     let refreshError: Error;

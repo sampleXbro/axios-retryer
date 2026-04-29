@@ -44,6 +44,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const tempArtifacts = new Set<string>();
 const expectedPackedFilePaths = [
   'README.md',
+  'dist/.buildinfo.json',
   'dist/index.cjs.js',
   'dist/index.d.ts',
   'dist/index.esm.js',
@@ -196,6 +197,7 @@ describe('package contract', () => {
     expect(packageJson.module).toBe('dist/index.esm.js');
     expect(packageJson.types).toBe('dist/index.d.ts');
     expect(packageJson.files).toEqual([
+      'dist/.buildinfo.json',
       'dist/index.cjs.js',
       'dist/index.esm.js',
       'dist/index.d.ts',

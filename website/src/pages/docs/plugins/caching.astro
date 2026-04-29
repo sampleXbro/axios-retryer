@@ -34,6 +34,18 @@ const _shikiCode6 = "import type {\n  CacheStorage,\n  CacheStorageEntry,\n  Cac
 <h2>Cache statistics</h2>
 <CodeBlock code={_shikiCode5} lang="typescript" />
 
+<h2>Plugin order</h2>
+<div class="callout callout-info">
+  <div class="callout-icon">ℹ️</div>
+  <div class="callout-content">
+    <div class="callout-title">Register CachingPlugin <em>after</em> any plugin that mutates the request config</div>
+    <p>In-flight deduplication uses the metadata <code>requestId</code> assigned by the core request interceptor. Plugins like <code>TokenRefreshPlugin</code> may spread <code>config</code> internally — if they run <em>before</em> the request id is set, two concurrent requests for the same resource may dedupe separately. Always register <code>CachingPlugin</code> last (or at least after any auth/refresh plugin).</p>
+    <pre><code>{`const retryer = createRetryer()
+  .use(createTokenRefreshPlugin(...))
+  .use(createCachePlugin(...));      // CachingPlugin last`}</code></pre>
+  </div>
+</div>
+
 <h2>Custom storage adapter</h2>
 <p>Implement <code>CacheStorage</code> to back the cache with Redis, Memcached, or any persistent store:</p>
 <CodeBlock code={_shikiCode6} lang="typescript" />

@@ -1,6 +1,7 @@
 import type { AxiosResponse } from 'axios';
 
 import type { Logger } from '../../types';
+import type { EmitCoreEvent } from '../../types/events';
 import type { DependencyGatekeeper } from '../DependencyGatekeeper';
 import type { RequestLifecycleManager } from '../RequestLifecycleManager';
 import type { RequestQueue } from '../requestQueue';
@@ -11,7 +12,7 @@ export interface ResponseInterceptorOptions {
   requestLifecycle: RequestLifecycleManager;
   dependencyGatekeeper: DependencyGatekeeper;
   requestQueue: RequestQueue;
-  emitEvent: (event: string, ...args: unknown[]) => void;
+  emitEvent: EmitCoreEvent;
   handleRetryProcessFinish: () => void;
 }
 
@@ -20,7 +21,7 @@ export class ResponseInterceptorHandler {
   private readonly requestLifecycle: RequestLifecycleManager;
   private readonly dependencyGatekeeper: DependencyGatekeeper;
   private readonly requestQueue: RequestQueue;
-  private readonly emitEvent: (event: string, ...args: unknown[]) => void;
+  private readonly emitEvent: EmitCoreEvent;
   private readonly handleRetryProcessFinish: () => void;
 
   constructor(options: ResponseInterceptorOptions) {
@@ -45,7 +46,7 @@ export class ResponseInterceptorHandler {
     }
 
     const release = this.requestLifecycle.release(config);
-    this.requestQueue.markComplete();
+    this.requestQueue.markComplete(metadata?.requestId);
     this.dependencyGatekeeper.finishBlockingRequest(config, 'success');
 
     this.logger.debug('Request succeeded', {

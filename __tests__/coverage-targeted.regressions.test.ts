@@ -60,7 +60,10 @@ describe('Targeted Coverage Regressions', () => {
 
       await scheduler.wait(1);
       expect(warnSpy).toHaveBeenCalled();
-      expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Cancelled retry timer', { requestId: 'retry-1' });
+      expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Cancelled retry timer', {
+        requestId: 'retry-1',
+        source: 'user',
+      });
 
       scheduler.destroy();
       expect(scheduler.getTimerStats()).toEqual({ activeRetryTimers: 0, activeTimers: 0 });
@@ -90,8 +93,14 @@ describe('Targeted Coverage Regressions', () => {
 
       await expect(pendingOne).resolves.toBe(false);
       await expect(pendingTwo).resolves.toBe(false);
-      expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Cancelled retry timer', { requestId: 'pending-1' });
-      expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Cancelled retry timer', { requestId: 'pending-2' });
+      expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Cancelled retry timer', {
+        requestId: 'pending-1',
+        source: 'system',
+      });
+      expect(debugSpy).toHaveBeenCalledWith('[AXIOS_RETRYER] Cancelled retry timer', {
+        requestId: 'pending-2',
+        source: 'system',
+      });
       scheduler.destroy();
     });
   });
@@ -522,7 +531,9 @@ describe('Targeted Coverage Regressions', () => {
         status: 200,
         statusText: 'OK',
       });
-      plugin['inflightRequests'].set('GET|/users|||', {
+      // After the InflightDedupe extraction the inflightRequests map lives on
+      // plugin.inflight; reach in via the manager.
+      (plugin['inflight'] as { inflightRequests: Map<string, unknown> }).inflightRequests.set('GET|/users|||', {
         promise: inflightResponse,
         reject: jest.fn(),
         resolve: jest.fn(),

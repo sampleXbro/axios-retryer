@@ -1,6 +1,7 @@
 import type { AxiosRequestConfig } from 'axios';
 
 import type { AxiosRetryerRequestPriority } from '../types';
+import type { EmitCoreEvent } from '../types/events';
 import { getRequestMetadata } from '../utils/requestMetadata';
 import type { RequestQueue } from './requestQueue';
 import type { RequestLifecycleManager } from './RequestLifecycleManager';
@@ -10,7 +11,7 @@ export interface DependencyGatekeeperOptions {
   cancelPendingOnDependencyFailure: boolean;
   requestQueue: RequestQueue;
   requestLifecycle: RequestLifecycleManager;
-  emitEvent: (event: string, ...args: unknown[]) => void;
+  emitEvent: EmitCoreEvent;
 }
 
 export class DependencyGatekeeper {
@@ -19,7 +20,7 @@ export class DependencyGatekeeper {
   private readonly cancelPendingOnDependencyFailure: boolean;
   private readonly requestQueue: RequestQueue;
   private readonly requestLifecycle: RequestLifecycleManager;
-  private readonly emitEvent: (event: string, ...args: unknown[]) => void;
+  private readonly emitEvent: EmitCoreEvent;
 
   constructor(options: DependencyGatekeeperOptions) {
     this.blockingPriorityThreshold = options.blockingPriorityThreshold;

@@ -2,7 +2,13 @@
 
 import type { AxiosError, AxiosRequestConfig } from 'axios';
 
-import type { AxiosRetryerBackoffType, AxiosRetryerHttpMethod, AxiosRetryerRetryableStatus, Logger, RetryStrategy } from '../../types';
+import type {
+  AxiosRetryerBackoffType,
+  AxiosRetryerHttpMethod,
+  AxiosRetryerRetryableStatus,
+  Logger,
+  RetryStrategy,
+} from '../../types';
 import { AXIOS_RETRYER_BACKOFF_TYPES, AXIOS_RETRYER_HTTP_METHODS } from '../../types';
 import { getBackoffDelay } from '../../utils';
 import { getRequestMetadata } from '../../utils/requestMetadata';
@@ -16,6 +22,7 @@ const DEFAULT_RETRYABLE_METHODS: readonly AxiosRetryerHttpMethod[] = [
 
 export class DefaultRetryStrategy implements RetryStrategy {
   private retryableMethodsLower: Set<string>;
+  private idempotencyHeadersLower: string[];
   private defaultStatusSet: Set<number>;
   private defaultRanges: [number, number][];
   // Cache parsed Set/Array per unique per-request retryableStatuses array reference.
@@ -30,6 +37,7 @@ export class DefaultRetryStrategy implements RetryStrategy {
    * @param backoffType - The backoff type used to compute delay times.
    * @param idempotencyHeaders - Headers that indicate a request is idempotent.
    * @param logger - Optional logger for debug information.
+   * @param maxBackoffDelayMs - Optional cap for backoff delays before jitter.
    */
   constructor(
     private readonly retryableStatuses: readonly AxiosRetryerRetryableStatus[] = DEFAULT_RETRYABLE_STATUSES,
@@ -37,9 +45,12 @@ export class DefaultRetryStrategy implements RetryStrategy {
     private readonly backoffType: AxiosRetryerBackoffType = AXIOS_RETRYER_BACKOFF_TYPES.EXPONENTIAL,
     private readonly idempotencyHeaders: readonly string[] = ['Idempotency-Key'],
     private readonly logger?: Logger,
+    private readonly maxBackoffDelayMs?: number,
   ) {
     // Precompute lower-case methods once as a Set for O(1) lookup
     this.retryableMethodsLower = new Set(this.retryableMethods.map((m) => m.toLowerCase()));
+    // Precompute lower-case idempotency headers so case-mismatched user headers are still detected.
+    this.idempotencyHeadersLower = this.idempotencyHeaders.map((h) => h.toLowerCase());
 
     // Precompute default statuses as a Set and an array of ranges.
     this.defaultStatusSet = new Set<number>();
@@ -110,13 +121,13 @@ export class DefaultRetryStrategy implements RetryStrategy {
       }
     }
 
-    // If POST/PUT/PATCH and contains an idempotency header, treat as retryable.
-    if (
-      (method === 'post' || method === 'put' || method === 'patch') &&
-      this.idempotencyHeaders.some((header) => !!config.headers?.[header])
-    ) {
-      this.logger?.debug(`Retrying idempotent request with method ${method}`);
-      return true;
+    // If POST/PUT/PATCH and contains an idempotency header (case-insensitive), treat as retryable.
+    if (method === 'post' || method === 'put' || method === 'patch') {
+      const headerKeysLower = Object.keys(config.headers ?? {}).map((k) => k.toLowerCase());
+      if (this.idempotencyHeadersLower.some((needle) => headerKeysLower.includes(needle))) {
+        this.logger?.debug(`Retrying idempotent request with method ${method}`);
+        return true;
+      }
     }
 
     this.logger?.debug(`Not retrying request with method ${method} and status ${status}`);
@@ -145,7 +156,7 @@ export class DefaultRetryStrategy implements RetryStrategy {
    */
   public getDelay = (attempt: number, maxRetries: number, backoffType?: AxiosRetryerBackoffType): number => {
     // Use ?? not || — STATIC is enum value 0 and must not fall through to this.backoffType.
-    const delay = getBackoffDelay(attempt, backoffType ?? this.backoffType);
+    const delay = getBackoffDelay(attempt, backoffType ?? this.backoffType, this.maxBackoffDelayMs);
     this.logger?.debug(`Retry delay for attempt ${attempt}: ${delay}ms; MaxRetries: ${maxRetries}`);
     return delay;
   };

@@ -10,6 +10,26 @@ export type RetryEventListener<TEvents extends object, K extends keyof TEvents> 
 ) => void;
 
 /**
+ * Convenience name alias: a key in the core event map.
+ */
+export type CoreRetryEventName = keyof CoreRetryEvents;
+
+/**
+ * The argument tuple for a given core event name.
+ *
+ * Example: `CoreRetryEventArgs<'onRetryScheduled'>` is `[delayMs: number, config: AxiosRequestConfig]`.
+ */
+export type CoreRetryEventArgs<K extends CoreRetryEventName> = RetryEventArgs<CoreRetryEvents, K>;
+
+/**
+ * Type-safe emit-event callback used by interceptors and other internal collaborators.
+ *
+ * The string overload is permitted only for events declared in `CoreRetryEvents`. Any
+ * mismatch in event name or payload shape is a compile-time error.
+ */
+export type EmitCoreEvent = <K extends CoreRetryEventName>(event: K, ...args: CoreRetryEventArgs<K>) => void;
+
+/**
  * Terminal request error payload emitted by `onRequestError`.
  */
 export interface AxiosRetryerRequestErrorEvent {
@@ -137,6 +157,13 @@ export interface CoreRetryEvents {
    * Triggered when all retries are completed.
    */
   onRetryProcessFinished?: () => void;
+
+  /**
+   * Triggered when an in-flight retry delay timer is cancelled — either because
+   * the user aborted the request (`source: 'user'`) or because the system shut
+   * the request down (`source: 'system'`, e.g. plugin destroy, queue clear).
+   */
+  onRetryTimerCancelled?: (payload: { requestId: string; source: 'user' | 'system' }) => void;
 
   /**
    * Triggered when a request cancelled.

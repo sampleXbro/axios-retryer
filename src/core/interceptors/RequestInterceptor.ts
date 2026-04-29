@@ -1,6 +1,7 @@
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
 import type { Logger } from '../../types';
+import type { EmitCoreEvent } from '../../types/events';
 import { RequestAbortedError } from '../errors/RequestAbortedError';
 import type { DependencyGatekeeper } from '../DependencyGatekeeper';
 import type { RequestLifecycleManager } from '../RequestLifecycleManager';
@@ -14,7 +15,7 @@ export interface RequestInterceptorOptions {
   requestQueue: RequestQueue;
   throwErrorOnCancelRequest: boolean;
   createSilentCancelConfig: (config: AxiosRequestConfig, requestId: string) => AxiosRequestConfig;
-  emitEvent: (event: string, ...args: unknown[]) => void;
+  emitEvent: EmitCoreEvent;
 }
 
 export class RequestInterceptorHandler {
@@ -24,7 +25,7 @@ export class RequestInterceptorHandler {
   private readonly requestQueue: RequestQueue;
   private readonly throwErrorOnCancelRequest: boolean;
   private readonly createSilentCancelConfig: (config: AxiosRequestConfig, requestId: string) => AxiosRequestConfig;
-  private readonly emitEvent: (event: string, ...args: unknown[]) => void;
+  private readonly emitEvent: EmitCoreEvent;
 
   constructor(options: RequestInterceptorOptions) {
     this.logger = options.logger;
@@ -91,11 +92,13 @@ export class RequestInterceptorHandler {
   };
 
   private buildRequestLogMeta(config: AxiosRequestConfig, requestId: string): Record<string, unknown> {
+    const meta = getRequestMetadata(config);
     return {
       requestId,
+      correlationId: meta?.correlationId,
       url: this.getLogUrl(config.url),
       method: config.method?.toUpperCase(),
-      priority: getRequestMetadata(config)?.priority,
+      priority: meta?.priority,
     };
   }
 

@@ -94,7 +94,10 @@ export function neutralizeDefaultAuthHeaders(
       : false;
 
     if (hasInCommon || hasInDefaults) {
-      config.headers[headerName] = undefined as unknown as string;
+      // Setting the value to `undefined` tells axios to OMIT the header, which is exactly
+      // what we want when a default header would otherwise leak into a manually-replayed
+      // request. `delete` would not work — axios re-applies defaults at send time.
+      (config.headers as Record<string, string | undefined>)[headerName] = undefined;
     }
   }
 

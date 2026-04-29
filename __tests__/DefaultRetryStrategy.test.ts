@@ -62,6 +62,26 @@ describe('DefaultRetryStrategy - Extended Tests', () => {
       expect(mockLogger.debug).toHaveBeenCalledWith('Not retrying request with method undefined and status 429');
     });
 
+    it('should match idempotency header case-insensitively (lowercase)', () => {
+      const error = {
+        response: { status: 500 },
+        config: { method: 'post', headers: { 'idempotency-key': 'lowercase-key' } },
+      } as unknown as AxiosError;
+
+      expect(strategy.getIsRetryable(error)).toBe(true);
+      expect(mockLogger.debug).toHaveBeenCalledWith('Retrying idempotent request with method post');
+    });
+
+    it('should match idempotency header case-insensitively (mixed case)', () => {
+      const error = {
+        response: { status: 500 },
+        config: { method: 'put', headers: { 'iDeMpOtEnCy-KeY': 'mixed-case-key' } },
+      } as unknown as AxiosError;
+
+      expect(strategy.getIsRetryable(error)).toBe(true);
+      expect(mockLogger.debug).toHaveBeenCalledWith('Retrying idempotent request with method put');
+    });
+
     it('should handle custom idempotency headers', () => {
       const customStrategy = new DefaultRetryStrategy(
         retryableStatuses,

@@ -1,6 +1,6 @@
 {
   "name": "axios-retryer",
-  "version": "2.2.1",
+  "version": "2.3.1",
   "description": "TypeScript-first Axios retry library with concurrency limits, request priority, token refresh, response caching, and circuit breaker plugins.",
   "packageManager": "pnpm@10.30.3",
   "main": "dist/index.cjs.js",
@@ -12,7 +12,7 @@
     "url": "git+https://github.com/sampleXbro/axios-retryer.git"
   },
   "scripts": {
-    "build": "rm -rf dist && mkdir -p stats && rollup -c --bundleConfigAsCjs",
+    "build": "rm -rf dist && mkdir -p stats && rollup -c --bundleConfigAsCjs && node scripts/write-buildinfo.cjs",
     "build:browser": "rm -rf dist/browser && mkdir -p stats && BUILD_BROWSER=true rollup -c --bundleConfigAsCjs",
     "analyze": "open stats/bundle-stats-*.html",
     "prepare": "pnpm build && husky",
@@ -83,6 +83,7 @@
     "axios": ">=1.7.4"
   },
   "files": [
+    "dist/.buildinfo.json",
     "dist/index.cjs.js",
     "dist/index.esm.js",
     "dist/index.d.ts",

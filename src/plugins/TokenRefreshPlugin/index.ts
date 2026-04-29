@@ -4,6 +4,7 @@ export {
   MissingTokenRefreshHandlerError,
   TokenRefreshAbortError,
   TokenRefreshFailedError,
+  TokenRefreshQueueOverflowError,
   TokenRefreshTimeoutError,
 } from './errors';
 export type { TokenRefreshHandler, TokenRefreshPluginOptions, TokenRefreshResult } from './types';
