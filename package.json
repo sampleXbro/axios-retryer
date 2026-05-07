@@ -54,7 +54,7 @@
   "author": "sampleX (Serhii Zhabskyi)",
   "license": "MIT",
   "devDependencies": {
-    "@commitlint/cli": "20.5.0",
+    "@commitlint/cli": "20.5.3",
     "@commitlint/config-conventional": "20.5.0",
     "@eslint/js": "10.0.1",
     "@rollup/plugin-commonjs": "^24.0.0",
