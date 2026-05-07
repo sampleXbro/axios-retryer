@@ -1,3 +1,4 @@
 pnpm typecheck
+pnpm test
 npx lint-staged
 pnpm build
