@@ -6,6 +6,40 @@ All notable changes to this project will be documented in this file.
 
 - No unreleased changes yet.
 
+## 2.3.2 - 07.05.2026
+
+Correctness pass closing four critical bugs and five architectural gaps surfaced by an external senior-architect review. **No breaking changes; no public API changes.**
+
+### 🐛 Critical fixes
+
+- **`QueueFullError` no longer triggers retries.** `NON_RETRYABLE_INTERNAL_CODES` listed `'QUEUE_FULL'` but `QueueFullError` actually carries the code `'EQUEUE_FULL'`. The mismatch meant queue-full rejections fell through to `strategy.shouldRetry()`, which treated them as retryable network errors (no `error.response`) and burned all `retries` attempts hitting the same full queue. Fixed by aligning the set entry with the canonical error code.
+- **`extra` request metadata field is no longer silently dropped.** The documented public field `AxiosRetryerRequestMetadata.extra` was missing from the metadata key allowlist, so `assignRequestMetadata(config, { extra })` was a quiet no-op. Added `'extra'` to `ALLOWED_METADATA_KEYS`.
+- **`MetricsPlugin` no longer leaks listeners on `unuse()`.** All nine event listeners registered in `initialize()` are now bound in the constructor and explicitly removed in `onBeforeDestroyed`. Calling `manager.unuse('MetricsPlugin')` previously left every handler live on the `EventBus`, double-counting metrics if the plugin was re-registered.
+- **`CircuitBreakerScopeManager.writeState` no longer diverges from the state adapter on write failure.** The local cache used to be updated _before_ the adapter call with no rollback if the adapter rejected. With a distributed (Redis/etcd-style) adapter, a `set` failure left the cache holding the new state (e.g. `OPEN`) while the adapter still held the old state (`CLOSED`); the next `readState` overwrote the cache from the stale stored value and the circuit silently failed to trip. The cache is now snapshotted before the adapter call and restored on rejection so cache and adapter stay consistent.
+
+### 🐛 Architectural fixes
+
+- **`onRetryScheduled` now fires before the retry delay, not after.** `ErrorInterceptor.scheduleRetry` previously emitted the event _after_ awaiting `waitForRetryDelay`, so by the time plugins received it the delay had already elapsed. Plugins relying on the event to react during the delay window now have the full window to do so.
+- **`MetricsPlugin` reads request metadata via the public utility.** Three direct `config.__axiosRetryer?.priority/.retryAttempt` accesses replaced with `getRequestMetadata(config)?.…`, restoring the architectural rule that plugins do not touch internal storage keys.
+- **Caller `AbortSignal` link is preserved for queued requests held back during teardown.** `RequestLifecycleManager.cancelAllRequests` used to call `releaseAbortSignalLink(controller)` unconditionally before the preserve-check return, severing the caller's signal forwarding for requests we were _not_ aborting. The release call now lives inside the abort branch.
+- **`PluginContext.triggerAndEmit` JSDoc corrected.** The interface and `EventBus` JSDoc claimed a "hooks vs listeners" distinction that does not exist in the implementation. `triggerAndEmit` is now documented accurately as an alias of `emit`, kept for backward compatibility with existing plugins; new code should prefer `emit`.
+
+### 📦 Structure & maintainability
+
+- **HTTP header parsing extracted to `src/utils/http.ts`.** `extractRetryAfterHeader`, `parseRetryAfterMs`, `normalizeRetryAfterValue`, and `MAX_RETRY_AFTER_MS` no longer live inside `RetryScheduler.ts` (which kept thin re-exports for backward compatibility with internal imports). `RetryDecisionEngine` now imports these utilities from their new home, removing an unrelated coupling between the scheduler and HTTP-spec parsing.
+
+### 🧪 Testing
+
+- New `__tests__/critical-and-high-fixes.test.ts` covers all nine fixes with regression tests written TDD-first (RED, then fix, then GREEN). Includes:
+  - `QueueFullError` fails immediately with zero `beforeRetry` calls.
+  - `extra` survives `assignRequestMetadata` and the per-request `__axiosRetryer` re-wrap path.
+  - `MetricsPlugin` totalRequests does not increment after `unuse()`; `onMetricsUpdated` is no longer emitted post-unuse.
+  - Caller `AbortController` still aborts a preserved request's internal controller after `cancelAllRequests({ includeQueued: false })`; the link is correctly _released_ for non-preserved requests.
+  - `onRetryScheduled` fires before half the configured delay has elapsed.
+  - `CircuitBreakerScopeManager` cache stays consistent with the adapter when `stateAdapter.set` rejects.
+- Two pre-existing tests updated where they asserted the pre-fix wrong behavior: `RetryDecisionEngine.test.ts` (`'QUEUE_FULL'` → `'EQUEUE_FULL'`) and `RequestQueue.advanced-edge-cases.test.ts` (was implicitly relying on `QueueFullError` being retried to eventually succeed).
+- Full suite: **1495 tests / 121 suites** all green.
+
 ## 2.3.1 - 28.04.2026
 
 Production-readiness pass focused on observability, configurability, and modularity. **No breaking changes.**
