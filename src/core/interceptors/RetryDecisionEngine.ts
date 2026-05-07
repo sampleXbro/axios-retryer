@@ -5,7 +5,7 @@ import type { AxiosError } from 'axios';
 import type { RetryMode, RetryStrategy } from '../../types';
 import { RETRY_MODES } from '../../types';
 import type { InternalAxiosRetryerRequestMetadata } from '../../utils/requestMetadata';
-import { extractRetryAfterHeader, parseRetryAfterMs } from '../RetryScheduler';
+import { extractRetryAfterHeader, parseRetryAfterMs } from '../../utils/http';
 
 /**
  * Pure decision result for a failed request.
@@ -22,7 +22,7 @@ const NON_RETRYABLE_INTERNAL_CODES = new Set([
   'EREQUEST_ABORTED',
   'QUEUE_DESTROYED',
   'QUEUE_CLEARED',
-  'QUEUE_FULL',
+  'EQUEUE_FULL',
 ]);
 
 export interface DecideRetryInput {

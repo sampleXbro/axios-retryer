@@ -79,12 +79,17 @@ export interface PluginContext<TPluginEvents extends object = Record<never, neve
     event: K,
     listener: RetryEventListener<RetryManagerEvents<TPluginEvents>, K>,
   ): boolean;
-  /** Emit an event (fires listeners only, does not call hooks). */
+  /** Fire all listeners registered for this event. */
   emit<K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,
     ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>
   ): void;
-  /** Call hooks and emit an event. */
+  /**
+   * Identical to `emit` — fires all listeners registered for this event.
+   *
+   * Kept for backward compatibility with existing plugins. There is no semantic
+   * distinction from `emit`: prefer `emit` in new code.
+   */
   triggerAndEmit<K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,
     ...args: RetryEventArgs<RetryManagerEvents<TPluginEvents>, K>

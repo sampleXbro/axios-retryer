@@ -129,7 +129,6 @@ export class RequestLifecycleManager {
     });
 
     this.activeRequests.forEach((controller, requestId) => {
-      this.releaseAbortSignalLink(controller);
       if (
         !includeQueued &&
         (preservedQueuedRequestIds?.has(requestId) || this.options.requestQueue.hasQueuedRequest(requestId))
@@ -137,6 +136,7 @@ export class RequestLifecycleManager {
         return;
       }
 
+      this.releaseAbortSignalLink(controller);
       controller.abort();
       if (includeQueued) {
         this.options.requestQueue.cancelQueuedRequest(requestId);

@@ -121,11 +121,22 @@ export class CircuitBreakerScopeManager {
   }
 
   public async writeState(scopeKey: string, scopeState: CircuitBreakerScopeState): Promise<void> {
+    // Snapshot the previous cache entry so we can roll back if the adapter
+    // rejects. Without rollback, the cache would silently diverge from the
+    // adapter (cache reflects the new state, adapter still holds the old
+    // one) — a critical correctness bug for distributed state adapters
+    // where read replicas can return the stale value.
+    const previousCachedState = this.scopeStateCache.get(scopeKey);
     const clonedState = cloneScopeState(scopeState);
     this.scopeStateCache.set(scopeKey, clonedState);
     try {
       await this.stateAdapter.set(scopeKey, clonedState);
     } catch (error) {
+      if (previousCachedState) {
+        this.scopeStateCache.set(scopeKey, previousCachedState);
+      } else {
+        this.scopeStateCache.delete(scopeKey);
+      }
       this.handleAdapterError('set', scopeKey, error);
     }
   }

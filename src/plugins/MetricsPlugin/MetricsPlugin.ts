@@ -1,12 +1,17 @@
 'use strict';
 
+import type { AxiosError, AxiosRequestConfig } from 'axios';
+
 import type {
   AxiosRetryerDetailedMetrics,
   AxiosRetryerMetrics,
+  AxiosRetryerRequestDispatchedEvent,
+  AxiosRetryerRequestQueuedEvent,
   MetricsRecorder,
   PluginContext,
   RetryPlugin,
 } from '../../types';
+import { getRequestMetadata } from '../../utils/requestMetadata';
 import { createInitialMetrics, EMPTY_TIMER_STATS } from './configs';
 import { MetricsCollector } from './managers';
 import type { MetricsPluginEvents } from './types';
@@ -45,63 +50,96 @@ export class MetricsPlugin implements RetryPlugin<MetricsPluginEvents> {
     emitMetricsUpdated: () => this.emitMetricsUpdated(),
   };
 
-  public initialize(context: PluginContext<MetricsPluginEvents>): void {
-    this.context = context;
-    context.registerMetricsRecorder(this.recorder);
+  // Stored listener references so onBeforeDestroyed can unregister them.
+  private readonly onRequestQueuedListener: (payload: AxiosRetryerRequestQueuedEvent) => void;
+  private readonly onRequestDispatchedListener: (payload: AxiosRetryerRequestDispatchedEvent) => void;
+  private readonly onRequestCancelledListener: (requestId: string) => void;
+  private readonly beforeRetryListener: (config: AxiosRequestConfig) => void;
+  private readonly afterRetryListener: (config: AxiosRequestConfig, success: boolean, error?: AxiosError) => void;
+  private readonly onRetryScheduledListener: (delayMs: number, config: AxiosRequestConfig) => void;
+  private readonly onFailureListener: (config: AxiosRequestConfig) => void;
+  private readonly onBlockingRequestFailedListener: (config: AxiosRequestConfig) => void;
+  private readonly onRequestSucceededListener: () => void;
 
-    context.on('onRequestQueued', (payload) => {
+  constructor() {
+    this.onRequestQueuedListener = (payload) => {
       this.collector.recordRequestStart(payload.priority);
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('onRequestDispatched', (payload) => {
+    this.onRequestDispatchedListener = (payload) => {
       this.collector.recordQueueWait(payload.queuedForMs);
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('onRequestCancelled', (_requestId) => {
+    this.onRequestCancelledListener = (_requestId) => {
       this.collector.recordCancellation(true);
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('beforeRetry', (config) => {
-      const priority = config.__axiosRetryer?.priority ?? 1; // MEDIUM priority as default
-      const attempt = config.__axiosRetryer?.retryAttempt ?? 1;
+    this.beforeRetryListener = (config) => {
+      const meta = getRequestMetadata(config);
+      const priority = meta?.priority ?? 1;
+      const attempt = meta?.retryAttempt ?? 1;
       this.collector.recordRetryAttempt(attempt, priority);
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('afterRetry', (config, success, error) => {
-      const priority = config.__axiosRetryer?.priority ?? 1;
+    this.afterRetryListener = (config, success, error) => {
+      const priority = getRequestMetadata(config)?.priority ?? 1;
       if (success) {
         this.collector.recordRetrySuccess(priority);
       } else if (error) {
         this.collector.recordRetryFailure(priority, error);
       }
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('onRetryScheduled', (delayMs) => {
+    this.onRetryScheduledListener = (delayMs) => {
       this.collector.recordRetryDelay(delayMs);
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('onFailure', (_config) => {
+    this.onFailureListener = (_config) => {
       this.collector.recordTerminalFailure(false);
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('onBlockingRequestFailed', (_config) => {
+    this.onBlockingRequestFailedListener = (_config) => {
       this.collector.recordTerminalFailure(true);
       this.emitMetricsUpdated();
-    });
+    };
 
-    context.on('onRequestSucceeded', () => {
+    this.onRequestSucceededListener = () => {
       this.emitMetricsUpdated();
-    });
+    };
+  }
+
+  public initialize(context: PluginContext<MetricsPluginEvents>): void {
+    this.context = context;
+    context.registerMetricsRecorder(this.recorder);
+
+    context.on('onRequestQueued', this.onRequestQueuedListener);
+    context.on('onRequestDispatched', this.onRequestDispatchedListener);
+    context.on('onRequestCancelled', this.onRequestCancelledListener);
+    context.on('beforeRetry', this.beforeRetryListener);
+    context.on('afterRetry', this.afterRetryListener);
+    context.on('onRetryScheduled', this.onRetryScheduledListener);
+    context.on('onFailure', this.onFailureListener);
+    context.on('onBlockingRequestFailed', this.onBlockingRequestFailedListener);
+    context.on('onRequestSucceeded', this.onRequestSucceededListener);
   }
 
   public onBeforeDestroyed(context: PluginContext<MetricsPluginEvents>): void {
+    context.off('onRequestQueued', this.onRequestQueuedListener);
+    context.off('onRequestDispatched', this.onRequestDispatchedListener);
+    context.off('onRequestCancelled', this.onRequestCancelledListener);
+    context.off('beforeRetry', this.beforeRetryListener);
+    context.off('afterRetry', this.afterRetryListener);
+    context.off('onRetryScheduled', this.onRetryScheduledListener);
+    context.off('onFailure', this.onFailureListener);
+    context.off('onBlockingRequestFailed', this.onBlockingRequestFailedListener);
+    context.off('onRequestSucceeded', this.onRequestSucceededListener);
     context.registerMetricsRecorder(null);
     this.context = null;
   }

@@ -51,8 +51,12 @@ export class EventBus<TPluginEvents extends object = Record<never, never>> {
   }
 
   /**
-   * Alias for `emit`. Kept for backward compatibility with plugins that call
-   * `context.triggerAndEmit(...)`.
+   * Identical to `emit` — fires all registered listeners for the event.
+   *
+   * The name is kept for backward compatibility with existing plugins that call
+   * `context.triggerAndEmit(...)`. Despite the name difference, there is no
+   * semantic distinction between `emit` and `triggerAndEmit`: both simply
+   * invoke the registered listeners and do not call any separate "hooks".
    */
   public triggerAndEmit<K extends keyof RetryManagerEvents<TPluginEvents>>(
     event: K,

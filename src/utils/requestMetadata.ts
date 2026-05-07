@@ -26,6 +26,7 @@ const ALLOWED_METADATA_KEYS = new Set<string>([
   'timestamp',
   'backoffType',
   'retryableStatuses',
+  'extra',
   'isRetryRefreshRequest',
   'manualReplayAttempt',
   'retryAfterMs',

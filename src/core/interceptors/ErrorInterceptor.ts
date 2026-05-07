@@ -122,8 +122,8 @@ export class ErrorInterceptorHandler {
       backoffType: metadata?.backoffType ?? 'default',
     });
 
-    const sleepCompleted = await this.options.retryScheduler.waitForRetryDelay(config, delay);
     this.options.emitEvent('onRetryScheduled', delay, config);
+    const sleepCompleted = await this.options.retryScheduler.waitForRetryDelay(config, delay);
 
     if (!sleepCompleted) {
       return this.handleCancelAction(config);

@@ -98,7 +98,7 @@ describe('RetryDecisionEngine.decideRetry', () => {
   });
 
   it('returns no-retry when error.code is a non-retryable internal code', () => {
-    for (const code of ['REQUEST_CANCELED', 'EREQUEST_ABORTED', 'QUEUE_DESTROYED', 'QUEUE_CLEARED', 'QUEUE_FULL']) {
+    for (const code of ['REQUEST_CANCELED', 'EREQUEST_ABORTED', 'QUEUE_DESTROYED', 'QUEUE_CLEARED', 'EQUEUE_FULL']) {
       const decision = decideRetry({
         error: buildError({ code }),
         metadata: baseMetadata(),
@@ -169,7 +169,7 @@ describe('RetryDecisionEngine.decideRetry', () => {
 
 describe('isNonRetryableInternalError', () => {
   it('returns true for known internal codes', () => {
-    for (const code of ['REQUEST_CANCELED', 'EREQUEST_ABORTED', 'QUEUE_DESTROYED', 'QUEUE_CLEARED', 'QUEUE_FULL']) {
+    for (const code of ['REQUEST_CANCELED', 'EREQUEST_ABORTED', 'QUEUE_DESTROYED', 'QUEUE_CLEARED', 'EQUEUE_FULL']) {
       expect(isNonRetryableInternalError(buildError({ code }))).toBe(true);
     }
   });
